@@ -32,26 +32,8 @@ separate in categories such as `אופנה` and `טיסות ותיירות`.
 
 Local financial data is stored under `data/`, which is intentionally excluded from Git.
 
-## Merchant classification priority
-
-Merchant research and import reviews must use this order:
-
-1. Reuse an exact normalized merchant mapping already stored in `merchant_mappings`.
-2. Reuse a previously approved alias or an unambiguous merchant-family mapping.
-3. Research the merchant online only when the local database has no approved answer.
-4. Send ambiguous or contradictory results for manual review without overwriting the database.
-
-An online name match never overrides an exact approved database mapping by itself.
-
-## Reporting month rules
-
-The purchase date is preserved for transaction details, while financial totals use a separate reporting month:
-
-1. Use the provider billing date when supplied (MAX).
-2. Otherwise use the imported statement month (Isracard monthly statements).
-3. Fall back to the purchase month only when neither is available.
-
-Installment number, installment total, billing date/month, and the reporting-month source are part of transaction identity. This prevents equal installment amounts from being removed as duplicates.
+Merchant classification, staged imports, reporting months, and installment
+behavior are documented in the project-guideline files below.
 
 ## Profile the samples
 
@@ -105,3 +87,12 @@ Before staging, committing, or pushing changes, read
 [GIT_WORKFLOW.md](GIT_WORKFLOW.md). Automated coding agents must also follow
 [AGENTS.md](AGENTS.md). The repository includes a versioned pre-commit safety
 hook under `.githooks/`.
+
+## Project guidelines
+
+- [Architecture and local data ownership](docs/ARCHITECTURE.md)
+- [Imports and merchant mapping](docs/IMPORT_AND_MAPPING.md)
+- [Reporting and calculation rules](docs/REPORTING_RULES.md)
+- [UI and interaction guidelines](docs/UI_GUIDELINES.md)
+- [Git and privacy workflow](GIT_WORKFLOW.md)
+- [Coding-agent instructions](AGENTS.md)
