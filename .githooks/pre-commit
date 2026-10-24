@@ -1,0 +1,56 @@
+#!/bin/sh
+set -eu
+
+fail() {
+    printf '%s\n' "ClearSpend pre-commit check failed:" >&2
+    printf '  %s\n' "$1" >&2
+    printf '%s\n' "Review GIT_WORKFLOW.md. Do not bypass this check with --no-verify." >&2
+    exit 1
+}
+
+effective_email=$(git config --get user.email || true)
+case "$effective_email" in
+    *@rapyd.net)
+        fail "The effective commit email is the company identity. Configure a repository-local personal identity."
+        ;;
+esac
+
+staged_files=$(git diff --cached --name-only --diff-filter=ACMR)
+
+if [ -z "$staged_files" ]; then
+    exit 0
+fi
+
+while IFS= read -r path; do
+    [ -n "$path" ] || continue
+
+    case "$path" in
+        data/*|samples/*|analysis/*|backups/*|tests/*|.openai/*|.venv/*)
+            fail "Private/local path is staged: $path"
+            ;;
+        dist/*-review.html)
+            fail "Private review mockup is staged: $path"
+            ;;
+        *.db|*.db-*|*.sqlite|*.sqlite3|*.xlsx|*.xls|*.numbers|*.pdf|*.csv)
+            fail "Private financial or database file type is staged: $path"
+            ;;
+        *.pem|*.p12|*.pfx|*.key|.env|.env.*)
+            fail "Credential-bearing file type is staged: $path"
+            ;;
+    esac
+done <<EOF
+$staged_files
+EOF
+
+if ! git diff --cached --check; then
+    fail "Git found whitespace or conflict-marker problems in the staged diff."
+fi
+
+sensitive_pattern='BEGIN (RSA |OPENSSH |EC )?PRIVATE KEY|gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|AKIA[0-9A-Z]{16}|/Users/[A-Za-z0-9._-]+'
+matches=$(git grep --cached -n -I -E "$sensitive_pattern" -- . 2>/dev/null || true)
+if [ -n "$matches" ]; then
+    printf '%s\n' "$matches" >&2
+    fail "Possible credential, token, private key, or absolute local path found in staged content."
+fi
+
+exit 0

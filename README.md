@@ -98,3 +98,10 @@ Then open [http://localhost:8765](http://localhost:8765). The dashboard reads `d
 
 The database, uploaded statements, private analysis, and statement-derived test
 fixtures remain local and are intentionally excluded from Git.
+
+## Git and privacy workflow
+
+Before staging, committing, or pushing changes, read
+[GIT_WORKFLOW.md](GIT_WORKFLOW.md). Automated coding agents must also follow
+[AGENTS.md](AGENTS.md). The repository includes a versioned pre-commit safety
+hook under `.githooks/`.
