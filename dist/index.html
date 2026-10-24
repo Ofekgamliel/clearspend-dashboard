@@ -10,22 +10,23 @@
 <body>
   <div class="shell">
     <aside class="sidebar">
-      <a class="brand" href="#" aria-label="ClearSpend home">
+      <a class="brand" href="#" data-action="overview" aria-label="ClearSpend home">
         <span class="brand-mark"><span></span></span>
         <span>clear<span>spend</span></span>
       </a>
 
       <nav aria-label="Primary navigation">
         <p class="nav-label">Workspace</p>
-        <a class="nav-item active" href="#"><svg viewBox="0 0 24 24"><path d="M4 13h6V4H4v9Zm0 7h6v-5H4v5Zm10 0h6v-9h-6v9Zm0-16v5h6V4h-6Z"/></svg>Overview</a>
-        <a class="nav-item" href="#transactions"><svg viewBox="0 0 24 24"><path d="M6 2h12a2 2 0 0 1 2 2v18l-4-2-4 2-4-2-4 2V4a2 2 0 0 1 2-2Zm2 5v2h8V7H8Zm0 4v2h8v-2H8Zm0 4v2h5v-2H8Z"/></svg>Transactions <span class="nav-count">418</span></a>
-        <a class="nav-item" href="#"><svg viewBox="0 0 24 24"><path d="m21 12-9 9-9-9V5a2 2 0 0 1 2-2h7l9 9ZM8 9.5A1.5 1.5 0 1 0 8 6.5a1.5 1.5 0 0 0 0 3Z"/></svg>Categories</a>
-        <a class="nav-item" href="#"><svg viewBox="0 0 24 24"><path d="M3 5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5Zm2 3h14V5H5v3Zm0 4v7h14v-7H5Z"/></svg>Cards</a>
+        <a class="nav-item active" href="#" data-action="overview"><svg viewBox="0 0 24 24"><path d="M4 13h6V4H4v9Zm0 7h6v-5H4v5Zm10 0h6v-9h-6v9Zm0-16v5h6V4h-6Z"/></svg>Overview</a>
+        <a class="nav-item" href="#transactions" data-view="transactions"><svg viewBox="0 0 24 24"><path d="M6 2h12a2 2 0 0 1 2 2v18l-4-2-4 2-4-2-4 2V4a2 2 0 0 1 2-2Zm2 5v2h8V7H8Zm0 4v2h8v-2H8Zm0 4v2h5v-2H8Z"/></svg>Transactions <span class="nav-count" id="navTransactionCount">—</span></a>
+        <a class="nav-item" href="#categories" data-view="categories"><svg viewBox="0 0 24 24"><path d="m21 12-9 9-9-9V5a2 2 0 0 1 2-2h7l9 9ZM8 9.5A1.5 1.5 0 1 0 8 6.5a1.5 1.5 0 0 0 0 3Z"/></svg>Categories</a>
+        <a class="nav-item" href="#cards" data-action="cards"><svg viewBox="0 0 24 24"><path d="M3 5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5Zm2 3h14V5H5v3Zm0 4v7h14v-7H5Z"/></svg>Cards</a>
 
         <p class="nav-label">Manage</p>
-        <a class="nav-item" href="#insights"><svg viewBox="0 0 24 24"><path d="M11 2h2v3h-2V2Zm6.4 2.2 1.4 1.4-2.1 2.1-1.4-1.4 2.1-2.1ZM5.2 5.6l1.4-1.4 2.1 2.1-1.4 1.4-2.1-2.1ZM12 7a5 5 0 0 1 3 9v2H9v-2a5 5 0 0 1 3-9Zm-3 13h6v2H9v-2Z"/></svg>Smart insights <span class="dot"></span></a>
-        <a class="nav-item" href="#"><svg viewBox="0 0 24 24"><path d="M12 2a10 10 0 1 1-7.1 2.9A10 10 0 0 1 12 2Zm-1 5v6l5 3 1-1.7-4-2.3V7h-2Z"/></svg>Recurring</a>
-        <a class="nav-item" href="#"><svg viewBox="0 0 24 24"><path d="M12 2a5 5 0 0 1 5 5v1h1a3 3 0 0 1 3 3v8a3 3 0 0 1-3 3H6a3 3 0 0 1-3-3v-8a3 3 0 0 1 3-3h1V7a5 5 0 0 1 5-5Zm0 2a3 3 0 0 0-3 3v1h6V7a3 3 0 0 0-3-3Z"/></svg>Import & mapping</a>
+        <a class="nav-item" href="#merchants" data-action="merchants"><svg viewBox="0 0 24 24"><path d="M12 12a5 5 0 1 0 0-10 5 5 0 0 0 0 10Zm-9 9a9 9 0 0 1 18 0H3Z"/></svg>Merchants</a>
+        <a class="nav-item" href="#insights" data-action="insights"><svg viewBox="0 0 24 24"><path d="M11 2h2v3h-2V2Zm6.4 2.2 1.4 1.4-2.1 2.1-1.4-1.4 2.1-2.1ZM5.2 5.6l1.4-1.4 2.1 2.1-1.4 1.4-2.1-2.1ZM12 7a5 5 0 0 1 3 9v2H9v-2a5 5 0 0 1 3-9Zm-3 13h6v2H9v-2Z"/></svg>Smart insights <span class="dot"></span></a>
+        <a class="nav-item" href="#" data-action="recurring"><svg viewBox="0 0 24 24"><path d="M12 2a10 10 0 1 1-7.1 2.9A10 10 0 0 1 12 2Zm-1 5v6l5 3 1-1.7-4-2.3V7h-2Z"/></svg>Recurring</a>
+        <a class="nav-item" href="#" data-action="mapping"><svg viewBox="0 0 24 24"><path d="M12 2a5 5 0 0 1 5 5v1h1a3 3 0 0 1 3 3v8a3 3 0 0 1-3 3H6a3 3 0 0 1-3-3v-8a3 3 0 0 1 3-3h1V7a5 5 0 0 1 5-5Zm0 2a3 3 0 0 0-3 3v1h6V7a3 3 0 0 0-3-3Z"/></svg>Import & mapping</a>
       </nav>
 
       <div class="privacy-card">
@@ -35,7 +36,7 @@
       <div class="profile">
         <span class="avatar">OG</span>
         <div><strong>Ofek</strong><small>Personal workspace</small></div>
-        <button aria-label="Profile menu">•••</button>
+        <button aria-label="Profile menu" data-action="profile">•••</button>
       </div>
     </aside>
 
@@ -44,124 +45,154 @@
         <div>
           <p class="eyebrow">PERSONAL FINANCE</p>
           <h1>Good morning, Ofek</h1>
-          <p class="subtitle">Here’s how your money moved this month.</p>
+          <p class="subtitle">Your statements, normalized and analyzed locally.</p>
         </div>
         <div class="header-actions">
-          <button class="icon-button" aria-label="Notifications"><svg viewBox="0 0 24 24"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9Zm-8 11h4a2 2 0 0 1-4 0Z"/></svg><span></span></button>
+          <button class="icon-button" data-action="notifications" aria-label="Notifications"><svg viewBox="0 0 24 24"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9Zm-8 11h4a2 2 0 0 1-4 0Z"/></svg><span></span></button>
           <button class="upload-button" id="uploadBtn"><svg viewBox="0 0 24 24"><path d="M11 16h2V8l3.5 3.5 1.4-1.4L12 4.2l-5.9 5.9 1.4 1.4L11 8v8ZM5 20h14v-2H5v2Z"/></svg>Import statement</button>
         </div>
       </header>
 
       <section class="filterbar" aria-label="Dashboard filters">
         <div class="segmented" id="periodTabs">
-          <button data-period="month" class="active">This month</button>
-          <button data-period="year">This year</button>
+          <button data-period="month" class="active">Month</button>
+          <button data-period="year">Latest year</button>
           <button data-period="all">All time</button>
         </div>
         <div class="spacer"></div>
-        <label class="select-wrap"><span>Card</span><select id="cardFilter"><option value="all">All cards</option><option value="visa">Visa •• 4821</option><option value="mastercard">Mastercard •• 9012</option><option value="amex">Amex •• 2207</option></select></label>
-        <button class="date-button"><svg viewBox="0 0 24 24"><path d="M7 2h2v2h6V2h2v2h2a2 2 0 0 1 2 2v14H3V6a2 2 0 0 1 2-2h2V2ZM5 9v9h14V9H5Z"/></svg><span id="dateLabel">October 2026</span><b>⌄</b></button>
+        <button class="income-show-button" id="incomeShowButton" type="button" hidden>Show income</button>
+        <label class="select-wrap"><span>Card</span><select id="cardFilter"><option value="all">All cards</option></select></label>
+        <label class="date-button"><svg viewBox="0 0 24 24"><path d="M7 2h2v2h6V2h2v2h2a2 2 0 0 1 2 2v14H3V6a2 2 0 0 1 2-2h2V2ZM5 9v9h14V9H5Z"/></svg><select id="monthFilter" aria-label="Choose month"><option value="">Latest month</option></select><b>⌄</b></label>
+      </section>
+
+      <section class="panel income-panel" id="incomePanel" aria-label="Income and remaining balance">
+        <div class="income-head">
+          <div><h2>Income &amp; balance</h2><p id="incomePeriod">Selected period · all cards</p></div>
+          <button class="income-hide-button" id="incomeHideButton" type="button" aria-label="Hide income across the dashboard">◉ Hide income</button>
+        </div>
+        <div class="income-metrics">
+          <div><span>Total income</span><strong id="incomeValue">—</strong><small>Combined contributors</small></div>
+          <div><span>Net card spending</span><strong id="incomeSpendingValue">—</strong><small id="incomeSpendingNote">All cards, after refunds</small></div>
+          <div class="income-remaining" id="incomeRemainingCard"><span>Amount left</span><strong id="incomeRemainingValue">—</strong><small id="incomeRemainingPercent">—</small></div>
+        </div>
+        <div class="income-averages">
+          <div class="income-average-title"><strong>Monthly averages</strong><small id="incomeAverageScope">Available months</small></div>
+          <div><span>Average spending</span><strong id="averageSpendingValue">—</strong><small id="averageSpendingMonths">—</small></div>
+          <div class="average-left" id="averageLeftCard"><span>Average amount left</span><strong id="averageLeftValue">—</strong><small id="averageLeftMonths">—</small></div>
+        </div>
+        <div class="income-progress" aria-hidden="true"><i id="incomeProgressBar"></i></div>
       </section>
 
       <section class="kpi-grid" aria-label="Key metrics">
         <article class="kpi-card hero-kpi">
-          <div class="kpi-head"><span>Total spent</span><span class="trend up">↗ 8.4%</span></div>
-          <div class="kpi-value" id="spentValue">₪12,480</div>
+          <div class="kpi-head"><span>Total spent</span><span class="trend up" id="dataMode">LOCAL DATA</span></div>
+          <div class="kpi-value" id="spentValue">—</div>
           <div class="mini-bars" aria-hidden="true"><i style="height:42%"></i><i style="height:55%"></i><i style="height:48%"></i><i style="height:70%"></i><i style="height:61%"></i><i style="height:85%"></i><i class="now" style="height:100%"></i></div>
-          <p>₪965 more than last month</p>
+          <p id="spentNote">Loading imported statements…</p>
         </article>
         <article class="kpi-card">
-          <div class="kpi-head"><span>Income</span><span class="round-icon green">↙</span></div>
-          <div class="kpi-value" id="incomeValue">₪24,700</div>
-          <div class="kpi-foot"><span class="trend down">↗ 2.1%</span><span>vs. last month</span></div>
+          <div class="kpi-head"><span>Refunds & credits</span><span class="round-icon green">↙</span></div>
+          <div class="kpi-value" id="refundValue">—</div>
+          <div class="kpi-foot"><span class="status-good">Credits</span><span>negative charges</span></div>
         </article>
         <article class="kpi-card">
-          <div class="kpi-head"><span>Net cash flow</span><span class="round-icon violet">≈</span></div>
-          <div class="kpi-value" id="cashValue">+₪12,220</div>
-          <div class="kpi-foot"><span class="status-good">On track</span><span>49% savings rate</span></div>
+          <div class="kpi-head"><span>Transactions</span><span class="round-icon violet">≈</span></div>
+          <div class="kpi-value" id="transactionValue">—</div>
+          <div class="kpi-foot"><span class="status-good">Imported</span><span id="activeDays">across your statements</span></div>
         </article>
         <article class="kpi-card">
           <div class="kpi-head"><span>Daily average</span><span class="round-icon amber">⌁</span></div>
-          <div class="kpi-value" id="dailyValue">₪402</div>
-          <div class="kpi-foot"><span class="trend up">↗ 6.7%</span><span>vs. last month</span></div>
+          <div class="kpi-value" id="dailyValue">—</div>
+          <div class="kpi-foot"><span class="trend up">Active days</span><span>average spend</span></div>
         </article>
       </section>
 
       <section class="dashboard-grid">
         <article class="panel spending-panel">
           <div class="panel-head">
-            <div><h2>Spending trend</h2><p>Daily spending across all cards</p></div>
-            <div class="legend"><span><i class="legend-current"></i>This month</span><span><i class="legend-previous"></i>Last month</span></div>
+            <div><h2 id="trendTitle">Spending trend</h2><p id="trendSubtitle">Imported spending over time</p></div>
+            <div class="legend" id="trendLegend"><span><i class="legend-current"></i>Spending</span></div>
           </div>
           <div class="chart-wrap">
-            <div class="y-axis"><span>₪1,200</span><span>₪900</span><span>₪600</span><span>₪300</span><span>₪0</span></div>
-            <svg class="line-chart" viewBox="0 0 720 235" role="img" aria-label="Daily spending line chart">
-              <defs><linearGradient id="areaFill" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#6658e8" stop-opacity=".24"/><stop offset="1" stop-color="#6658e8" stop-opacity="0"/></linearGradient></defs>
+            <div class="y-axis" id="yAxis"><span>—</span><span>—</span><span>—</span><span>—</span><span>₪0</span></div>
+            <div class="y-axis right-y-axis" id="rightYAxis" hidden></div>
+            <svg class="line-chart" id="trendChart" viewBox="0 0 720 235" preserveAspectRatio="none" role="img" aria-label="Spending trend chart">
+              <defs><pattern id="refundHatch" width="4" height="4" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="4" height="4" fill="#f2a0a8"/><rect width="2" height="4" fill="#db5c69"/></pattern></defs>
               <g class="gridlines"><line x1="0" y1="14" x2="720" y2="14"/><line x1="0" y1="65" x2="720" y2="65"/><line x1="0" y1="116" x2="720" y2="116"/><line x1="0" y1="167" x2="720" y2="167"/><line x1="0" y1="218" x2="720" y2="218"/></g>
-              <path class="previous-line" d="M0 176 C35 163,45 170,72 153 S112 145,144 159 S190 134,216 143 S262 121,288 130 S334 113,360 120 S402 102,432 111 S476 93,504 104 S550 80,576 91 S622 76,648 81 S690 62,720 70"/>
-              <path class="area" d="M0 181 C30 167,45 176,72 160 S110 130,144 144 S182 116,216 124 S260 89,288 108 S330 72,360 89 S404 52,432 72 S470 39,504 55 S550 73,576 50 S620 35,648 43 S690 16,720 25 L720 218 L0 218Z"/>
-              <path class="current-line" d="M0 181 C30 167,45 176,72 160 S110 130,144 144 S182 116,216 124 S260 89,288 108 S330 72,360 89 S404 52,432 72 S470 39,504 55 S550 73,576 50 S620 35,648 43 S690 16,720 25"/>
-              <g class="point"><circle cx="504" cy="55" r="5"/><line x1="504" y1="55" x2="504" y2="218"/><g class="tooltip" transform="translate(450 4)"><rect width="108" height="38" rx="8"/><text x="54" y="16">Oct 22</text><text class="amount" x="54" y="31">₪742</text></g></g>
+              <g id="trendBars"></g>
+              <line class="income-threshold" id="incomeThreshold" x1="0" x2="720" hidden/>
+              <path class="cumulative-line" id="cumulativeLine" d="" hidden/>
+              <g id="trendHitAreas"></g>
             </svg>
-            <div class="x-axis"><span>Oct 1</span><span>Oct 6</span><span>Oct 11</span><span>Oct 16</span><span>Oct 21</span><span>Oct 26</span><span>Oct 31</span></div>
+            <div class="chart-tooltip" id="trendTooltip" role="tooltip"></div>
+            <div class="x-axis" id="xAxis"><span>Loading…</span></div>
           </div>
         </article>
 
-        <article class="panel category-panel">
-          <div class="panel-head"><div><h2>Top categories</h2><p>Share of this month’s spend</p></div><button class="text-button">View all →</button></div>
+        <article class="panel category-panel" id="categories">
+          <div class="panel-head"><div><h2>Categories</h2><p>All categories in the selected period</p></div><button class="text-button" data-view="categories">View details →</button></div>
           <div class="donut-row">
-            <div class="donut" style="--a:31%;--b:22%;--c:18%;--d:13%;"><div><strong>₪12.5k</strong><span>Total</span></div></div>
-            <div class="category-list">
-              <div><i class="cat-dot groceries"></i><span>Groceries</span><strong>₪3,869</strong><em>31%</em></div>
-              <div><i class="cat-dot shopping"></i><span>Shopping</span><strong>₪2,746</strong><em>22%</em></div>
-              <div><i class="cat-dot bills"></i><span>Bills</span><strong>₪2,246</strong><em>18%</em></div>
-              <div><i class="cat-dot dining"></i><span>Dining</span><strong>₪1,622</strong><em>13%</em></div>
-              <div><i class="cat-dot other"></i><span>Other</span><strong>₪1,997</strong><em>16%</em></div>
-            </div>
+            <div class="donut" id="categoryDonut"><div><strong id="donutTotal">—</strong><span>Total</span></div><span class="donut-tooltip" id="categoryDonutTooltip" role="tooltip"></span></div>
+            <div class="category-list" id="categoryList"><div><span>Loading categories…</span></div></div>
           </div>
         </article>
 
-        <article class="panel cards-panel">
-          <div class="panel-head"><div><h2>Spending by card</h2><p>October 2026</p></div><button class="more-button" aria-label="More">•••</button></div>
-          <div class="card-list">
-            <button class="payment-card selected" data-card="visa"><span class="card-logo visa">VISA</span><span class="card-info"><strong>Visa Platinum</strong><small>•••• 4821 · CAL</small></span><span class="card-total"><strong>₪6,240</strong><small>50% of total</small></span><span class="card-bar"><i style="width:50%"></i></span></button>
-            <button class="payment-card" data-card="mastercard"><span class="card-logo mc"><i></i><b></b></span><span class="card-info"><strong>Mastercard Gold</strong><small>•••• 9012 · MAX</small></span><span class="card-total"><strong>₪4,368</strong><small>35% of total</small></span><span class="card-bar"><i style="width:35%"></i></span></button>
-            <button class="payment-card" data-card="amex"><span class="card-logo amex">AMEX</span><span class="card-info"><strong>American Express</strong><small>•••• 2207 · Isracard</small></span><span class="card-total"><strong>₪1,872</strong><small>15% of total</small></span><span class="card-bar"><i style="width:15%"></i></span></button>
-          </div>
+        <article class="panel cards-panel" id="cards">
+          <div class="panel-head"><div><h2>Spending by card</h2><p id="cardsPeriod">Imported statements</p></div><button class="more-button" data-action="cards-help" aria-label="Card help">•••</button></div>
+          <div class="card-list" id="cardList"><p>Loading cards…</p></div>
         </article>
 
         <article class="panel insight-panel" id="insights">
-          <div class="panel-head"><div><h2>Smart insights</h2><p>Worth your attention</p></div><span class="insight-count">3 new</span></div>
-          <button class="insight warning"><span class="insight-icon">!</span><span><strong>Unusual charge detected</strong><small>₪689 at “עיריית תל אביב” is 2.8× your usual bill.</small></span><b>›</b></button>
-          <button class="insight info"><span class="insight-icon">↗</span><span><strong>Dining is trending up</strong><small>You’ve spent 24% more than your 3-month average.</small></span><b>›</b></button>
-          <button class="insight success"><span class="insight-icon">✓</span><span><strong>You saved on subscriptions</strong><small>Recurring costs dropped by ₪84 this month.</small></span><b>›</b></button>
+          <div class="panel-head"><div><h2>Data insights</h2><p>Based on imported statements</p></div><span class="insight-count">LIVE</span></div>
+          <div id="insightList"><p>Loading insights…</p></div>
         </article>
 
         <article class="panel transactions-panel" id="transactions">
-          <div class="panel-head"><div><h2>Recent transactions</h2><p>Automatically categorized from your statements</p></div><button class="text-button">View all transactions →</button></div>
+          <div class="panel-head"><div><h2>Recent transactions</h2><p>Five-column summary · open all transactions for full source details</p></div><button class="text-button" data-view="transactions">View all transactions →</button></div>
           <div class="table-wrap"><table>
-            <thead><tr><th>Merchant</th><th>Category</th><th>Card</th><th>Date</th><th class="right">Amount</th></tr></thead>
-            <tbody>
-              <tr><td><span class="merchant-icon zara">Z</span><span><strong>ZARA</strong><small>Fashion & clothing</small></span></td><td><span class="tag">Shopping</span></td><td><span class="tiny-card visa-bg">V</span>•• 4821</td><td>Oct 28</td><td class="right negative">−₪429.90</td></tr>
-              <tr><td><span class="merchant-icon shufersal">ש</span><span><strong>שופרסל דיל</strong><small>Shufersal Deal</small></span></td><td><span class="tag green-tag">Groceries</span></td><td><span class="tiny-card mc-bg">●</span>•• 9012</td><td>Oct 27</td><td class="right negative">−₪286.40</td></tr>
-              <tr><td><span class="merchant-icon city">תא</span><span><strong>עיריית תל אביב</strong><small>Municipality payment</small></span></td><td><span class="tag amber-tag">Bills</span></td><td><span class="tiny-card visa-bg">V</span>•• 4821</td><td>Oct 25</td><td class="right negative">−₪689.00 <span class="alert-dot" title="Unusual transaction">!</span></td></tr>
-              <tr><td><span class="merchant-icon wolt">W</span><span><strong>Wolt</strong><small>Food delivery</small></span></td><td><span class="tag red-tag">Dining</span></td><td><span class="tiny-card amex-bg">A</span>•• 2207</td><td>Oct 24</td><td class="right negative">−₪94.00</td></tr>
-            </tbody>
+            <thead><tr><th>Merchant</th><th>Category</th><th>Card</th><th>Reporting period</th><th class="right">Amount</th></tr></thead>
+            <tbody id="transactionRows"><tr><td>Loading transactions…</td><td></td><td></td><td></td><td></td></tr></tbody>
           </table></div>
         </article>
       </section>
-      <footer><span>Last updated today at 08:42</span><span><i></i> All statements processed successfully</span></footer>
+      <footer><span id="lastUpdated">Loading import history…</span><span><i></i> Local database connected</span></footer>
     </main>
   </div>
 
   <div class="modal-backdrop" id="importModal" aria-hidden="true">
-    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+    <div class="modal staged-import-modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
       <button class="modal-close" id="modalClose" aria-label="Close">×</button>
-      <span class="modal-icon">↑</span>
-      <h2 id="modalTitle">Import a new statement</h2>
-      <p>Drop your CSV or Excel file here. ClearSpend will identify the provider, card, and column mapping before anything is imported.</p>
-      <div class="dropzone"><strong>Drop files here</strong><span>or click to browse · CSV, XLSX</span></div>
-      <small>Files are processed locally on this device.</small>
+      <div class="staged-import-head"><div><p class="eyebrow">IMPORT &amp; MAPPING</p><h2 id="modalTitle">Review statement import</h2><p>Files stay in staging until you approve the final step.</p></div><span>LOCAL &amp; OFFLINE</span></div>
+      <nav class="import-stepper" id="importStepper" aria-label="Import stages"></nav>
+      <input type="file" id="fileInput" name="files" accept=".xlsx,.pdf" multiple hidden>
+      <div class="staged-import-body" id="importStageBody"></div>
+      <div class="staged-import-footer"><span id="importStageHelp">Analyze files without changing the database.</span><div><button class="secondary-button" id="importBack" disabled>Back</button><button class="upload-button editor-primary" id="importNext" disabled>Continue</button></div></div>
+      <div class="dropzone" id="dropzone" hidden><strong>Drop files here</strong><span>or click to browse · XLSX, PDF</span></div>
+      <div class="mapping-summary" id="mappingSummary" hidden></div>
+    </div>
+  </div>
+  <div class="modal-backdrop" id="detailModal" aria-hidden="true">
+    <div class="modal detail-modal" role="dialog" aria-modal="true" aria-labelledby="detailTitle">
+      <button class="modal-close" id="detailClose" aria-label="Close">×</button>
+      <div class="detail-head"><div><p class="eyebrow" id="detailEyebrow">EXPLORE</p><h2 id="detailTitle">Details</h2><p id="detailSubtitle"></p></div></div>
+      <div class="detail-tools" id="detailTools"></div>
+      <div class="detail-content" id="detailContent"><p>Loading…</p></div>
+    </div>
+  </div>
+  <div class="modal-backdrop editor-backdrop" id="merchantEditorModal" aria-hidden="true">
+    <div class="modal editor-modal merchant-editor-modal" role="dialog" aria-modal="true" aria-labelledby="merchantEditorTitle">
+      <button class="modal-close" id="merchantEditorClose" aria-label="Close">×</button>
+      <div class="editor-head"><p class="eyebrow">MERCHANT MANAGEMENT</p><h2 id="merchantEditorTitle">Edit merchant</h2><p id="merchantEditorSubtitle"></p></div>
+      <div class="editor-body" id="merchantEditorBody"></div>
+      <div class="editor-footer"><span id="merchantEditorStatus">Review the impact before applying changes.</span><div><button class="secondary-button" id="merchantEditorCancel">Cancel</button><button class="upload-button editor-primary" id="merchantReviewButton">Review impact</button><button class="upload-button editor-primary" id="merchantApplyButton" hidden>Apply changes</button></div></div>
+    </div>
+  </div>
+  <div class="modal-backdrop editor-backdrop" id="transactionEditorModal" aria-hidden="true">
+    <div class="modal editor-modal transaction-editor-modal" role="dialog" aria-modal="true" aria-labelledby="transactionEditorTitle">
+      <button class="modal-close" id="transactionEditorClose" aria-label="Close">×</button>
+      <div class="editor-head"><p class="eyebrow">TRANSACTION CORRECTION</p><h2 id="transactionEditorTitle">Change this transaction’s category</h2><p>Correct this purchase without changing the merchant’s permanent rule.</p></div>
+      <div class="editor-body" id="transactionEditorBody"></div>
+      <div class="editor-footer"><span>Only this transaction will be affected.</span><div><button class="secondary-button" id="transactionEditorCancel">Cancel</button><button class="upload-button editor-primary" id="transactionSaveButton">Save correction</button></div></div>
     </div>
   </div>
   <div class="toast" id="toast"><span>✓</span><div><strong>Filter updated</strong><small id="toastText">Showing all cards</small></div></div>
