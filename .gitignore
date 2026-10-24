@@ -1,0 +1,37 @@
+# Personal financial data and local database state
+data/
+samples/
+backups/
+*.db
+*.db-*
+*.sqlite
+*.sqlite3
+*.xlsx
+*.xls
+*.numbers
+*.pdf
+*.csv
+
+# Private analysis and review artifacts derived from real statements
+analysis/
+dist/*-review.html
+tests/
+
+# One-off local research, review, and migration utilities
+tools/apply_*.py
+tools/build_*.py
+tools/classify_merchant_research.py
+tools/compare_ledger_research.py
+tools/export_current_taxonomy_recommendations.py
+tools/migrate_installment_reporting.py
+tools/write_raw_web_research.py
+tools/write_research_artifacts.py
+
+# Local hosting/account metadata
+.openai/
+
+# Python and operating-system artifacts
+__pycache__/
+*.pyc
+.venv/
+.DS_Store
