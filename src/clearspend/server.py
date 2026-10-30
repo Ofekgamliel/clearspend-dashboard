@@ -4,6 +4,7 @@ import argparse
 import cgi
 import hashlib
 import json
+import math
 import mimetypes
 import re
 import shutil
@@ -32,6 +33,17 @@ REPORTING_DATE_SQL = (
     "WHEN billing_month IS NOT NULL AND substr(transaction_date,1,7)=billing_month THEN transaction_date "
     "WHEN billing_month IS NOT NULL THEN billing_month||'-01' ELSE transaction_date END"
 )
+
+
+def personal_charge_sql(alias: str = "t") -> str:
+    """Positive card charge after a reviewed reimbursement adjustment."""
+    prefix = f"{alias}." if alias else ""
+    return (
+        f"CASE WHEN CAST({prefix}charged_amount AS REAL)>0 THEN "
+        f"MAX(CAST({prefix}charged_amount AS REAL)-COALESCE((SELECT "
+        "CAST(adjustment.reimbursed_amount AS REAL) FROM transaction_spending_adjustments adjustment "
+        f"WHERE adjustment.transaction_id={prefix}id),0),0) ELSE 0 END"
+    )
 
 
 def staged_reference_data(connection: sqlite3.Connection) -> tuple[list[str], list[dict]]:
@@ -325,11 +337,11 @@ def dashboard_payload(database: Path, period: str, card: str, month: str = "") -
 
         metrics = connection.execute(
             f"""SELECT
-            COALESCE(SUM(CASE WHEN CAST(charged_amount AS REAL) > 0 THEN CAST(charged_amount AS REAL) ELSE 0 END),0) spent,
-            COALESCE(ABS(SUM(CASE WHEN CAST(charged_amount AS REAL) < 0 THEN CAST(charged_amount AS REAL) ELSE 0 END)),0) refunds,
+            COALESCE(SUM({personal_charge_sql()}),0) spent,
+            COALESCE(ABS(SUM(CASE WHEN CAST(t.charged_amount AS REAL) < 0 THEN CAST(t.charged_amount AS REAL) ELSE 0 END)),0) refunds,
             COUNT(*) transactions,
             COUNT(DISTINCT {REPORTING_DATE_SQL}) active_days
-            FROM transactions WHERE {where}""",
+            FROM transactions t WHERE {where}""",
             parameters,
         ).fetchone()
         spent = float(metrics["spent"])
@@ -342,13 +354,15 @@ def dashboard_payload(database: Path, period: str, card: str, month: str = "") -
         ).fetchone()
         all_card_spending = connection.execute(
             f"""SELECT
-            COALESCE(SUM(CASE WHEN CAST(charged_amount AS REAL)>0 THEN CAST(charged_amount AS REAL) ELSE 0 END),0) spent,
-            COALESCE(ABS(SUM(CASE WHEN CAST(charged_amount AS REAL)<0 THEN CAST(charged_amount AS REAL) ELSE 0 END)),0) refunds
-            FROM transactions WHERE {REPORTING_MONTH_SQL} BETWEEN ? AND ?""",
+            COALESCE(SUM({personal_charge_sql()}),0) personal_spent,
+            COALESCE(SUM(CASE WHEN CAST(t.charged_amount AS REAL)>0 THEN CAST(t.charged_amount AS REAL) ELSE 0 END),0) charges,
+            COALESCE(ABS(SUM(CASE WHEN CAST(t.charged_amount AS REAL)<0 THEN CAST(t.charged_amount AS REAL) ELSE 0 END)),0) refunds
+            FROM transactions t WHERE {REPORTING_MONTH_SQL} BETWEEN ? AND ?""",
             period_parameters,
         ).fetchone()
         income_total = float(income_row["total"])
-        all_card_spent = float(all_card_spending["spent"])
+        all_card_spent = float(all_card_spending["personal_spent"])
+        all_card_charges = float(all_card_spending["charges"])
         all_card_refunds = float(all_card_spending["refunds"])
         net_spending = all_card_spent - all_card_refunds
         remaining = income_total - net_spending
@@ -367,9 +381,9 @@ def dashboard_payload(database: Path, period: str, card: str, month: str = "") -
         average_parameters = [(average_start or "0000-00")[:7], average_end[:7]]
         monthly_spending_rows = connection.execute(
             f"""SELECT {REPORTING_MONTH_SQL} month,
-            SUM(CASE WHEN CAST(charged_amount AS REAL)>0 THEN CAST(charged_amount AS REAL) ELSE 0 END)
-            - ABS(SUM(CASE WHEN CAST(charged_amount AS REAL)<0 THEN CAST(charged_amount AS REAL) ELSE 0 END)) net
-            FROM transactions WHERE {REPORTING_MONTH_SQL} BETWEEN ? AND ? GROUP BY {REPORTING_MONTH_SQL}""",
+            SUM({personal_charge_sql()})
+            - ABS(SUM(CASE WHEN CAST(t.charged_amount AS REAL)<0 THEN CAST(t.charged_amount AS REAL) ELSE 0 END)) net
+            FROM transactions t WHERE {REPORTING_MONTH_SQL} BETWEEN ? AND ? GROUP BY {REPORTING_MONTH_SQL}""",
             average_parameters,
         ).fetchall()
         monthly_spending = {row["month"]: float(row["net"]) for row in monthly_spending_rows}
@@ -397,7 +411,7 @@ def dashboard_payload(database: Path, period: str, card: str, month: str = "") -
             f"""SELECT t.provider,t.card_last4,
             COALESCE((SELECT i.product_name FROM imports i WHERE i.provider=t.provider AND i.card_last4=t.card_last4
                       AND i.product_name IS NOT NULL ORDER BY i.id LIMIT 1), UPPER(t.provider)) product_name,
-            ROUND(SUM(CASE WHEN CAST(t.charged_amount AS REAL)>0 THEN CAST(t.charged_amount AS REAL) ELSE 0 END),2) amount,
+            ROUND(SUM({personal_charge_sql()}),2) amount,
             COUNT(*) transactions
             FROM transactions t WHERE COALESCE(t.billing_month,substr(t.billing_date,1,7),substr(t.transaction_date,1,7)) BETWEEN ? AND ?
             GROUP BY t.provider,t.card_last4 ORDER BY amount DESC""",
@@ -410,7 +424,7 @@ def dashboard_payload(database: Path, period: str, card: str, month: str = "") -
 
         categories = [dict(row) for row in connection.execute(
             f"""SELECT COALESCE(o.category,t.user_category,t.provider_category,'Needs review') category,
-            ROUND(SUM(CASE WHEN CAST(t.charged_amount AS REAL)>0 THEN CAST(t.charged_amount AS REAL) ELSE 0 END),2) amount,
+            ROUND(SUM({personal_charge_sql()}),2) amount,
             COUNT(*) transactions FROM transactions t
             LEFT JOIN transaction_category_overrides o ON o.transaction_id=t.id WHERE {where}
             GROUP BY COALESCE(o.category,t.user_category,t.provider_category,'Needs review') HAVING amount > 0 ORDER BY amount DESC""",
@@ -423,8 +437,10 @@ def dashboard_payload(database: Path, period: str, card: str, month: str = "") -
             f"""SELECT t.merchant_raw,COALESCE(o.category,t.user_category,t.provider_category,'Needs review') category,
             COALESCE(o.subcategory,t.user_subcategory) subcategory,t.provider,t.card_last4,
             t.transaction_date,t.billing_date,t.billing_month,t.billing_month_source,
-            CAST(t.charged_amount AS REAL) amount,t.charged_currency
+            CAST(t.charged_amount AS REAL) amount,{personal_charge_sql()} personal_amount,t.charged_currency,
+            a.adjustment_type,a.reimbursed_amount,a.reimbursement_date
             FROM transactions t LEFT JOIN transaction_category_overrides o ON o.transaction_id=t.id
+            LEFT JOIN transaction_spending_adjustments a ON a.transaction_id=t.id
             WHERE {where} ORDER BY COALESCE(t.billing_date,t.billing_month||'-01',t.transaction_date) DESC,t.id DESC LIMIT 6""",
             parameters,
         )]
@@ -442,7 +458,7 @@ def dashboard_payload(database: Path, period: str, card: str, month: str = "") -
                 f"""WITH purchase_rows AS (
                 SELECT t.transaction_date bucket,
                        COALESCE(o.category,t.user_category,t.provider_category,'Needs review') category,
-                       CAST(t.charged_amount AS REAL) amount,1 purchases,0 installment_plans
+                       {personal_charge_sql()} amount,1 purchases,0 installment_plans
                 FROM transactions t LEFT JOIN transaction_category_overrides o ON o.transaction_id=t.id
                 WHERE {purchase_where} AND t.installment_number IS NULL
                 UNION ALL
@@ -491,8 +507,9 @@ def dashboard_payload(database: Path, period: str, card: str, month: str = "") -
         else:
             trend_spending = [dict(row) for row in connection.execute(
                 f"""SELECT {REPORTING_MONTH_SQL} bucket,
-                ROUND(SUM(CAST(charged_amount AS REAL)),2) amount
-                FROM transactions WHERE {where} GROUP BY {REPORTING_MONTH_SQL} ORDER BY bucket""",
+                ROUND(SUM({personal_charge_sql()})+
+                  SUM(CASE WHEN CAST(t.charged_amount AS REAL)<0 THEN CAST(t.charged_amount AS REAL) ELSE 0 END),2) amount
+                FROM transactions t WHERE {where} GROUP BY {REPORTING_MONTH_SQL} ORDER BY bucket""",
                 parameters,
             )]
             trend_income = {
@@ -522,8 +539,8 @@ def dashboard_payload(database: Path, period: str, card: str, month: str = "") -
             "SELECT original_name,imported_at,status FROM imports ORDER BY id DESC LIMIT 1"
         ).fetchone()
         largest = connection.execute(
-            f"""SELECT merchant_raw,CAST(charged_amount AS REAL) amount FROM transactions
-            WHERE {where} AND CAST(charged_amount AS REAL)>0 ORDER BY amount DESC LIMIT 1""",
+            f"""SELECT merchant_raw,{personal_charge_sql()} amount FROM transactions t
+            WHERE {where} AND {personal_charge_sql()}>0 ORDER BY amount DESC LIMIT 1""",
             parameters,
         ).fetchone()
         return {
@@ -540,7 +557,7 @@ def dashboard_payload(database: Path, period: str, card: str, month: str = "") -
                 "has_income": bool(income_row["entries"]),
                 "income": round(income_total, 2),
                 "spending": round(net_spending, 2),
-                "charges": round(all_card_spent, 2),
+                "charges": round(all_card_charges, 2),
                 "refunds": round(all_card_refunds, 2),
                 "remaining": round(remaining, 2),
                 "remaining_percentage": round(remaining / income_total * 100, 1) if income_total else None,
@@ -628,11 +645,15 @@ def transactions_payload(
             provider,card_last4,source_sheet,transaction_date,billing_date,
             billing_month,billing_month_source,installment_number,installment_total,
             CAST(charged_amount AS REAL) amount,charged_currency,
+            {personal_charge_sql()} personal_amount,a.adjustment_type,
+            CAST(a.reimbursed_amount AS REAL) reimbursed_amount,
+            a.reimbursement_date,a.note reimbursement_note,
             CAST(original_amount AS REAL) original_amount,original_currency,
             transaction_type,voucher_number,notes,execution_method,exchange_rate
             FROM transactions t LEFT JOIN merchant_display_mappings d
               ON d.merchant_normalized=t.merchant_normalized
             LEFT JOIN transaction_category_overrides o ON o.transaction_id=t.id
+            LEFT JOIN transaction_spending_adjustments a ON a.transaction_id=t.id
             WHERE {where} ORDER BY COALESCE(billing_date,billing_month||'-01',transaction_date) DESC,t.id DESC LIMIT 1000""",
             parameters,
         )]
@@ -647,12 +668,12 @@ def categories_payload(database: Path, period: str, card: str, month: str = "") 
     try:
         where, parameters, period_data = filtered_where(connection, period, card, month)
         total = float(connection.execute(
-            f"SELECT COALESCE(SUM(CASE WHEN CAST(charged_amount AS REAL)>0 THEN CAST(charged_amount AS REAL) ELSE 0 END),0) FROM transactions WHERE {where}",
+            f"SELECT COALESCE(SUM({personal_charge_sql()}),0) FROM transactions t WHERE {where}",
             parameters,
         ).fetchone()[0])
         rows = [dict(row) for row in connection.execute(
             f"""SELECT COALESCE(o.category,t.user_category,t.provider_category,'Needs review') category,
-            ROUND(SUM(CASE WHEN CAST(t.charged_amount AS REAL)>0 THEN CAST(t.charged_amount AS REAL) ELSE 0 END),2) amount,
+            ROUND(SUM({personal_charge_sql()}),2) amount,
             COUNT(*) transactions,COUNT(DISTINCT COALESCE(d.canonical_group_id,t.merchant_normalized)) merchants
             FROM transactions t LEFT JOIN merchant_display_mappings d
               ON d.merchant_normalized=t.merchant_normalized
@@ -664,6 +685,423 @@ def categories_payload(database: Path, period: str, card: str, month: str = "") 
         for row in rows:
             row["share"] = round(float(row["amount"]) / total * 100, 1) if total else 0
         return {"period": period_data, "selected_card": card, "total": round(total, 2), "categories": rows}
+    finally:
+        connection.close()
+
+
+def _month_number(value: str) -> int:
+    year, month = (int(part) for part in value.split("-", 1))
+    return year * 12 + month - 1
+
+
+def _add_months(value: str, count: int) -> str:
+    number = _month_number(value) + count
+    return f"{number // 12:04d}-{number % 12 + 1:02d}"
+
+
+def _median(values: list[float]) -> float:
+    ordered = sorted(values)
+    if not ordered:
+        return 0.0
+    middle = len(ordered) // 2
+    return ordered[middle] if len(ordered) % 2 else (ordered[middle - 1] + ordered[middle]) / 2
+
+
+def _month_history(
+    amounts: dict[str, float], end_month: str, cadence_months: int,
+    lifecycle_status: str = "active", end_profile_month: str | None = None,
+) -> list[dict]:
+    if not amounts:
+        return []
+    first_month = min(amounts)
+    start_month = max(_month_number(first_month), _month_number(end_month) - 11)
+    history: list[dict] = []
+    for number in range(start_month, _month_number(end_month) + 1):
+        current = f"{number // 12:04d}-{number % 12 + 1:02d}"
+        amount = round(amounts.get(current, 0.0), 2)
+        after_end = lifecycle_status == "ended" and bool(end_profile_month) and current > end_profile_month
+        expected = (
+            cadence_months > 0 and not after_end and lifecycle_status == "active"
+            and (number - _month_number(first_month)) % cadence_months == 0
+        )
+        if expected and cadence_months >= 6:
+            expected = not any(amounts.get(_add_months(current, offset), 0) for offset in (-1, 1))
+        history.append({
+            "month": current,
+            "amount": amount if amount else None,
+            "state": "charged" if amount else "missing" if expected else "not_expected",
+        })
+    return history
+
+
+def recurring_payload(
+    database: Path, period: str, card: str, month: str = "",
+) -> dict:
+    connection = sqlite3.connect(database)
+    connection.row_factory = sqlite3.Row
+    try:
+        start, end, label = period_bounds(connection, period, month)
+        start_month = (start or "0000-00")[:7]
+        end_month = (end or date.today().isoformat())[:7]
+        card_sql = ""
+        card_parameters: list[object] = []
+        if card != "all" and ":" in card:
+            provider, last4 = card.split(":", 1)
+            card_sql = " AND t.provider=? AND t.card_last4=?"
+            card_parameters = [provider, last4]
+
+        transaction_rows = connection.execute(
+            f"""SELECT COALESCE(d.canonical_group_id,t.merchant_normalized) canonical_group_id,
+            COALESCE(d.display_name,p.display_name,t.merchant_raw) display_name,
+            t.merchant_raw source_alias,
+            COALESCE(o.category,t.user_category,t.provider_category,'Needs review') category,
+            {REPORTING_MONTH_SQL} report_month,CAST(t.charged_amount AS REAL) amount,
+            p.recurring_type,p.cadence,p.cadence_months,p.lifecycle_status,p.end_month
+            FROM transactions t
+            LEFT JOIN merchant_display_mappings d ON d.merchant_normalized=t.merchant_normalized
+            JOIN recurring_profile_members rpm
+              ON rpm.canonical_group_id=COALESCE(d.canonical_group_id,t.merchant_normalized)
+             AND rpm.merchant_normalized=t.merchant_normalized AND rpm.included=1
+            JOIN recurring_profiles p ON p.canonical_group_id=rpm.canonical_group_id
+             AND p.verdict='recurring'
+            LEFT JOIN transaction_category_overrides o ON o.transaction_id=t.id
+            WHERE CAST(t.charged_amount AS REAL)>0 AND t.installment_number IS NULL
+              AND {REPORTING_MONTH_SQL}<=?{card_sql}
+            ORDER BY report_month,t.id""",
+            [end_month, *card_parameters],
+        ).fetchall()
+        grouped: dict[tuple[str, str], dict] = {}
+        for row in transaction_rows:
+            key = (row["canonical_group_id"], row["category"])
+            item = grouped.setdefault(key, {
+                "canonical_group_id": row["canonical_group_id"],
+                "display_name": row["display_name"], "category": row["category"],
+                "recurring_type": row["recurring_type"] or "Other recurring",
+                "cadence": row["cadence"] or "Unknown",
+                "cadence_months": int(row["cadence_months"] or 0),
+                "lifecycle_status": row["lifecycle_status"] or "active",
+                "end_month": row["end_month"], "months": {}, "source_aliases": set(),
+            })
+            item["source_aliases"].add(row["source_alias"])
+            report_month = row["report_month"]
+            if report_month:
+                item["months"][report_month] = item["months"].get(report_month, 0.0) + float(row["amount"])
+
+        series: list[dict] = []
+        trend_totals: dict[str, float] = {}
+        for item in grouped.values():
+            months = item["months"]
+            if not months:
+                continue
+            recorded_months = sorted(months)
+            last_month = recorded_months[-1]
+            cadence_months = item["cadence_months"]
+            lifecycle = item["lifecycle_status"]
+            profile_end = item["end_month"]
+            actual = months.get(start_month) if period == "month" else None
+            annual_state = None
+            due_month = None
+            if period == "month" and cadence_months == 12:
+                if actual is not None:
+                    annual_state = "paid"
+                    due_month = start_month
+                else:
+                    due_month = _add_months(last_month, 12)
+                    distance = _month_number(start_month) - _month_number(due_month)
+                    annual_state = "upcoming" if distance == -1 else "due" if distance == 0 else "overdue" if distance > 0 else None
+                    if annual_state is None:
+                        continue
+            if period == "month":
+                if last_month > end_month or (lifecycle == "ended" and profile_end and start_month > profile_end):
+                    continue
+            elif not any(start_month <= current <= end_month for current in recorded_months):
+                continue
+
+            scoped_amount = round(sum(value for current, value in months.items() if start_month <= current <= end_month), 2)
+            scoped_months = [current for current in recorded_months if start_month <= current <= end_month]
+            previous_amounts = [months[current] for current in recorded_months[:-1]]
+            typical = _median(list(months.values()))
+            increased = bool(previous_amounts and months[last_month] > previous_amounts[-1] * 1.15)
+            overdue = cadence_months > 0 and _month_number(end_month) - _month_number(last_month) > max(cadence_months + 1, 2)
+            if lifecycle != "active":
+                status = lifecycle
+            elif annual_state:
+                status = annual_state
+            elif actual is None and period == "month":
+                status = "missing" if overdue else "expected"
+            elif increased:
+                status = "increased"
+            elif item["recurring_type"] == "Usage-based recurring":
+                status = "variable"
+            else:
+                status = "confirmed"
+            if annual_state == "paid":
+                coverage = f"Paid {start_month}; next {_add_months(start_month, 12)}"
+            elif annual_state:
+                coverage = f"{annual_state.title()} {due_month}"
+            elif item["recurring_type"] == "Usage-based recurring":
+                recent = list(months.values())[-6:]
+                coverage = f"Recent range {min(recent):.2f}–{max(recent):.2f}"
+            else:
+                coverage = f"Expected {_add_months(last_month, cadence_months)}" if cadence_months else "No reliable schedule"
+            amount = actual if period == "month" else scoped_amount / max(len({current for current in recorded_months if start_month <= current <= end_month}), 1) if period == "year" else scoped_amount
+            row = {
+                **{key: item[key] for key in (
+                    "canonical_group_id", "display_name", "category", "recurring_type",
+                    "cadence", "cadence_months", "lifecycle_status", "end_month",
+                )},
+                "source_aliases": sorted(item["source_aliases"]),
+                "series_id": f"{item['canonical_group_id']}\u0000{item['category']}",
+                "amount": round(amount, 2) if amount is not None else None,
+                "amount_kind": "billed" if period == "month" else "monthly_average" if period == "year" else "period_total",
+                "coverage": coverage, "status": status, "last_billed_month": last_month,
+                "billed_months": len(scoped_months), "typical_amount": round(typical, 2),
+                "history": _month_history(months, end_month, cadence_months, lifecycle, profile_end),
+            }
+            series.append(row)
+            for current, value in months.items():
+                if start_month <= current <= end_month:
+                    trend_totals[current] = trend_totals.get(current, 0.0) + value
+
+        series.sort(key=lambda item: (-(item["amount"] or 0), item["display_name"]))
+
+        installment_rows = connection.execute(
+            f"""SELECT t.provider,t.card_last4,COALESCE(d.canonical_group_id,t.merchant_normalized) canonical_group_id,
+            COALESCE(d.display_name,t.merchant_raw) display_name,t.merchant_raw source_alias,
+            COALESCE(o.category,t.user_category,t.provider_category,'Needs review') category,
+            t.transaction_date,t.original_amount,t.installment_number,t.installment_total,
+            {REPORTING_MONTH_SQL} report_month,CAST(t.charged_amount AS REAL) amount
+            FROM transactions t LEFT JOIN merchant_display_mappings d ON d.merchant_normalized=t.merchant_normalized
+            LEFT JOIN transaction_category_overrides o ON o.transaction_id=t.id
+            WHERE CAST(t.charged_amount AS REAL)>0 AND t.installment_number IS NOT NULL
+              AND {REPORTING_MONTH_SQL}<=?{card_sql} ORDER BY report_month,t.id""",
+            [end_month, *card_parameters],
+        ).fetchall()
+        plans: dict[tuple, dict] = {}
+        for row in installment_rows:
+            key = (row["provider"], row["card_last4"], row["canonical_group_id"], row["transaction_date"], row["original_amount"], row["installment_total"])
+            plan = plans.setdefault(key, {"display_name": row["display_name"], "source_alias": row["source_alias"], "category": row["category"], "total": int(row["installment_total"] or 0), "rows": []})
+            plan["rows"].append(dict(row))
+        commitments: list[dict] = []
+        for plan in plans.values():
+            scoped = [row for row in plan["rows"] if start_month <= row["report_month"] <= end_month]
+            if not scoped:
+                continue
+            current = max(int(row["installment_number"] or 0) for row in plan["rows"])
+            paid = sum(float(row["amount"]) for row in plan["rows"])
+            charge = _median([float(row["amount"]) for row in plan["rows"]])
+            remaining_count = max(plan["total"] - current, 0)
+            history_amounts: dict[str, float] = {}
+            for row in plan["rows"]:
+                history_amounts[row["report_month"]] = history_amounts.get(row["report_month"], 0.0) + float(row["amount"])
+            commitments.append({
+                "display_name": plan["display_name"], "source_alias": plan["source_alias"], "category": plan["category"],
+                "progress": f"{current} / {plan['total']}", "current_installment": current,
+                "total_installments": plan["total"], "charge": round(charge, 2),
+                "paid": round(paid, 2), "remaining": round(remaining_count * charge, 2),
+                "remaining_count": remaining_count, "status": "active" if remaining_count else "completed",
+                "history": _month_history(history_amounts, end_month, 0),
+            })
+        commitments.sort(key=lambda item: (-item["remaining"], item["display_name"]))
+
+        recurring_billed = round(sum(
+            sum(float(row["amount"]) for row in transaction_rows if row["canonical_group_id"] == item["canonical_group_id"] and row["category"] == item["category"] and start_month <= row["report_month"] <= end_month)
+            for item in series
+        ), 2)
+        installment_billed = round(sum(float(row["amount"]) for row in installment_rows if start_month <= row["report_month"] <= end_month), 2)
+        month_count = max(len({
+            row["report_month"] for row in connection.execute(
+                f"SELECT {REPORTING_MONTH_SQL} report_month FROM transactions t WHERE {REPORTING_MONTH_SQL} BETWEEN ? AND ?{card_sql}",
+                [start_month, end_month, *card_parameters],
+            ) if row["report_month"]
+        }), 1)
+        spending = float(connection.execute(
+            f"SELECT COALESCE(SUM(CASE WHEN CAST(t.charged_amount AS REAL)>0 THEN CAST(t.charged_amount AS REAL) ELSE 0 END),0) FROM transactions t WHERE {REPORTING_MONTH_SQL} BETWEEN ? AND ?{card_sql}",
+            [start_month, end_month, *card_parameters],
+        ).fetchone()[0])
+        verdicts = connection.execute(
+            """SELECT SUM(review_count) reviewed,
+            SUM(CASE WHEN verdict='recurring' THEN review_count ELSE 0 END) recurring,
+            SUM(CASE WHEN verdict='not_recurring' THEN review_count ELSE 0 END) not_recurring
+            FROM recurring_profiles"""
+        ).fetchone()
+        attention = sum(item["status"] in {"missing", "increased", "due", "overdue", "unknown"} for item in series)
+        recurring_average = recurring_billed if period == "month" else recurring_billed / month_count
+        installment_average = installment_billed if period == "month" else installment_billed / month_count
+        return {
+            "period": {"key": period, "start": start, "end": end, "label": label},
+            "selected_card": card,
+            "metrics": {
+                "recurring_billed": recurring_billed, "recurring_average": round(recurring_average, 2),
+                "active_series": len(series), "needs_attention": attention,
+                "installment_billed": installment_billed, "installment_average": round(installment_average, 2),
+                "installment_plans": len(commitments),
+                "recurring_share": round(recurring_billed / spending * 100, 1) if spending else 0,
+                "installment_share": round(installment_billed / spending * 100, 1) if spending else 0,
+            },
+            "series": series, "commitments": commitments,
+            "trend": [{"month": current, "amount": round(value, 2)} for current, value in sorted(trend_totals.items())],
+            "verdict_summary": {
+                "reviewed": int(verdicts["reviewed"] or 0),
+                "recurring": int(verdicts["recurring"] or 0),
+                "not_recurring": int(verdicts["not_recurring"] or 0),
+                "unresolved": 0,
+            },
+        }
+    finally:
+        connection.close()
+
+
+def save_recurring_profile(
+    database: Path, canonical_group_id: str, recurring_type: str,
+    cadence: str, lifecycle_status: str, end_month: str,
+) -> dict:
+    canonical_group_id = canonical_group_id.strip()
+    allowed_types = {"Fixed recurring", "Usage-based recurring", "Scheduled obligation", "Other recurring"}
+    cadence_months = {"Weekly": 0, "Monthly": 1, "Every 2 months": 2, "Quarterly": 3, "Every 6 months": 6, "Yearly": 12, "Custom": 0, "Irregular": 0, "Unknown": 0}
+    lifecycle_status = lifecycle_status.strip().lower()
+    if not canonical_group_id:
+        raise ValueError("A recurring profile is required")
+    if recurring_type not in allowed_types:
+        raise ValueError("Invalid recurring type")
+    if cadence not in cadence_months:
+        raise ValueError("Invalid cadence")
+    if lifecycle_status not in {"active", "ended", "paused", "unknown"}:
+        raise ValueError("Invalid lifecycle status")
+    end_month = end_month.strip()
+    if lifecycle_status == "ended" and end_month and not re.fullmatch(r"\d{4}-(0[1-9]|1[0-2])", end_month):
+        raise ValueError("End month must use YYYY-MM")
+    if lifecycle_status != "ended":
+        end_month = ""
+    connection = sqlite3.connect(database)
+    connection.row_factory = sqlite3.Row
+    try:
+        existing = connection.execute(
+            "SELECT * FROM recurring_profiles WHERE canonical_group_id=? AND verdict='recurring'",
+            (canonical_group_id,),
+        ).fetchone()
+        if not existing:
+            raise ValueError("Recurring profile was not found")
+        connection.execute(
+            """UPDATE recurring_profiles SET recurring_type=?,cadence=?,cadence_months=?,
+            lifecycle_status=?,end_month=?,updated_at=? WHERE canonical_group_id=?""",
+            (recurring_type, cadence, cadence_months[cadence], lifecycle_status,
+             end_month or None, datetime.now().isoformat(timespec="seconds"), canonical_group_id),
+        )
+        connection.commit()
+        return dict(connection.execute(
+            "SELECT * FROM recurring_profiles WHERE canonical_group_id=?", (canonical_group_id,)
+        ).fetchone())
+    finally:
+        connection.close()
+
+
+def manage_recurring_profile(
+    database: Path, canonical_group_id: str, verdict: str,
+    recurring_type: str = "", cadence: str = "",
+    lifecycle_status: str = "active", end_month: str = "",
+    included_aliases: list[str] | None = None,
+) -> dict:
+    canonical_group_id = canonical_group_id.strip()
+    verdict = verdict.strip()
+    recurring_type = recurring_type.strip()
+    cadence = cadence.strip()
+    lifecycle_status = lifecycle_status.strip().lower()
+    end_month = end_month.strip()
+    allowed_types = {"Fixed recurring", "Usage-based recurring", "Scheduled obligation", "Other recurring"}
+    cadence_months = {"Weekly": 0, "Monthly": 1, "Every 2 months": 2, "Quarterly": 3, "Every 6 months": 6, "Yearly": 12, "Custom": 0, "Irregular": 0, "Unknown": 0}
+    if not canonical_group_id:
+        raise ValueError("A merchant group is required")
+    if verdict not in {"recurring", "not_recurring"}:
+        raise ValueError("Invalid recurring verdict")
+    if verdict == "recurring":
+        if recurring_type not in allowed_types:
+            raise ValueError("Invalid recurring type")
+        if cadence not in cadence_months:
+            raise ValueError("Invalid cadence")
+        if lifecycle_status not in {"active", "ended", "paused", "unknown"}:
+            raise ValueError("Invalid lifecycle status")
+        if lifecycle_status == "ended" and not end_month:
+            raise ValueError("An end month is required for an ended profile")
+        if end_month and not re.fullmatch(r"\d{4}-(0[1-9]|1[0-2])", end_month):
+            raise ValueError("End month must use YYYY-MM")
+        if lifecycle_status != "ended":
+            end_month = ""
+    connection = sqlite3.connect(database)
+    connection.row_factory = sqlite3.Row
+    try:
+        merchant_rows = connection.execute(
+            """SELECT DISTINCT t.merchant_normalized,
+            COALESCE(d.display_name,t.merchant_raw) display_name
+            FROM transactions t
+            LEFT JOIN merchant_display_mappings d ON d.merchant_normalized=t.merchant_normalized
+            WHERE COALESCE(d.canonical_group_id,t.merchant_normalized)=?
+            ORDER BY t.merchant_normalized""",
+            (canonical_group_id,),
+        ).fetchall()
+        if not merchant_rows:
+            raise ValueError("Merchant group was not found")
+        merchant = merchant_rows[0]
+        available_aliases = {row["merchant_normalized"] for row in merchant_rows}
+        if included_aliases is None:
+            selected_aliases = set(available_aliases)
+        else:
+            selected_aliases = {str(alias).strip() for alias in included_aliases if str(alias).strip()}
+            if not selected_aliases.issubset(available_aliases):
+                raise ValueError("A recurring alias does not belong to this merchant group")
+        if verdict == "recurring" and not selected_aliases:
+            raise ValueError("Select at least one original merchant name for recurring tracking")
+        existing = connection.execute(
+            "SELECT * FROM recurring_profiles WHERE canonical_group_id=?",
+            (canonical_group_id,),
+        ).fetchone()
+        now = datetime.now().astimezone().isoformat()
+        if verdict == "not_recurring":
+            if existing:
+                connection.execute(
+                    """UPDATE recurring_profiles SET verdict='not_recurring',display_name=?,updated_at=?
+                    WHERE canonical_group_id=?""",
+                    (merchant["display_name"], now, canonical_group_id),
+                )
+            else:
+                connection.execute(
+                    """INSERT INTO recurring_profiles(
+                    canonical_group_id,display_name,verdict,lifecycle_status,updated_at
+                    ) VALUES(?,?,'not_recurring','active',?)""",
+                    (canonical_group_id, merchant["display_name"], now),
+                )
+            selected_aliases = set()
+        else:
+            connection.execute(
+                """INSERT INTO recurring_profiles(
+                canonical_group_id,display_name,verdict,recurring_type,cadence,cadence_months,
+                lifecycle_status,end_month,updated_at
+                ) VALUES(?,?,'recurring',?,?,?,?,?,?)
+                ON CONFLICT(canonical_group_id) DO UPDATE SET
+                display_name=excluded.display_name,verdict='recurring',
+                recurring_type=excluded.recurring_type,cadence=excluded.cadence,
+                cadence_months=excluded.cadence_months,
+                lifecycle_status=excluded.lifecycle_status,end_month=excluded.end_month,
+                updated_at=excluded.updated_at""",
+                (canonical_group_id, merchant["display_name"], recurring_type, cadence,
+                 cadence_months[cadence], lifecycle_status, end_month or None, now),
+            )
+        for alias in available_aliases:
+            connection.execute(
+                """INSERT INTO recurring_profile_members(
+                canonical_group_id,merchant_normalized,included,updated_at
+                ) VALUES(?,?,?,?)
+                ON CONFLICT(canonical_group_id,merchant_normalized) DO UPDATE SET
+                included=excluded.included,updated_at=excluded.updated_at""",
+                (canonical_group_id, alias, int(alias in selected_aliases), now),
+            )
+        connection.commit()
+        result = dict(connection.execute(
+            "SELECT * FROM recurring_profiles WHERE canonical_group_id=?",
+            (canonical_group_id,),
+        ).fetchone())
+        result["included_aliases"] = sorted(selected_aliases)
+        return result
     finally:
         connection.close()
 
@@ -758,6 +1196,19 @@ def merchants_payload(database: Path) -> dict:
             GROUP BY t.merchant_normalized,d.canonical_group_id,d.display_name,m.category,m.subcategory
             ORDER BY transactions DESC,t.merchant_normalized"""
         )]
+        profiles = {
+            row["canonical_group_id"]: dict(row) for row in connection.execute(
+                """SELECT canonical_group_id,verdict,recurring_type,cadence,cadence_months,
+                lifecycle_status,end_month,updated_at FROM recurring_profiles"""
+            )
+        }
+        recurring_members = {
+            (row["canonical_group_id"], row["merchant_normalized"]): bool(row["included"])
+            for row in connection.execute(
+                """SELECT canonical_group_id,merchant_normalized,included
+                FROM recurring_profile_members"""
+            )
+        }
         grouped: dict[str, dict] = {}
         for alias in aliases:
             group_id = alias["canonical_group_id"]
@@ -770,6 +1221,7 @@ def merchants_payload(database: Path) -> dict:
                     "last_seen": alias["last_seen"],
                     "categories": [],
                     "aliases": [],
+                    "recurring_profile": profiles.get(group_id),
                 }
             group = grouped[group_id]
             group["transactions"] += int(alias["transactions"])
@@ -784,7 +1236,16 @@ def merchants_payload(database: Path) -> dict:
                 "category": alias["category"],
                 "subcategory": alias["subcategory"],
                 "transactions": int(alias["transactions"]),
+                "recurring_included": recurring_members.get(
+                    (group_id, alias["merchant_normalized"]), False
+                ),
             })
+        for group in grouped.values():
+            if group["recurring_profile"]:
+                group["recurring_profile"]["included_aliases"] = [
+                    alias["merchant_normalized"] for alias in group["aliases"]
+                    if alias["recurring_included"]
+                ]
         merchants = sorted(grouped.values(), key=lambda item: (-item["transactions"], item["display_name"]))
         categories = [row[0] for row in connection.execute(
             """SELECT DISTINCT category FROM (
@@ -799,6 +1260,11 @@ def merchants_payload(database: Path) -> dict:
                 "mapped_aliases": len(aliases),
                 "transactions": sum(item["transactions"] for item in merchants),
                 "multiple_categories": sum(len(item["categories"]) > 1 for item in merchants),
+                "recurring": sum(
+                    item["recurring_profile"] is not None
+                    and item["recurring_profile"]["verdict"] == "recurring"
+                    for item in merchants
+                ),
             },
             "categories": categories,
             "merchants": merchants,
@@ -897,6 +1363,81 @@ def save_transaction_category(database: Path, transaction_id: int, category: str
         connection.close()
 
 
+def save_transaction_adjustment(
+    database: Path,
+    transaction_id: int,
+    reimbursed_amount: float,
+    reimbursement_date: str,
+    note: str,
+    remove: bool = False,
+) -> dict:
+    if transaction_id <= 0:
+        raise ValueError("Transaction is required")
+    connection = sqlite3.connect(database)
+    connection.row_factory = sqlite3.Row
+    try:
+        row = connection.execute(
+            "SELECT merchant_raw,CAST(charged_amount AS REAL) amount FROM transactions WHERE id=?",
+            (transaction_id,),
+        ).fetchone()
+        if not row:
+            raise ValueError("Transaction was not found")
+        charge = float(row["amount"] or 0)
+        if charge <= 0:
+            raise ValueError("Only positive card charges can be marked as reimbursed")
+        if remove:
+            connection.execute(
+                "DELETE FROM transaction_spending_adjustments WHERE transaction_id=?",
+                (transaction_id,),
+            )
+            connection.commit()
+            return {
+                "status": "removed", "transaction_id": transaction_id,
+                "merchant_raw": row["merchant_raw"], "personal_amount": round(charge, 2),
+            }
+        if not math.isfinite(reimbursed_amount) or reimbursed_amount <= 0:
+            raise ValueError("Reimbursed amount must be greater than zero")
+        if reimbursed_amount > charge + 0.005:
+            raise ValueError("Reimbursed amount cannot exceed the original card charge")
+        reimbursed_amount = round(min(reimbursed_amount, charge), 2)
+        reimbursement_date = reimbursement_date.strip()
+        if reimbursement_date:
+            try:
+                date.fromisoformat(reimbursement_date)
+            except ValueError as error:
+                raise ValueError("Reimbursement date must be a valid date") from error
+        note = note.strip()
+        if len(note) > 500:
+            raise ValueError("Note must be 500 characters or fewer")
+        adjustment_type = (
+            "full_reimbursement" if abs(reimbursed_amount - charge) < 0.005
+            else "partial_reimbursement"
+        )
+        now = datetime.now().astimezone().isoformat()
+        connection.execute(
+            """INSERT INTO transaction_spending_adjustments(
+            transaction_id,adjustment_type,reimbursed_amount,reimbursement_date,note,updated_at
+            ) VALUES(?,?,?,?,?,?) ON CONFLICT(transaction_id) DO UPDATE SET
+            adjustment_type=excluded.adjustment_type,
+            reimbursed_amount=excluded.reimbursed_amount,
+            reimbursement_date=excluded.reimbursement_date,
+            note=excluded.note,updated_at=excluded.updated_at""",
+            (
+                transaction_id, adjustment_type, f"{reimbursed_amount:.2f}",
+                reimbursement_date or None, note or None, now,
+            ),
+        )
+        connection.commit()
+        return {
+            "status": "saved", "transaction_id": transaction_id,
+            "merchant_raw": row["merchant_raw"], "adjustment_type": adjustment_type,
+            "reimbursed_amount": reimbursed_amount,
+            "personal_amount": round(charge - reimbursed_amount, 2),
+        }
+    finally:
+        connection.close()
+
+
 class ClearSpendHandler(BaseHTTPRequestHandler):
     server_version = "ClearSpend/0.1"
 
@@ -966,6 +1507,22 @@ class ClearSpendHandler(BaseHTTPRequestHandler):
             except Exception as error:
                 self.send_json({"error": str(error)}, 500)
             return
+        if parsed.path == "/api/recurring":
+            query = parse_qs(parsed.query)
+            period = query.get("period", ["month"])[0]
+            if period not in {"month", "year", "all"}:
+                self.send_json({"error": "Invalid period"}, 400)
+                return
+            try:
+                self.send_json(recurring_payload(
+                    self.app.database,
+                    period,
+                    query.get("card", ["all"])[0],
+                    query.get("month", [""])[0],
+                ))
+            except Exception as error:
+                self.send_json({"error": str(error)}, 500)
+            return
         self.serve_static(parsed.path)
 
     def do_POST(self) -> None:
@@ -1014,6 +1571,59 @@ class ClearSpendHandler(BaseHTTPRequestHandler):
                     str(payload.get("subcategory", "")),
                 ))
             except (TypeError, ValueError, json.JSONDecodeError) as error:
+                self.send_json({"error": str(error)}, 400)
+            except Exception as error:
+                self.send_json({"error": str(error)}, 500)
+            return
+        if parsed_path == "/api/transaction-adjustment":
+            try:
+                length = min(int(self.headers.get("Content-Length", "0")), 1024 * 1024)
+                payload = json.loads(self.rfile.read(length) or b"{}")
+                self.send_json(save_transaction_adjustment(
+                    self.app.database,
+                    int(payload.get("transaction_id", 0)),
+                    float(payload.get("reimbursed_amount", 0) or 0),
+                    str(payload.get("reimbursement_date", "")),
+                    str(payload.get("note", "")),
+                    bool(payload.get("remove", False)),
+                ))
+            except (TypeError, ValueError, json.JSONDecodeError) as error:
+                self.send_json({"error": str(error)}, 400)
+            except Exception as error:
+                self.send_json({"error": str(error)}, 500)
+            return
+        if parsed_path == "/api/recurring-profile":
+            try:
+                length = min(int(self.headers.get("Content-Length", "0")), 1024 * 1024)
+                payload = json.loads(self.rfile.read(length) or b"{}")
+                self.send_json(save_recurring_profile(
+                    self.app.database,
+                    str(payload.get("canonical_group_id", "")),
+                    str(payload.get("recurring_type", "")),
+                    str(payload.get("cadence", "")),
+                    str(payload.get("lifecycle_status", "")),
+                    str(payload.get("end_month", "")),
+                ))
+            except (ValueError, json.JSONDecodeError) as error:
+                self.send_json({"error": str(error)}, 400)
+            except Exception as error:
+                self.send_json({"error": str(error)}, 500)
+            return
+        if parsed_path == "/api/recurring-profile/manage":
+            try:
+                length = min(int(self.headers.get("Content-Length", "0")), 1024 * 1024)
+                payload = json.loads(self.rfile.read(length) or b"{}")
+                self.send_json(manage_recurring_profile(
+                    self.app.database,
+                    str(payload.get("canonical_group_id", "")),
+                    str(payload.get("verdict", "")),
+                    str(payload.get("recurring_type", "")),
+                    str(payload.get("cadence", "")),
+                    str(payload.get("lifecycle_status", "active")),
+                    str(payload.get("end_month", "")),
+                    payload.get("included_aliases") if isinstance(payload.get("included_aliases"), list) else None,
+                ))
+            except (ValueError, json.JSONDecodeError) as error:
                 self.send_json({"error": str(error)}, 400)
             except Exception as error:
                 self.send_json({"error": str(error)}, 500)

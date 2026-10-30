@@ -9,49 +9,27 @@
 </head>
 <body>
   <div class="shell">
-    <aside class="sidebar">
-      <a class="brand" href="#" data-action="overview" aria-label="ClearSpend home">
-        <span class="brand-mark"><span></span></span>
-        <span>clear<span>spend</span></span>
-      </a>
-
-      <nav aria-label="Primary navigation">
-        <p class="nav-label">Workspace</p>
-        <a class="nav-item active" href="#" data-action="overview"><svg viewBox="0 0 24 24"><path d="M4 13h6V4H4v9Zm0 7h6v-5H4v5Zm10 0h6v-9h-6v9Zm0-16v5h6V4h-6Z"/></svg>Overview</a>
-        <a class="nav-item" href="#transactions" data-view="transactions"><svg viewBox="0 0 24 24"><path d="M6 2h12a2 2 0 0 1 2 2v18l-4-2-4 2-4-2-4 2V4a2 2 0 0 1 2-2Zm2 5v2h8V7H8Zm0 4v2h8v-2H8Zm0 4v2h5v-2H8Z"/></svg>Transactions <span class="nav-count" id="navTransactionCount">—</span></a>
-        <a class="nav-item" href="#categories" data-view="categories"><svg viewBox="0 0 24 24"><path d="m21 12-9 9-9-9V5a2 2 0 0 1 2-2h7l9 9ZM8 9.5A1.5 1.5 0 1 0 8 6.5a1.5 1.5 0 0 0 0 3Z"/></svg>Categories</a>
-        <a class="nav-item" href="#cards" data-action="cards"><svg viewBox="0 0 24 24"><path d="M3 5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5Zm2 3h14V5H5v3Zm0 4v7h14v-7H5Z"/></svg>Cards</a>
-
-        <p class="nav-label">Manage</p>
-        <a class="nav-item" href="#merchants" data-action="merchants"><svg viewBox="0 0 24 24"><path d="M12 12a5 5 0 1 0 0-10 5 5 0 0 0 0 10Zm-9 9a9 9 0 0 1 18 0H3Z"/></svg>Merchants</a>
-        <a class="nav-item" href="#insights" data-action="insights"><svg viewBox="0 0 24 24"><path d="M11 2h2v3h-2V2Zm6.4 2.2 1.4 1.4-2.1 2.1-1.4-1.4 2.1-2.1ZM5.2 5.6l1.4-1.4 2.1 2.1-1.4 1.4-2.1-2.1ZM12 7a5 5 0 0 1 3 9v2H9v-2a5 5 0 0 1 3-9Zm-3 13h6v2H9v-2Z"/></svg>Smart insights <span class="dot"></span></a>
-        <a class="nav-item" href="#" data-action="recurring"><svg viewBox="0 0 24 24"><path d="M12 2a10 10 0 1 1-7.1 2.9A10 10 0 0 1 12 2Zm-1 5v6l5 3 1-1.7-4-2.3V7h-2Z"/></svg>Recurring</a>
-        <a class="nav-item" href="#" data-action="mapping"><svg viewBox="0 0 24 24"><path d="M12 2a5 5 0 0 1 5 5v1h1a3 3 0 0 1 3 3v8a3 3 0 0 1-3 3H6a3 3 0 0 1-3-3v-8a3 3 0 0 1 3-3h1V7a5 5 0 0 1 5-5Zm0 2a3 3 0 0 0-3 3v1h6V7a3 3 0 0 0-3-3Z"/></svg>Import & mapping</a>
-      </nav>
-
-      <div class="privacy-card">
-        <div class="privacy-icon">✓</div>
-        <div><strong>Your data stays local</strong><p>Nothing leaves this device.</p></div>
-      </div>
-      <div class="profile">
-        <span class="avatar">OG</span>
-        <div><strong>Ofek</strong><small>Personal workspace</small></div>
-        <button aria-label="Profile menu" data-action="profile">•••</button>
-      </div>
-    </aside>
-
     <main>
       <header class="topbar">
-        <div>
-          <p class="eyebrow">PERSONAL FINANCE</p>
-          <h1>Good morning, Ofek</h1>
-          <p class="subtitle">Your statements, normalized and analyzed locally.</p>
-        </div>
+        <a class="header-brand" href="#" data-action="overview" aria-label="ClearSpend home">
+          <span class="header-brand-mark"><span></span></span>
+          <span>clear<em>spend</em></span>
+        </a>
         <div class="header-actions">
-          <button class="icon-button" data-action="notifications" aria-label="Notifications"><svg viewBox="0 0 24 24"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9Zm-8 11h4a2 2 0 0 1-4 0Z"/></svg><span></span></button>
-          <button class="upload-button" id="uploadBtn"><svg viewBox="0 0 24 24"><path d="M11 16h2V8l3.5 3.5 1.4-1.4L12 4.2l-5.9 5.9 1.4 1.4L11 8v8ZM5 20h14v-2H5v2Z"/></svg>Import statement</button>
+          <button class="income-header-toggle" id="incomeHeaderToggle" type="button">Hide income</button>
+          <button class="manage-button" id="manageMenuButton" type="button" aria-label="Manage data" aria-expanded="false" aria-controls="manageMenu" title="Manage data">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h10M18 7h2M4 17h2M10 17h10M14 4v6M6 14v6"/><circle cx="14" cy="7" r="2.5"/><circle cx="8" cy="17" r="2.5"/></svg>
+          </button>
         </div>
       </header>
+
+      <div class="manage-menu" id="manageMenu" hidden>
+        <button id="uploadBtn" type="button"><i>↑</i><span><strong>Import statements</strong><small>Stage, review, and import new files</small></span></button>
+        <button type="button" data-action="merchants"><i>♙</i><span><strong>Merchants</strong><small>Display names and category rules</small></span></button>
+        <button type="button" data-action="mapping"><i>?</i><span><strong>Needs review</strong><small>Unmapped merchants and transactions</small></span></button>
+        <button type="button" data-action="duplicates"><i>⇅</i><span><strong>Import history</strong><small>Duplicate handling and import audit</small></span></button>
+        <button type="button" data-action="recurring"><i>↻</i><span><strong>Recurring rules</strong><small>Add, remove, and configure recurring merchants</small></span></button>
+      </div>
 
       <section class="filterbar" aria-label="Dashboard filters">
         <div class="segmented" id="periodTabs">
@@ -59,10 +37,10 @@
           <button data-period="year">Latest year</button>
           <button data-period="all">All time</button>
         </div>
-        <div class="spacer"></div>
-        <button class="income-show-button" id="incomeShowButton" type="button" hidden>Show income</button>
-        <label class="select-wrap"><span>Card</span><select id="cardFilter"><option value="all">All cards</option></select></label>
-        <label class="date-button"><svg viewBox="0 0 24 24"><path d="M7 2h2v2h6V2h2v2h2a2 2 0 0 1 2 2v14H3V6a2 2 0 0 1 2-2h2V2ZM5 9v9h14V9H5Z"/></svg><select id="monthFilter" aria-label="Choose month"><option value="">Latest month</option></select><b>⌄</b></label>
+        <div class="filter-controls">
+          <label class="date-button"><svg viewBox="0 0 24 24"><path d="M7 2h2v2h6V2h2v2h2a2 2 0 0 1 2 2v14H3V6a2 2 0 0 1 2-2h2V2ZM5 9v9h14V9H5Z"/></svg><select id="monthFilter" aria-label="Choose month"><option value="">Latest month</option></select><b>⌄</b></label>
+          <label class="select-wrap"><span>Card</span><select id="cardFilter"><option value="all">All cards</option></select></label>
+        </div>
       </section>
 
       <section class="panel income-panel" id="incomePanel" aria-label="Income and remaining balance">
@@ -147,6 +125,18 @@
           <div id="insightList"><p>Loading insights…</p></div>
         </article>
 
+        <article class="panel recurring-panel" id="recurringPanel">
+          <div class="panel-head"><div><h2>Recurring &amp; commitments</h2><p id="recurringPeriod">Loading reviewed recurring profiles…</p></div><button class="text-button" id="openRecurringModal" type="button">View all details →</button></div>
+          <div class="recurring-summary" id="recurringSummary"><div><span>Recurring charges</span><strong>—</strong><small>Loading…</small></div></div>
+          <div class="recurring-preview">
+            <div class="recurring-lists">
+              <section class="recurring-list-group"><button class="recurring-list-head" type="button" data-recurring-open="series"><span><i></i><strong>Recurring &amp; scheduled</strong></span><small id="recurringSeriesCount">—</small></button><div class="recurring-list" id="recurringSeriesPreview"><p>Loading…</p></div></section>
+              <section class="recurring-list-group commitments"><button class="recurring-list-head" type="button" data-recurring-open="commitments"><span><i></i><strong>Commitments</strong></span><small id="recurringCommitmentCount">—</small></button><div class="recurring-list" id="recurringCommitmentPreview"><p>Loading…</p></div></section>
+            </div>
+            <aside class="recurring-burden"><h3>Spending composition</h3><p>Share of actual spending in the selected period. Expected future charges are never included.</p><div class="recurring-burden-bar" id="recurringBurdenBar" role="img" aria-label="Spending composition"><i></i><i></i><i class="burden-other"></i></div><div class="recurring-burden-legend" id="recurringBurdenLegend"><span><i></i>Recurring &amp; scheduled</span><span><i></i>Installments</span><span class="burden-other"><i></i>Other spending</span></div><dl id="recurringBurdenDetails"><dt>Recurring average</dt><dd>—</dd></dl></aside>
+          </div>
+        </article>
+
         <article class="panel transactions-panel" id="transactions">
           <div class="panel-head"><div><h2>Recent transactions</h2><p>Five-column summary · open all transactions for full source details</p></div><button class="text-button" data-view="transactions">View all transactions →</button></div>
           <div class="table-wrap"><table>
@@ -193,6 +183,22 @@
       <div class="editor-head"><p class="eyebrow">TRANSACTION CORRECTION</p><h2 id="transactionEditorTitle">Change this transaction’s category</h2><p>Correct this purchase without changing the merchant’s permanent rule.</p></div>
       <div class="editor-body" id="transactionEditorBody"></div>
       <div class="editor-footer"><span>Only this transaction will be affected.</span><div><button class="secondary-button" id="transactionEditorCancel">Cancel</button><button class="upload-button editor-primary" id="transactionSaveButton">Save correction</button></div></div>
+    </div>
+  </div>
+  <div class="modal-backdrop editor-backdrop" id="spendingAdjustmentModal" aria-hidden="true">
+    <div class="modal editor-modal spending-adjustment-modal" role="dialog" aria-modal="true" aria-labelledby="spendingAdjustmentTitle">
+      <button class="modal-close" id="spendingAdjustmentClose" aria-label="Close">×</button>
+      <div class="editor-head"><p class="eyebrow">SPENDING ADJUSTMENT</p><h2 id="spendingAdjustmentTitle">Mark as reimbursed</h2><p>Keep the original card charge while correcting personal-spending statistics.</p></div>
+      <div class="editor-body" id="spendingAdjustmentBody"></div>
+      <div class="editor-footer"><span>Category, merchant rule, and imported transaction remain unchanged.</span><div><button class="adjustment-remove-button" id="spendingAdjustmentRemove" hidden>Remove adjustment</button><button class="secondary-button" id="spendingAdjustmentCancel">Cancel</button><button class="upload-button editor-primary" id="spendingAdjustmentSave">Save adjustment</button></div></div>
+    </div>
+  </div>
+  <div class="modal-backdrop" id="recurringModal" aria-hidden="true">
+    <div class="modal recurring-modal" role="dialog" aria-modal="true" aria-labelledby="recurringModalTitle">
+      <button class="modal-close" id="recurringModalClose" aria-label="Close">×</button>
+      <div class="recurring-modal-head"><div><p class="eyebrow">PLANNED SPENDING</p><h2 id="recurringModalTitle">Recurring &amp; commitments</h2><p>Reviewed recurring charges, scheduled obligations, and finite installments.</p></div><button type="button" class="manage-recurring-button" id="manageRecurringMerchants">Manage recurring merchants</button></div>
+      <div class="recurring-modal-toolbar"><div class="recurring-modal-periods" aria-label="Recurring period"><button type="button" data-recurring-period="month">Month</button><button type="button" data-recurring-period="year">Latest year</button><button type="button" data-recurring-period="all">All time</button></div><div class="recurring-modal-tabs" aria-label="Recurring view"><button type="button" data-recurring-tab="series">Recurring &amp; scheduled</button><button type="button" data-recurring-tab="commitments">Installments</button><button type="button" data-recurring-tab="verdicts">Verdict summary</button></div></div>
+      <div class="recurring-modal-body" id="recurringModalBody"><p class="loading-state">Loading recurring details…</p></div>
     </div>
   </div>
   <div class="toast" id="toast"><span>✓</span><div><strong>Filter updated</strong><small id="toastText">Showing all cards</small></div></div>

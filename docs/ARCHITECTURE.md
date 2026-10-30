@@ -51,6 +51,9 @@ The server currently exposes operations for:
 - Transactions and categories
 - Merchant mappings and merchant management
 - Transaction-specific category corrections
+- Transaction-specific full or partial reimbursement adjustments
+- Reviewed recurring profiles, merchant-level add/remove decisions, lifecycle,
+  cadence, and installment summaries
 - Import analysis and approved import commits
 
 The frontend must obtain user data through these local APIs. Do not generate a
@@ -66,9 +69,16 @@ The principal SQLite tables have separate responsibilities:
 - `merchant_display_mappings`: canonical display identities without replacing
   the original statement description.
 - `transaction_category_overrides`: exceptions applying to one transaction.
+- `transaction_spending_adjustments`: reviewed full or partial reimbursements
+  keyed to one transaction; the imported card charge remains unchanged.
 - `import_transactions`: links imports to inserted or duplicate transactions.
 - `income_imports`: income-file import audit records.
 - `income_entries`: monthly income contributions used in aggregate calculations.
+- `recurring_profiles`: reviewed recurring/not-recurring decisions and editable
+  cadence/lifecycle state keyed by canonical display identity.
+- `recurring_profile_members`: the exact normalized merchant aliases included
+  in or excluded from each recurring profile. A shared display identity does
+  not automatically make every underlying alias recurring.
 
 Do not merge these concepts. In particular, display identity, merchant category,
 and transaction-specific category are intentionally independent.

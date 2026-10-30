@@ -1,10 +1,12 @@
-const state={period:'month',month:'',card:'all',data:null,detailTransactions:[],mappingData:null,merchantData:null,activeMerchant:null,activeTransaction:null,detailMode:'',activeCategory:'',detailSort:{key:'transaction_date',direction:'desc'},categoryTransactions:[],categoryView:'grouped',categorySearch:'',categoryGroupSort:{key:'latest_date',direction:'desc'},expandedMerchantGroups:new Set(),categoryExpandedSort:new Map()};
+const state={period:'month',month:'',card:'all',data:null,detailTransactions:[],mappingData:null,merchantData:null,activeMerchant:null,activeTransaction:null,activeAdjustmentTransaction:null,detailMode:'',activeCategory:'',detailSort:{key:'transaction_date',direction:'desc'},categoryTransactions:[],categoryView:'grouped',categorySearch:'',categoryGroupSort:{key:'latest_date',direction:'desc'},expandedMerchantGroups:new Set(),categoryExpandedSort:new Map(),merchantRecurringFilter:'all',recurringCache:new Map(),recurringModalPeriod:'month',recurringTab:'series',activeRecurringSeries:'',recurringSorts:{series:{key:'display_name',direction:'asc'},commitments:{key:'remaining',direction:'desc'}}};
 const colors=['#6658e8','#41b98c','#e6a14b','#e76b77','#5b8def','#a66dd4','#42a5b3','#d17b49','#8f9b4f','#d45f9f','#62748f','#9b7b58'];
 const cardFilter=document.querySelector('#cardFilter');
 const monthFilter=document.querySelector('#monthFilter');
 const toast=document.querySelector('#toast');
 const incomePanel=document.querySelector('#incomePanel');
-const incomeShowButton=document.querySelector('#incomeShowButton');
+const incomeHeaderToggle=document.querySelector('#incomeHeaderToggle');
+const manageMenuButton=document.querySelector('#manageMenuButton');
+const manageMenu=document.querySelector('#manageMenu');
 let toastTimer;
 
 const money=value=>new Intl.NumberFormat('en-IL',{style:'currency',currency:'ILS',maximumFractionDigits:2}).format(Number(value)||0).replace('ILS','₪');
@@ -27,10 +29,12 @@ function showToast(message,title='Updated'){
 
 async function loadDashboard(announce=false){
   try{
+    state.recurringCache.clear();
     const response=await fetch(`/api/dashboard?period=${state.period}&month=${encodeURIComponent(state.month)}&card=${encodeURIComponent(state.card)}`,{cache:'no-store'});
     const data=await response.json();
     if(!response.ok)throw new Error(data.error||'Could not load dashboard');
     renderDashboard(data);
+    loadRecurringPanel();
     if(announce)showToast(`Showing ${data.period.label}`);
   }catch(error){
     document.querySelector('#spentNote').textContent='Start the ClearSpend local server to load your data.';
@@ -53,7 +57,6 @@ function renderDashboard(data){
   document.querySelector('#dailyValue').textContent=money(m.daily_average);
   document.querySelector('#activeDays').textContent=`across ${m.active_days} active days`;
   document.querySelector('#spentNote').textContent=`Calculated from ${m.transactions.toLocaleString()} imported transactions`;
-  document.querySelector('#navTransactionCount').textContent=m.transactions.toLocaleString();
   renderMonthFilter(data.available_months||[],data.period.start);
   document.querySelector('#cardsPeriod').textContent=data.period.label;
   renderCards(data.cards,data.selected_card);
@@ -96,7 +99,8 @@ function renderIncome(summary,period){
 function setIncomeVisibility(hidden){
   incomeHidden=hidden;
   incomePanel.hidden=hidden;
-  incomeShowButton.hidden=!hidden;
+  incomeHeaderToggle.textContent=hidden?'Show income':'Hide income';
+  incomeHeaderToggle.setAttribute('aria-pressed',String(!hidden));
   try{localStorage.setItem('clearspend-income-hidden',hidden?'1':'0')}catch(_error){}
   if(state.data)renderTrend(state.data.trend,state.data);
 }
@@ -105,7 +109,15 @@ let incomeHidden=false;
 try{incomeHidden=localStorage.getItem('clearspend-income-hidden')==='1'}catch(_error){}
 setIncomeVisibility(incomeHidden);
 document.querySelector('#incomeHideButton').addEventListener('click',()=>setIncomeVisibility(true));
-incomeShowButton.addEventListener('click',()=>setIncomeVisibility(false));
+incomeHeaderToggle.addEventListener('click',()=>setIncomeVisibility(!incomeHidden));
+
+function setManageMenu(show){
+  manageMenu.hidden=!show;
+  manageMenuButton.setAttribute('aria-expanded',String(show));
+}
+manageMenuButton.addEventListener('click',event=>{event.stopPropagation();setManageMenu(manageMenu.hidden)});
+manageMenu.addEventListener('click',()=>setManageMenu(false));
+document.addEventListener('click',event=>{if(!event.target.closest('#manageMenu')&&!event.target.closest('#manageMenuButton'))setManageMenu(false)});
 
 function renderMonthFilter(months,start){
   const selected=state.month||(state.period==='month'&&start?start.slice(0,7):'');
@@ -263,6 +275,8 @@ monthFilter.addEventListener('change',()=>{
 const detailModal=document.querySelector('#detailModal');
 const detailContent=document.querySelector('#detailContent');
 const detailTools=document.querySelector('#detailTools');
+const detailEyebrow=document.querySelector('#detailEyebrow');
+function setDetailEyebrow(label=''){detailEyebrow.textContent=label;detailEyebrow.hidden=!label}
 function setDetailModal(show){detailModal.classList.toggle('show',show);detailModal.setAttribute('aria-hidden',String(!show));if(show)document.querySelector('#detailClose').focus()}
 document.querySelector('#detailClose').addEventListener('click',()=>setDetailModal(false));
 detailModal.addEventListener('click',event=>{if(event.target===detailModal)setDetailModal(false)});
@@ -278,7 +292,7 @@ async function openDetail(view,source,initialSearch=''){
   setActiveNav(source);
   state.detailMode=view;state.activeCategory='';
   const isTransactions=view==='transactions';
-  document.querySelector('#detailEyebrow').textContent=isTransactions?'TRANSACTION EXPLORER':'CATEGORY BREAKDOWN';
+  setDetailEyebrow(isTransactions?'TRANSACTION EXPLORER':'CATEGORY BREAKDOWN');
   document.querySelector('#detailTitle').textContent=isTransactions?'All transactions':'All categories';
   document.querySelector('#detailSubtitle').textContent=`${state.data?.period.label||''} · ${state.card==='all'?'all cards':'selected card'}`;
   detailTools.innerHTML=isTransactions?`<label class="detail-search"><span>⌕</span><input id="transactionSearch" type="search" value="${escapeHtml(initialSearch)}" placeholder="Search merchant or category"></label>`:'';
@@ -331,16 +345,25 @@ function sortedTransactionRows(rows,sort){
   });
 }
 function fullTransactionRow(item){
+  const adjusted=Boolean(item.adjustment_type);
+  const positive=Number(item.amount)>0;
+  const reimbursementLabel=adjusted
+    ?`<i class="transaction-reimbursement-label">${item.adjustment_type==='full_reimbursement'?'Fully reimbursed':`${money(item.reimbursed_amount)} reimbursed`}</i>`:'';
+  const personalLabel=adjusted?`<small>Personal: ${sourceAmount(item.personal_amount,item.charged_currency)}</small>`:'';
+  const action=positive
+    ?`<button type="button" class="transaction-adjustment-icon${adjusted?' adjusted':''}" data-adjust-transaction="${item.id}" aria-label="${adjusted?'Edit reimbursement for':'Adjust spending for'} ${escapeHtml(item.merchant_display_name||item.merchant_raw)}" title="${adjusted?'Edit reimbursement':'Adjust spending'}">✎</button>`
+    :'<button type="button" class="transaction-adjustment-icon" aria-label="Spending adjustment unavailable for a refund transaction" title="Unavailable for refunds" disabled>✎</button>';
   return `<tr>
-    <td><strong>${escapeHtml(item.merchant_raw)}</strong><small>${item.merchant_display_name&&item.merchant_display_name!==item.merchant_raw?`Display: ${escapeHtml(item.merchant_display_name)} · `:''}${escapeHtml(item.merchant_normalized)}</small></td>
+    <td><strong>${escapeHtml(item.merchant_raw)}</strong><small>${item.merchant_display_name&&item.merchant_display_name!==item.merchant_raw?`Display: ${escapeHtml(item.merchant_display_name)} · `:''}${escapeHtml(item.merchant_normalized)}</small>${reimbursementLabel}</td>
     <td><span class="tag editable-category-tag ${item.category==='Needs review'?'amber-tag':''}"><span>${escapeHtml(item.category)}</span><button type="button" class="transaction-category-icon" data-edit-transaction="${item.id}" aria-label="Change category for ${escapeHtml(item.merchant_display_name||item.merchant_raw)}" title="Change category">✎</button></span>${item.category_source==='transaction_override'?'<i class="transaction-override-label">One-off correction</i>':''}<small>${displayValue(item.subcategory)}</small></td>
     <td><strong>${escapeHtml(item.provider.toUpperCase())} •• ${escapeHtml(item.card_last4)}</strong><small>${displayValue(item.source_sheet)}</small></td>
     <td>${formatDate(item.transaction_date)}</td><td>${formatDate(item.billing_date)}</td>
     <td><strong>${formatMonth(item.billing_month)}</strong><small>${escapeHtml(reportingSource(item.billing_month_source))}${item.installment_number?` · ${item.installment_number}/${item.installment_total||'?'}`:''}</small></td>
-    <td class="right"><strong>${sourceAmount(item.amount,item.charged_currency)}</strong></td>
+    <td class="right"><strong>${sourceAmount(item.amount,item.charged_currency)}</strong>${personalLabel}</td>
     <td class="right">${sourceAmount(item.original_amount,item.original_currency)}</td>
     <td>${displayValue(item.transaction_type)}</td><td>${displayValue(item.execution_method)}</td>
     <td>${displayValue(item.voucher_number)}</td><td>${displayValue(item.exchange_rate)}</td><td class="notes-cell">${displayValue(item.notes)}</td>
+    <td class="transaction-action-column">${action}</td>
   </tr>`;
 }
 function transactionSortHeaders(sort,attribute){
@@ -357,7 +380,7 @@ function renderFullTransactions(rows,total,term=''){
   const sortedRows=sortedTransactionRows(rows,state.detailSort);
   const label=term?`${rows.length.toLocaleString()} matches`:`${total.toLocaleString()} transactions`;
   const sortHeaders=transactionSortHeaders(state.detailSort,'data-sort');
-  detailContent.innerHTML=`<div class="detail-summary"><strong>${label}</strong><span>Sorted by ${escapeHtml(transactionColumns.find(([key])=>key===state.detailSort.key)?.[1]||'Transaction date')} ${state.detailSort.direction==='asc'?'ascending':'descending'} · up to 1,000 rows</span></div><div class="table-wrap detail-table"><table class="full-transaction-table"><thead><tr>${sortHeaders}</tr></thead><tbody>${sortedRows.length?sortedRows.map(fullTransactionRow).join(''):'<tr><td colspan="13">No matching transactions.</td></tr>'}</tbody></table></div>`;
+  detailContent.innerHTML=`<div class="detail-summary"><strong>${label}</strong><span>Sorted by ${escapeHtml(transactionColumns.find(([key])=>key===state.detailSort.key)?.[1]||'Transaction date')} ${state.detailSort.direction==='asc'?'ascending':'descending'} · up to 1,000 rows</span></div><div class="table-wrap detail-table"><table class="full-transaction-table"><thead><tr>${sortHeaders}<th class="transaction-action-column" aria-label="Actions"></th></tr></thead><tbody>${sortedRows.length?sortedRows.map(fullTransactionRow).join(''):'<tr><td colspan="14">No matching transactions.</td></tr>'}</tbody></table></div>`;
   detailContent.querySelectorAll('[data-sort]').forEach(button=>button.addEventListener('click',()=>{
     const key=button.dataset.sort;
     state.detailSort=state.detailSort.key===key
@@ -398,7 +421,7 @@ function renderGroupedCategoryTransactions(rows){
     });
     const group=groupsByKey.get(key);
     group.transactions+=1;
-    group.net_amount+=Number(item.amount)||0;
+    group.net_amount+=Number(item.personal_amount??item.amount)||0;
     if(item.transaction_date&&item.transaction_date>group.latest_date)group.latest_date=item.transaction_date;
     group.cards.add(`${item.provider.toUpperCase()} ••${item.card_last4}`);
     group.variants.add(item.merchant_raw);
@@ -414,7 +437,7 @@ function renderGroupedCategoryTransactions(rows){
     else comparison=Number(left[key])-Number(right[key]);
     return state.categoryGroupSort.direction==='asc'?comparison:-comparison;
   });
-  const columns=[['merchant','Merchant'],['transactions','Transactions'],['latest_date','Latest transaction'],['cards','Cards used'],['net_amount','Net total']];
+  const columns=[['merchant','Merchant'],['transactions','Transactions'],['latest_date','Latest transaction'],['cards','Cards used'],['net_amount','Personal total']];
   const headers=columns.map(([key,label],index)=>{
     const active=state.categoryGroupSort.key===key;
     const direction=active?state.categoryGroupSort.direction:'none';
@@ -426,7 +449,7 @@ function renderGroupedCategoryTransactions(rows){
     const variants=group.variants.size;
     const cards=[...group.cards].sort(collator.compare).join(' · ');
     const expandedSort=state.categoryExpandedSort.get(group.key)||{key:'transaction_date',direction:'desc'};
-    const expandedHeaders=transactionSortHeaders(expandedSort,'data-expanded-sort');
+    const expandedHeaders=`${transactionSortHeaders(expandedSort,'data-expanded-sort')}<th class="transaction-action-column" aria-label="Actions"></th>`;
     const expandedRows=sortedTransactionRows(group.rows,expandedSort).map(fullTransactionRow).join('');
     return `<tr class="merchant-group-row" data-merchant-group="${escapeHtml(group.key)}" tabindex="0" aria-expanded="${expanded}">
       <td><span class="group-chevron" aria-hidden="true">${expanded?'⌄':'›'}</span><span><strong>${escapeHtml(group.merchant)}</strong><small>${variants} original ${variants===1?'name':'names'}</small></span></td>
@@ -470,7 +493,7 @@ function renderGroupedCategoryTransactions(rows){
 async function openCategoryTransactions(category,source){
   setActiveNav(source);
   state.detailMode='category-transactions';state.activeCategory=category;
-  document.querySelector('#detailEyebrow').textContent='CATEGORY TRANSACTIONS';
+  setDetailEyebrow('CATEGORY TRANSACTIONS');
   document.querySelector('#detailTitle').textContent=category;
   document.querySelector('#detailSubtitle').textContent=`${state.data?.period.label||''} · ${state.card==='all'?'all cards':'selected card'}`;
   detailTools.innerHTML='<div class="category-transaction-tools"><label class="detail-search"><span>⌕</span><input id="transactionSearch" type="search" placeholder="Search within this category"></label><div class="category-view-toggle" role="group" aria-label="Transaction view"><button type="button" class="active" data-category-view="grouped">Grouped by merchant</button><button type="button" data-category-view="individual">Individual transactions</button></div></div>';
@@ -506,7 +529,7 @@ async function fetchMappingData(){
 
 async function openMapping(source){
   setActiveNav(source);
-  document.querySelector('#detailEyebrow').textContent='MERCHANT CLASSIFICATION';
+  setDetailEyebrow();
   document.querySelector('#detailTitle').textContent='Import & mapping';
   document.querySelector('#detailSubtitle').textContent='Assign reusable categories and subcategories to unknown merchants.';
   detailTools.innerHTML='<div class="mapping-tools"><label class="detail-search"><span>⌕</span><input id="mappingSearch" type="search" placeholder="Search unmapped merchants"></label><button class="upload-button compact-button" data-action="open-import">Import statement</button></div>';
@@ -542,29 +565,32 @@ async function fetchMerchants(force=false){
   state.merchantData=data;return data;
 }
 
-async function openMerchants(source){
+async function openMerchants(source,options={}){
   setActiveNav(source);state.detailMode='merchants';state.activeCategory='';
-  document.querySelector('#detailEyebrow').textContent='DATA MANAGEMENT';
+  state.merchantRecurringFilter=options.recurringFilter||'all';
+  setDetailEyebrow();
   document.querySelector('#detailTitle').textContent='Merchants';
-  document.querySelector('#detailSubtitle').textContent='Manage display names and reusable category rules. Original statement names remain available.';
-  detailTools.innerHTML='<div class="merchant-management-tools"><label class="detail-search"><span>⌕</span><input id="merchantSearch" type="search" placeholder="Search display name or original alias"></label><label class="select-wrap"><span>Category</span><select id="merchantCategoryFilter"><option value="all">All categories</option></select></label></div>';
+  document.querySelector('#detailSubtitle').textContent='Manage display names, category rules, and recurring profiles. Original statement names remain available.';
+  detailTools.innerHTML='<div class="merchant-management-tools"><label class="detail-search"><span>⌕</span><input id="merchantSearch" type="search" placeholder="Search display name or original alias"></label><label class="select-wrap"><span>Category</span><select id="merchantCategoryFilter"><option value="all">All categories</option></select></label><label class="select-wrap"><span>Recurring</span><select id="merchantRecurringFilter"><option value="all">All merchants</option><option value="recurring">Recurring</option><option value="not_recurring">Not recurring</option><option value="unreviewed">Not reviewed</option></select></label></div>';
   detailContent.innerHTML='<p class="loading-state">Loading merchants…</p>';setDetailModal(true);
   try{
     const data=await fetchMerchants(true);
     document.querySelector('#merchantCategoryFilter').innerHTML='<option value="all">All categories</option>'+data.categories.map(category=>`<option value="${escapeHtml(category)}">${escapeHtml(category)}</option>`).join('');
-    const refresh=()=>renderMerchantManagement(data,document.querySelector('#merchantSearch').value,document.querySelector('#merchantCategoryFilter').value);
-    document.querySelector('#merchantSearch').addEventListener('input',refresh);document.querySelector('#merchantCategoryFilter').addEventListener('change',refresh);refresh();
+    document.querySelector('#merchantRecurringFilter').value=state.merchantRecurringFilter;
+    const refresh=()=>{state.merchantRecurringFilter=document.querySelector('#merchantRecurringFilter').value;renderMerchantManagement(data,document.querySelector('#merchantSearch').value,document.querySelector('#merchantCategoryFilter').value,state.merchantRecurringFilter)};
+    document.querySelector('#merchantSearch').addEventListener('input',refresh);document.querySelector('#merchantCategoryFilter').addEventListener('change',refresh);document.querySelector('#merchantRecurringFilter').addEventListener('change',refresh);refresh();
   }catch(error){detailContent.innerHTML=`<p class="empty-state">${escapeHtml(error.message)}</p>`}
 }
 
-function renderMerchantManagement(data,search='',category='all'){
+function renderMerchantManagement(data,search='',category='all',recurring='all'){
   const term=search.trim().toLocaleLowerCase();
   const merchants=data.merchants.filter(item=>{
     const text=`${item.display_name} ${item.aliases.map(alias=>`${alias.merchant_raw} ${alias.merchant_normalized}`).join(' ')}`.toLocaleLowerCase();
-    return text.includes(term)&&(category==='all'||item.categories.includes(category));
+    const verdict=item.recurring_profile?.verdict||'unreviewed';
+    return text.includes(term)&&(category==='all'||item.categories.includes(category))&&(recurring==='all'||verdict===recurring);
   });
   const summary=data.summary;
-  detailContent.innerHTML=`<div class="merchant-management-grid"><span><strong>${summary.display_identities.toLocaleString()}</strong>Display identities</span><span><strong>${summary.mapped_aliases.toLocaleString()}</strong>Original aliases</span><span><strong>${summary.transactions.toLocaleString()}</strong>Covered transactions</span><span><strong>${summary.multiple_categories.toLocaleString()}</strong>Multiple-category merchants</span></div><div class="mapping-editor-head"><strong>${merchants.length.toLocaleString()} merchants</strong><span>Select a merchant to edit its display name or alias category.</span></div><div class="merchant-list">${merchants.length?merchants.map(item=>`<button type="button" class="merchant-list-row" data-edit-merchant="${escapeHtml(item.canonical_group_id)}"><span><strong>${escapeHtml(item.display_name)}</strong><small>${item.aliases.length} original ${item.aliases.length===1?'name':'names'}</small></span><span><strong>${item.transactions.toLocaleString()}</strong><small>transactions</small></span><span class="merchant-categories">${item.categories.map(value=>`<i>${escapeHtml(value)}</i>`).join('')}</span><span>${formatDate(item.last_seen)}</span><span><strong>${money(item.amount)}</strong><small>absolute activity</small></span><span class="merchant-chevron">›</span></button>`).join(''):'<p class="empty-state">No merchants match these filters.</p>'}</div>`;
+  detailContent.innerHTML=`<div class="merchant-management-grid"><span><strong>${summary.display_identities.toLocaleString()}</strong>Display identities</span><span><strong>${summary.mapped_aliases.toLocaleString()}</strong>Original aliases</span><span><strong>${summary.transactions.toLocaleString()}</strong>Covered transactions</span><span><strong>${summary.multiple_categories.toLocaleString()}</strong>Multiple-category merchants</span><span><strong>${Number(summary.recurring||0).toLocaleString()}</strong>Recurring merchants</span></div><div class="mapping-editor-head"><strong>${merchants.length.toLocaleString()} merchants</strong><span>Select a merchant to manage its identity, category rules, or recurring profile.</span></div><div class="merchant-list">${merchants.length?merchants.map(item=>{const verdict=item.recurring_profile?.verdict||'unreviewed',included=item.aliases.filter(alias=>alias.recurring_included).length,label=verdict==='recurring'?`Recurring · ${included}/${item.aliases.length} ${item.aliases.length===1?'alias':'aliases'}`:verdict==='not_recurring'?'Not recurring':'Not reviewed';return `<button type="button" class="merchant-list-row" data-edit-merchant="${escapeHtml(item.canonical_group_id)}"><span><strong>${escapeHtml(item.display_name)}</strong><small>${item.aliases.length} original ${item.aliases.length===1?'name':'names'} · <i class="merchant-recurring-badge ${verdict}">${label}</i></small></span><span><strong>${item.transactions.toLocaleString()}</strong><small>transactions</small></span><span class="merchant-categories">${item.categories.map(value=>`<i>${escapeHtml(value)}</i>`).join('')}</span><span>${formatDate(item.last_seen)}</span><span><strong>${money(item.amount)}</strong><small>absolute activity</small></span><span class="merchant-chevron">›</span></button>`}).join(''):'<p class="empty-state">No merchants match these filters.</p>'}</div>`;
 }
 
 const merchantEditorModal=document.querySelector('#merchantEditorModal');
@@ -579,13 +605,45 @@ function resetMerchantReview(){
   document.querySelector('#merchantReviewButton').hidden=false;document.querySelector('#merchantApplyButton').hidden=true;
   document.querySelector('#merchantEditorStatus').textContent='Review the impact before applying changes.';
 }
+function merchantRecurringEditor(merchant){
+  const profile=merchant.recurring_profile||{},isRecurring=profile.verdict==='recurring';
+  const type=profile.recurring_type||'Fixed recurring',cadence=profile.cadence||'Monthly',lifecycle=profile.lifecycle_status||'active';
+  const verdictLabel=isRecurring?'Recurring':profile.verdict==='not_recurring'?'Not recurring':'Not reviewed';
+  const aliasScope=merchant.aliases.map(alias=>{const checked=alias.recurring_included||(!profile.verdict&&merchant.aliases.length===1);return `<label class="recurring-alias-option"><input type="checkbox" class="merchant-recurring-alias" value="${escapeHtml(alias.merchant_normalized)}"${checked?' checked':''}><span><strong>${escapeHtml(alias.merchant_raw)}</strong><small>${escapeHtml(alias.category)} · ${alias.transactions} transactions</small></span></label>`}).join('');
+  return `<section class="editor-section merchant-recurring-editor"><div class="editor-section-head"><div><h3>Recurring settings</h3><p>Choose which original merchant names belong to this recurring series.</p></div><span class="merchant-recurring-badge ${profile.verdict||'unreviewed'}">${verdictLabel}</span></div>${!isRecurring?`<div class="recurring-decision-note"><strong>${profile.verdict==='not_recurring'?'Currently excluded from recurring tracking':'No recurring decision has been saved'}</strong><span>Adding it changes only the recurring profile. Transactions, categories, and display names remain unchanged.</span></div>`:''}<div class="recurring-alias-scope"><div><strong>Included original names</strong><small id="merchantRecurringAliasCount"></small></div>${aliasScope}</div><div class="merchant-recurring-fields"><label><span class="editor-field-label">Type</span><select class="editor-select" id="merchantRecurringType">${recurringTypeOptions.map(value=>`<option value="${value}"${value===type?' selected':''}>${value}</option>`).join('')}</select></label><label><span class="editor-field-label">Cadence</span><select class="editor-select" id="merchantRecurringCadence">${recurringCadenceOptions.map(value=>`<option value="${value}"${value===cadence?' selected':''}>${value}</option>`).join('')}</select></label><label><span class="editor-field-label">Lifecycle</span><select class="editor-select" id="merchantRecurringLifecycle"><option value="active"${lifecycle==='active'?' selected':''}>Active</option><option value="paused"${lifecycle==='paused'?' selected':''}>Paused</option><option value="ended"${lifecycle==='ended'?' selected':''}>Ended</option><option value="unknown"${lifecycle==='unknown'?' selected':''}>Unknown</option></select></label><label id="merchantRecurringEndField"${lifecycle==='ended'?'':' hidden'}><span class="editor-field-label">End month</span><input class="editor-input" id="merchantRecurringEndMonth" type="month" value="${escapeHtml(profile.end_month||'')}"></label></div><p class="merchant-recurring-help">Only checked aliases contribute billing history and missing-payment expectations. Cadence settings are shared by this recurring series.</p><div class="merchant-recurring-actions">${isRecurring?'<button type="button" class="merchant-recurring-remove" id="merchantRemoveRecurring">Mark all as not recurring</button>':''}<button type="button" class="upload-button editor-primary" id="merchantSaveRecurring">${isRecurring?'Save recurring settings':'Add to recurring tracking'}</button></div><div class="recurring-remove-confirm" id="merchantRecurringConfirm" hidden><div><strong>Mark every alias as not recurring?</strong><span>Recurring monitoring and future missing-payment warnings will stop. The previous configuration and all transactions remain available.</span></div><div><button type="button" class="secondary-button" id="merchantCancelRemoveRecurring">Cancel</button><button type="button" class="merchant-recurring-remove" id="merchantConfirmRemoveRecurring">Confirm not recurring</button></div></div></section>`;
+}
+function bindMerchantRecurringEditor(merchant){
+  const lifecycle=document.querySelector('#merchantRecurringLifecycle'),endField=document.querySelector('#merchantRecurringEndField'),endMonth=document.querySelector('#merchantRecurringEndMonth');
+  const aliases=[...document.querySelectorAll('.merchant-recurring-alias')],aliasCount=document.querySelector('#merchantRecurringAliasCount');
+  const updateAliasCount=()=>{const selected=aliases.filter(input=>input.checked).length;aliasCount.textContent=`${selected} of ${aliases.length} selected`};aliases.forEach(input=>input.addEventListener('change',updateAliasCount));updateAliasCount();
+  lifecycle.addEventListener('change',()=>{endField.hidden=lifecycle.value!=='ended';if(lifecycle.value==='ended'&&!endMonth.value)endMonth.value=state.month||state.data?.period?.end?.slice(0,7)||''});
+  document.querySelector('#merchantSaveRecurring').addEventListener('click',()=>saveManagedRecurringProfile(merchant,'recurring'));
+  const remove=document.querySelector('#merchantRemoveRecurring');if(!remove)return;
+  const confirmation=document.querySelector('#merchantRecurringConfirm');
+  remove.addEventListener('click',()=>{confirmation.hidden=false;confirmation.scrollIntoView({block:'nearest',behavior:'smooth'})});
+  document.querySelector('#merchantCancelRemoveRecurring').addEventListener('click',()=>{confirmation.hidden=true});
+  document.querySelector('#merchantConfirmRemoveRecurring').addEventListener('click',()=>saveManagedRecurringProfile(merchant,'not_recurring'));
+}
+async function saveManagedRecurringProfile(merchant,verdict){
+  const button=document.querySelector(verdict==='recurring'?'#merchantSaveRecurring':'#merchantConfirmRemoveRecurring');button.disabled=true;const original=button.textContent;button.textContent='Saving…';
+  const lifecycle=document.querySelector('#merchantRecurringLifecycle').value,endMonth=document.querySelector('#merchantRecurringEndMonth').value;
+  if(verdict==='recurring'&&lifecycle==='ended'&&!endMonth){showToast('Choose an end month for an ended profile.','End month required');button.disabled=false;button.textContent=original;return}
+  const includedAliases=[...document.querySelectorAll('.merchant-recurring-alias:checked')].map(input=>input.value);
+  if(verdict==='recurring'&&!includedAliases.length){showToast('Select at least one original merchant name.','Recurring scope required');button.disabled=false;button.textContent=original;return}
+  const payload={canonical_group_id:merchant.canonical_group_id,verdict,recurring_type:document.querySelector('#merchantRecurringType').value,cadence:document.querySelector('#merchantRecurringCadence').value,lifecycle_status:lifecycle,end_month:lifecycle==='ended'?endMonth:'',included_aliases:verdict==='recurring'?includedAliases:[]};
+  try{
+    const response=await fetch('/api/recurring-profile/manage',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});const result=await response.json();if(!response.ok)throw new Error(result.error||'Could not update recurring decision');
+    state.recurringCache.clear();const data=await fetchMerchants(true);const search=document.querySelector('#merchantSearch')?.value||'',category=document.querySelector('#merchantCategoryFilter')?.value||'all';renderMerchantManagement(data,search,category,state.merchantRecurringFilter);openMerchantEditor(merchant.canonical_group_id);await loadRecurringPanel(true);showToast(verdict==='recurring'?`${merchant.display_name} is now tracked as recurring.`:`${merchant.display_name} is no longer tracked as recurring.`,'Recurring decision saved');
+  }catch(error){showToast(error.message,'Recurring update failed');button.disabled=false;button.textContent=original}
+}
 function openMerchantEditor(groupId){
   const merchant=state.merchantData?.merchants.find(item=>item.canonical_group_id===groupId);if(!merchant)return;
   state.activeMerchant=merchant;
   document.querySelector('#merchantEditorTitle').textContent=merchant.display_name;
   document.querySelector('#merchantEditorSubtitle').textContent=`${merchant.aliases.length} aliases · ${merchant.transactions.toLocaleString()} transactions`;
-  merchantEditorBody.innerHTML=`<section class="editor-section"><div class="editor-section-head"><div><h3>Display name</h3><p>The clean name shown in grouped rows. Imported merchant descriptions are not replaced.</p></div></div><label class="editor-field-label" for="merchantDisplayName">Display name</label><input class="editor-input" id="merchantDisplayName" value="${escapeHtml(merchant.display_name)}" data-original="${escapeHtml(merchant.display_name)}"></section><section class="editor-section"><div class="editor-section-head"><div><h3>Category rules by original name</h3><p>Each alias can keep a different permanent category, including local and travel variants.</p></div></div><div class="alias-editor"><div class="alias-editor-head"><span>Original statement name</span><span>Permanent category</span></div>${merchant.aliases.map(alias=>`<div class="alias-editor-row"><span><strong>${escapeHtml(alias.merchant_raw)}</strong><small>${escapeHtml(alias.merchant_normalized)} · ${alias.transactions} transactions</small></span><select class="editor-select merchant-alias-category" data-merchant="${escapeHtml(alias.merchant_normalized)}" data-original="${escapeHtml(alias.category)}" data-subcategory="${escapeHtml(alias.subcategory||'')}">${merchantCategoryOptions(alias.category)}</select></div>`).join('')}</div></section><section class="editor-section impact-review" id="merchantImpact" hidden><h4>Impact review</h4><ul id="merchantImpactList"></ul></section>`;
+  merchantEditorBody.innerHTML=`<section class="editor-section"><div class="editor-section-head"><div><h3>Display name</h3><p>The clean name shown in grouped rows. Imported merchant descriptions are not replaced.</p></div></div><label class="editor-field-label" for="merchantDisplayName">Display name</label><input class="editor-input" id="merchantDisplayName" value="${escapeHtml(merchant.display_name)}" data-original="${escapeHtml(merchant.display_name)}"></section><section class="editor-section"><div class="editor-section-head"><div><h3>Category rules by original name</h3><p>Each alias can keep a different permanent category, including local and travel variants.</p></div></div><div class="alias-editor"><div class="alias-editor-head"><span>Original statement name</span><span>Permanent category</span></div>${merchant.aliases.map(alias=>`<div class="alias-editor-row"><span><strong>${escapeHtml(alias.merchant_raw)}</strong><small>${escapeHtml(alias.merchant_normalized)} · ${alias.transactions} transactions</small></span><select class="editor-select merchant-alias-category" data-merchant="${escapeHtml(alias.merchant_normalized)}" data-original="${escapeHtml(alias.category)}" data-subcategory="${escapeHtml(alias.subcategory||'')}">${merchantCategoryOptions(alias.category)}</select></div>`).join('')}</div></section>${merchantRecurringEditor(merchant)}<section class="editor-section impact-review" id="merchantImpact" hidden><h4>Impact review</h4><ul id="merchantImpactList"></ul></section>`;
   merchantEditorBody.querySelectorAll('input,select').forEach(control=>control.addEventListener('input',resetMerchantReview));resetMerchantReview();setMerchantEditor(true);
+  bindMerchantRecurringEditor(merchant);
 }
 function merchantChanges(){
   const merchant=state.activeMerchant;const displayInput=document.querySelector('#merchantDisplayName');
@@ -634,8 +692,69 @@ async function saveTransactionCorrection(){
   }catch(error){showToast(error.message,'Correction failed')}finally{button.disabled=false;button.textContent='Save correction'}
 }
 
+const spendingAdjustmentModal=document.querySelector('#spendingAdjustmentModal');
+const spendingAdjustmentBody=document.querySelector('#spendingAdjustmentBody');
+const spendingAdjustmentRemove=document.querySelector('#spendingAdjustmentRemove');
+function setSpendingAdjustmentModal(show){
+  spendingAdjustmentModal.classList.toggle('show',show);
+  spendingAdjustmentModal.setAttribute('aria-hidden',String(!show));
+  if(show)document.querySelector('#spendingAdjustmentClose').focus();
+  else{spendingAdjustmentRemove.dataset.confirmed='';spendingAdjustmentRemove.textContent='Remove adjustment'}
+}
+function adjustmentTransaction(transactionId){
+  return [...state.detailTransactions,...state.categoryTransactions]
+    .find(item=>Number(item.id)===Number(transactionId));
+}
+function updateAdjustmentAmount(){
+  const transaction=state.activeAdjustmentTransaction;if(!transaction)return;
+  const full=document.querySelector('input[name="adjustmentKind"]:checked')?.value==='full';
+  const input=document.querySelector('#adjustmentAmount');
+  if(full){input.value=Number(transaction.amount).toFixed(2);input.disabled=true}else input.disabled=false;
+  const amount=Math.min(Number(transaction.amount),Math.max(0,Number(input.value)||0));
+  document.querySelector('#adjustmentPersonalPreview').textContent=money(Number(transaction.amount)-amount);
+}
+function openSpendingAdjustment(transactionId){
+  const transaction=adjustmentTransaction(transactionId);if(!transaction)return;
+  if(Number(transaction.amount)<=0){showToast('Refund rows do not need a reimbursement adjustment.','Adjustment unavailable');return}
+  state.activeAdjustmentTransaction=transaction;
+  const existing=Boolean(transaction.adjustment_type);
+  const partial=transaction.adjustment_type==='partial_reimbursement';
+  const amount=existing?Number(transaction.reimbursed_amount):Number(transaction.amount);
+  spendingAdjustmentBody.innerHTML=`<div class="transaction-snapshot"><div><span>Merchant</span><strong>${escapeHtml(transaction.merchant_display_name||transaction.merchant_raw)}<small>${escapeHtml(transaction.merchant_raw)}</small></strong></div><div><span>Purchase date</span><strong>${formatDate(transaction.transaction_date)}</strong></div><div><span>Card</span><strong>${escapeHtml(transaction.provider.toUpperCase())} •• ${escapeHtml(transaction.card_last4)}</strong></div><div><span>Card charge</span><strong>${sourceAmount(transaction.amount,transaction.charged_currency)}</strong></div></div><div class="adjustment-choice"><label><input type="radio" name="adjustmentKind" value="full"${partial?'':' checked'}><strong>Fully reimbursed</strong><small>None of this charge counts as personal spending.</small></label><label><input type="radio" name="adjustmentKind" value="partial"${partial?' checked':''}><strong>Partially reimbursed</strong><small>Only the unreimbursed remainder counts as personal spending.</small></label></div><div class="adjustment-fields"><label>Reimbursed amount<input id="adjustmentAmount" type="number" min="0.01" max="${Number(transaction.amount)}" step="0.01" value="${amount.toFixed(2)}"></label><label>Reimbursement date <small>(optional)</small><input id="adjustmentDate" type="date" value="${escapeHtml(transaction.reimbursement_date||'')}"></label><label class="adjustment-note">Note <small>(optional)</small><input id="adjustmentNote" maxlength="500" value="${escapeHtml(transaction.reimbursement_note||'')}" placeholder="For example: paid for another person"></label></div><div class="adjustment-help"><b>i</b><span>The original charge remains ${sourceAmount(transaction.amount,transaction.charged_currency)}. Personal amount after this adjustment: <strong id="adjustmentPersonalPreview">${money(Number(transaction.amount)-amount)}</strong>. A future bank-transfer matching feature can attach evidence without subtracting it twice.</span></div>`;
+  spendingAdjustmentRemove.hidden=!existing;
+  document.querySelectorAll('input[name="adjustmentKind"]').forEach(input=>input.addEventListener('change',updateAdjustmentAmount));
+  document.querySelector('#adjustmentAmount').addEventListener('input',updateAdjustmentAmount);
+  updateAdjustmentAmount();setSpendingAdjustmentModal(true);
+}
+async function refreshAfterAdjustment(){
+  const mode=state.detailMode;const category=state.activeCategory;
+  await loadDashboard();
+  if(mode==='category-transactions'&&category)await openCategoryTransactions(category,null);
+  else await openDetail('transactions',null);
+}
+async function saveSpendingAdjustment(remove=false){
+  const transaction=state.activeAdjustmentTransaction;if(!transaction)return;
+  const button=remove?spendingAdjustmentRemove:document.querySelector('#spendingAdjustmentSave');
+  button.disabled=true;const originalLabel=button.textContent;button.textContent=remove?'Removing…':'Saving…';
+  try{
+    const payload={transaction_id:transaction.id,remove};
+    if(!remove){
+      const full=document.querySelector('input[name="adjustmentKind"]:checked')?.value==='full';
+      payload.reimbursed_amount=full?Number(transaction.amount):Number(document.querySelector('#adjustmentAmount').value);
+      payload.reimbursement_date=document.querySelector('#adjustmentDate').value;
+      payload.note=document.querySelector('#adjustmentNote').value;
+    }
+    const response=await fetch('/api/transaction-adjustment',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+    const result=await response.json();if(!response.ok)throw new Error(result.error||'Could not save spending adjustment');
+    setSpendingAdjustmentModal(false);
+    showToast(remove?`${result.merchant_raw} counts at its original amount again.`:`Personal amount is now ${money(result.personal_amount)}.` ,remove?'Adjustment removed':'Reimbursement saved');
+    await refreshAfterAdjustment();
+  }catch(error){showToast(error.message,remove?'Removal failed':'Adjustment failed')}
+  finally{button.disabled=false;button.textContent=originalLabel}
+}
+
 async function openImportAudit(){
-  document.querySelector('#detailEyebrow').textContent='DUPLICATE PROTECTION';
+  setDetailEyebrow();
   document.querySelector('#detailTitle').textContent='Import audit';
   document.querySelector('#detailSubtitle').textContent='Recent statement imports and duplicate handling.';
   detailTools.innerHTML='';detailContent.innerHTML='<p class="loading-state">Loading import history…</p>';setDetailModal(true);
@@ -645,7 +764,163 @@ async function openImportAudit(){
   }catch(error){detailContent.innerHTML=`<p class="empty-state">${escapeHtml(error.message)}</p>`}
 }
 
+const recurringPanel=document.querySelector('#recurringPanel');
+const recurringModal=document.querySelector('#recurringModal');
+const recurringModalBody=document.querySelector('#recurringModalBody');
+const recurringTypeOptions=['Fixed recurring','Usage-based recurring','Scheduled obligation','Other recurring'];
+const recurringCadenceOptions=['Weekly','Monthly','Every 2 months','Quarterly','Every 6 months','Yearly','Custom','Irregular','Unknown'];
+const recurringStatusLabels={confirmed:'Confirmed',variable:'Variable',expected:'Expected',missing:'Missing',increased:'Increased',paid:'Paid',upcoming:'Upcoming',due:'Due',overdue:'Overdue',active:'Active',ended:'Ended',paused:'Paused',unknown:'Unknown',completed:'Completed'};
+const recurringStatusClass=value=>['missing','increased','due','overdue','unknown'].includes(value)?'amber':['ended','paused','completed'].includes(value)?'gray':'';
+const recurringCacheKey=period=>`${period}|${period==='month'?state.month:''}|${state.card}`;
+const shortMonth=value=>value?new Intl.DateTimeFormat('en-GB',{month:'short',year:'2-digit'}).format(new Date(`${value}-01T12:00:00`)):'—';
+
+async function fetchRecurring(period,force=false){
+  const key=recurringCacheKey(period);if(!force&&state.recurringCache.has(key))return state.recurringCache.get(key);
+  const response=await fetch(`/api/recurring?period=${period}&month=${encodeURIComponent(state.month)}&card=${encodeURIComponent(state.card)}`,{cache:'no-store'});
+  const data=await response.json();if(!response.ok)throw new Error(data.error||'Could not load recurring spending');state.recurringCache.set(key,data);return data;
+}
+
+function recurringPreviewRow(item,index,tab){
+  const amount=tab==='series'?item.amount:item.charge;const status=recurringStatusLabels[item.status]||item.status;
+  const alias=tab==='series'?(item.source_aliases||[]).join(' / '):(item.source_alias||'');
+  const detail=tab==='series'?`${alias?`${alias} · `:''}${item.recurring_type} · ${item.cadence} · ${item.coverage}`:`${alias?`${alias} · `:''}Installment ${item.progress} · ${item.remaining_count} remaining`;
+  return `<button type="button" class="recurring-preview-row" data-recurring-preview="${tab}" data-recurring-index="${index}"><span><strong>${escapeHtml(item.display_name)}</strong><small>${escapeHtml(detail)}</small></span><span class="recurring-row-value"><strong>${amount==null?'—':money(amount)}</strong><i class="recurring-status ${recurringStatusClass(item.status)}">${escapeHtml(status)}</i></span></button>`;
+}
+
+function renderRecurringPanel(data){
+  const metrics=data.metrics,summary=data.verdict_summary,period=data.period.key;
+  document.querySelector('#recurringPeriod').textContent=`${data.period.label} · reviewed verdicts: ${summary.recurring} recurring or obligations · ${summary.not_recurring} not recurring`;
+  document.querySelector('#recurringSummary').innerHTML=period==='month'
+    ?`<div><span>Recurring billed</span><strong>${money(metrics.recurring_billed)}</strong><small>Recurring and scheduled · excludes installments</small></div><div><span>Active series</span><strong>${metrics.active_series}</strong><small>Including upcoming obligations</small></div><div class="attention"><span>Needs attention</span><strong>${metrics.needs_attention}</strong><small>Missing, due, or changed</small></div><div><span>Commitments</span><strong>${money(metrics.installment_billed)}</strong><small>${metrics.installment_plans} installment plans</small></div>`
+    :`<div><span>Recurring billed</span><strong>${money(metrics.recurring_billed)}</strong><small>${escapeHtml(data.period.label)} · excludes installments</small></div><div><span>Monthly billed average</span><strong>${money(metrics.recurring_average)}</strong><small>Recurring and scheduled only</small></div><div class="attention"><span>Needs attention</span><strong>${metrics.needs_attention}</strong><small>Missing, due, or changed</small></div><div><span>Commitments</span><strong>${money(metrics.installment_billed)}</strong><small>${metrics.installment_plans} plans in scope</small></div>`;
+  document.querySelector('#recurringSeriesCount').textContent=`${data.series.length} total${data.series.length>3?' · scroll':''}`;
+  document.querySelector('#recurringCommitmentCount').textContent=`${data.commitments.length} total${data.commitments.length>3?' · scroll':''}`;
+  document.querySelector('#recurringSeriesPreview').innerHTML=data.series.length?data.series.map((item,index)=>recurringPreviewRow(item,index,'series')).join(''):'<p>No recurring or scheduled payments in this scope.</p>';
+  document.querySelector('#recurringCommitmentPreview').innerHTML=data.commitments.length?data.commitments.map((item,index)=>recurringPreviewRow(item,index,'commitments')).join(''):'<p>No installment commitments in this scope.</p>';
+  const recurringShare=Math.min(100,Number(metrics.recurring_share||0)),installmentShare=Math.min(100-recurringShare,Number(metrics.installment_share||0)),otherShare=Math.max(0,100-recurringShare-installmentShare);
+  const burdenBar=document.querySelector('#recurringBurdenBar');
+  burdenBar.setAttribute('aria-label',`Recurring and scheduled ${recurringShare.toFixed(1)}%, installments ${installmentShare.toFixed(1)}%, other spending ${otherShare.toFixed(1)}%`);
+  burdenBar.innerHTML=`<i style="width:${recurringShare}%" title="Recurring & scheduled: ${recurringShare.toFixed(1)}%"></i><i style="width:${installmentShare}%" title="Installments: ${installmentShare.toFixed(1)}%"></i><i class="burden-other" style="width:${otherShare}%" title="Other spending: ${otherShare.toFixed(1)}%"></i>`;
+  document.querySelector('#recurringBurdenLegend').innerHTML=`<span><i></i>Recurring & scheduled <strong>${recurringShare.toFixed(1)}%</strong></span><span><i></i>Installments <strong>${installmentShare.toFixed(1)}%</strong></span><span class="burden-other"><i></i>Other spending <strong>${otherShare.toFixed(1)}%</strong></span>`;
+  document.querySelector('#recurringBurdenDetails').innerHTML=`<dt>Recurring average</dt><dd>${money(metrics.recurring_average)}</dd><dt>Installment average</dt><dd>${money(metrics.installment_average)}</dd><dt>Needs attention</dt><dd>${metrics.needs_attention}</dd>`;
+}
+
+async function loadRecurringPanel(force=false){
+  try{renderRecurringPanel(await fetchRecurring(state.period,force))}
+  catch(error){document.querySelector('#recurringPeriod').textContent=error.message;document.querySelector('#recurringSeriesPreview').innerHTML='<p>Recurring data is unavailable.</p>';document.querySelector('#recurringCommitmentPreview').innerHTML='<p>Commitment data is unavailable.</p>'}
+}
+
+function setRecurringModal(show){
+  recurringModal.classList.toggle('show',show);recurringModal.setAttribute('aria-hidden',String(!show));
+  if(show)document.querySelector('#recurringModalClose').focus();
+}
+
+function recurringMetrics(data,tab){
+  if(tab==='commitments')return [['Installment charges',money(data.metrics.installment_billed),`${data.metrics.installment_plans} plans`],['Monthly average',money(data.metrics.installment_average),'Installments actually billed'],['Remaining balance',money(data.commitments.reduce((sum,item)=>sum+item.remaining,0)),'Estimated from available charges'],['Completed',data.commitments.filter(item=>item.status==='completed').length,'Plans in this scope']];
+  return [['Recurring billed',money(data.metrics.recurring_billed),'Recurring and scheduled · excludes installments'],['Active series',data.metrics.active_series,'In the selected scope'],['Needs attention',data.metrics.needs_attention,'Missing, due, or changed'],['Installments',money(data.metrics.installment_billed),`${data.metrics.installment_plans} plans`]];
+}
+
+function recurringSelect(options,current,field,index){return `<span class="recurring-select-wrap"><select class="recurring-select recurring-select-${field.replaceAll('_','-')}" aria-label="${field==='recurring_type'?'Recurring type':'Cadence'}" data-recurring-field="${field}" data-recurring-row="${index}">${options.map(value=>`<option value="${escapeHtml(value)}"${value===current?' selected':''}>${escapeHtml(value)}</option>`).join('')}</select><i aria-hidden="true"></i></span>`}
+const recurringColumns={
+  series:[['display_name','Merchant'],['category','Category'],['recurring_type','Type'],['cadence','Cadence'],['amount','Amount'],['coverage','Expected / coverage'],['status','Status']],
+  commitments:[['display_name','Purchase'],['category','Category'],['current_installment','Progress'],['paid','Paid'],['remaining','Remaining'],['status','Status']],
+};
+const recurringNumericKeys=new Set(['amount','current_installment','paid','remaining']);
+function sortedRecurringRows(rows,sort){
+  return [...rows].sort((left,right)=>{
+    const leftValue=left[sort.key],rightValue=right[sort.key];
+    const leftEmpty=leftValue===null||leftValue===undefined||leftValue==='';
+    const rightEmpty=rightValue===null||rightValue===undefined||rightValue==='';
+    if(leftEmpty||rightEmpty){if(leftEmpty&&rightEmpty)return 0;return leftEmpty?1:-1}
+    const comparison=recurringNumericKeys.has(sort.key)?Number(leftValue)-Number(rightValue):transactionCollator.compare(String(leftValue),String(rightValue));
+    return sort.direction==='asc'?comparison:-comparison;
+  });
+}
+function recurringSortHeaders(tab,sort){
+  return recurringColumns[tab].map(([key,label],index)=>{
+    const active=sort.key===key,direction=active?sort.direction:'none',icon=active?(direction==='asc'?'↑':'↓'):'↕';
+    const right=(tab==='series'&&index===4)||(tab==='commitments'&&[3,4].includes(index))?' class="right"':'';
+    return `<th${right} aria-sort="${direction==='none'?'none':direction==='asc'?'ascending':'descending'}"><button type="button" data-recurring-sort="${key}">${label}<span aria-hidden="true">${icon}</span></button></th>`;
+  }).join('');
+}
+function recurringHistory(history){
+  const maximum=Math.max(...history.map(item=>Number(item.amount||0)),1);
+  return history.length?`<h4>Actual billing history</h4><div class="recurring-history" aria-label="Actual merchant billing history">${history.map(item=>{const label=item.amount!=null?money(item.amount):item.state==='missing'?'Missing':'No charge';const css=item.state==='missing'?'missing':item.state==='charged'?'':'empty';const width=item.amount!=null?Math.max(12,Number(item.amount)/maximum*100):item.state==='missing'?38:18;return `<span title="${escapeHtml(formatMonth(item.month))}: ${escapeHtml(label)}"><i class="${css}" style="width:${width}%"></i><b>${escapeHtml(shortMonth(item.month))}</b><small>${escapeHtml(label)}</small></span>`}).join('')}</div><div class="recurring-history-legend"><span><i></i>Actual charge</span><span class="missing"><i></i>Expected but missing</span><span class="empty"><i></i>No charge expected</span></div>`:'<p>No recorded billing history is available.</p>';
+}
+
+function renderRecurringInspector(data,item,tab){
+  const inspector=document.querySelector('#recurringInspector');if(!inspector)return;inspector.hidden=false;
+  const suggestedEndMonth=item.end_month||state.month||data.period.end?.slice(0,7)||'';
+  const controls=tab==='series'?`<div class="recurring-profile-controls"><label>Lifecycle<span class="recurring-control-select"><select id="recurringLifecycle"><option value="active"${item.lifecycle_status==='active'?' selected':''}>Active</option><option value="ended"${item.lifecycle_status==='ended'?' selected':''}>Ended</option><option value="paused"${item.lifecycle_status==='paused'?' selected':''}>Paused</option><option value="unknown"${item.lifecycle_status==='unknown'?' selected':''}>Unknown</option></select><i aria-hidden="true"></i></span></label><label class="recurring-end-month"${item.lifecycle_status==='ended'?'':' hidden'}>End month<input id="recurringEndMonth" type="month" value="${escapeHtml(item.end_month||'')}"></label><div class="recurring-lifecycle-actions"><button type="button" id="saveRecurringLifecycle" disabled>Save lifecycle</button></div><small id="recurringLifecycleHelp">Choose a lifecycle, then save it. Nothing changes while you are only selecting.</small></div>`:'';
+  const alias=tab==='series'?(item.source_aliases||[]).join(' / '):(item.source_alias||'');
+  const description=tab==='series'?`${alias?`Original name: ${alias}. `:''}The chart uses this merchant’s real billed months and amounts. Orange marks an expected charge that is absent; gray means no charge was expected.`:`${alias?`Original name: ${alias}. `:''}Finite installment plan kept separate from subscriptions. Remaining values are estimated when future billing dates are unavailable.`;
+  inspector.innerHTML=`<div><h3>${escapeHtml(item.display_name)}</h3><p>${description}</p>${controls}</div><div>${recurringHistory(item.history||[])}</div>`;
+  if(tab!=='series')return;
+  const lifecycle=document.querySelector('#recurringLifecycle'),endLabel=document.querySelector('.recurring-end-month'),endMonth=document.querySelector('#recurringEndMonth'),help=document.querySelector('#recurringLifecycleHelp'),save=document.querySelector('#saveRecurringLifecycle');
+  const syncLifecycleEditor=()=>{
+    const ended=lifecycle.value==='ended';endLabel.hidden=!ended;lifecycle.closest('.recurring-profile-controls').classList.toggle('has-end-month',ended);
+    if(ended&&!endMonth.value)endMonth.value=suggestedEndMonth;
+    const effectiveEnd=ended?endMonth.value:'';
+    const changed=lifecycle.value!==item.lifecycle_status||effectiveEnd!==(item.end_month||'');
+    save.disabled=!changed||(ended&&!effectiveEnd);
+    save.textContent=ended?'Confirm ended lifecycle':'Save lifecycle';
+    help.textContent=ended?'After the selected month, this payment will no longer be expected. Its transaction history remains available.':'Choose a lifecycle, then save it. Nothing changes while you are only selecting.';
+  };
+  lifecycle.addEventListener('change',syncLifecycleEditor);endMonth.addEventListener('change',syncLifecycleEditor);
+  save.addEventListener('click',async()=>{save.disabled=true;await updateRecurringProfile(item,{lifecycle_status:lifecycle.value,end_month:lifecycle.value==='ended'?endMonth.value:''})});
+  syncLifecycleEditor();
+}
+
+function renderRecurringModal(data){
+  document.querySelectorAll('[data-recurring-period]').forEach(button=>button.classList.toggle('active',button.dataset.recurringPeriod===state.recurringModalPeriod));
+  document.querySelectorAll('[data-recurring-tab]').forEach(button=>button.classList.toggle('active',button.dataset.recurringTab===state.recurringTab));
+  if(state.recurringTab==='verdicts'){
+    const summary=data.verdict_summary;recurringModalBody.innerHTML=`<div class="recurring-verdict-grid"><div><span>Reviewed rows</span><strong>${summary.reviewed}</strong><small>From the approved workbook</small></div><div><span>Recurring / obligations</span><strong>${summary.recurring}</strong><small>Included in recurring analysis</small></div><div><span>Not recurring</span><strong>${summary.not_recurring}</strong><small>Excluded from this section</small></div><div><span>Unresolved</span><strong>${summary.unresolved}</strong><small>No decision still required</small></div></div>`;return;
+  }
+  const tab=state.recurringTab,sourceRows=tab==='series'?data.series:data.commitments,metrics=recurringMetrics(data,tab),sort=state.recurringSorts[tab];
+  const rows=sortedRecurringRows(sourceRows,sort),headers=recurringColumns[tab],sortHeaders=recurringSortHeaders(tab,sort);
+  const tableClass=tab==='series'?'recurring-table recurring-series-table':'recurring-table recurring-commitments-table';
+  const colgroup=tab==='series'?'<colgroup><col class="rec-col-merchant"><col class="rec-col-category"><col class="rec-col-type"><col class="rec-col-cadence"><col class="rec-col-amount"><col class="rec-col-coverage"><col class="rec-col-status"></colgroup>':'<colgroup><col class="rec-col-purchase"><col class="rec-col-category"><col class="rec-col-progress"><col class="rec-col-paid"><col class="rec-col-remaining"><col class="rec-col-status"></colgroup>';
+  const body=rows.map((item,index)=>tab==='series'?`<tr tabindex="0" data-recurring-detail-row="${index}"><td><strong>${escapeHtml(item.display_name)}</strong><small>${escapeHtml((item.source_aliases||[]).join(' / ')||'Click for actual billing history')}</small></td><td>${escapeHtml(item.category)}</td><td>${recurringSelect(recurringTypeOptions,item.recurring_type,'recurring_type',index)}</td><td>${recurringSelect(recurringCadenceOptions,item.cadence,'cadence',index)}</td><td><strong>${item.amount==null?'—':money(item.amount)}</strong></td><td>${escapeHtml(item.coverage)}</td><td><i class="recurring-status ${recurringStatusClass(item.status)}">${escapeHtml(recurringStatusLabels[item.status]||item.status)}</i></td></tr>`:`<tr tabindex="0" data-recurring-detail-row="${index}"><td><strong>${escapeHtml(item.display_name)}</strong><small>${escapeHtml(item.source_alias||'Click for billed installments')}</small></td><td>${escapeHtml(item.category)}</td><td>${escapeHtml(item.progress)}</td><td>${money(item.paid)}</td><td>${money(item.remaining)}</td><td><i class="recurring-status ${recurringStatusClass(item.status)}">${escapeHtml(recurringStatusLabels[item.status]||item.status)}</i></td></tr>`).join('');
+  recurringModalBody.innerHTML=`<div class="recurring-detail-metrics">${metrics.map(metric=>`<div><span>${metric[0]}</span><strong>${metric[1]}</strong><small>${metric[2]}</small></div>`).join('')}</div><div class="recurring-table-wrap"><table class="${tableClass}">${colgroup}<thead><tr>${sortHeaders}</tr></thead><tbody>${body||`<tr><td colspan="${headers.length}"><strong>No matching items</strong><small>Nothing was billed or expected in this scope.</small></td></tr>`}</tbody></table></div><div class="recurring-inspector" id="recurringInspector" hidden></div>`;
+  recurringModalBody.querySelectorAll('[data-recurring-sort]').forEach(button=>button.addEventListener('click',()=>{
+    const key=button.dataset.recurringSort,current=state.recurringSorts[tab];
+    state.recurringSorts[tab]=current.key===key?{key,direction:current.direction==='asc'?'desc':'asc'}:{key,direction:'asc'};
+    renderRecurringModal(data);
+  }));
+  recurringModalBody.querySelectorAll('[data-recurring-detail-row]').forEach(row=>{const open=event=>{if(event?.target.closest('select,input,button'))return;recurringModalBody.querySelectorAll('[data-recurring-detail-row]').forEach(item=>item.classList.remove('selected'));row.classList.add('selected');const item=rows[Number(row.dataset.recurringDetailRow)];if(tab==='series')state.activeRecurringSeries=item.series_id;renderRecurringInspector(data,item,tab);setTimeout(()=>document.querySelector('#recurringInspector')?.scrollIntoView({block:'nearest',behavior:'smooth'}),0)};row.addEventListener('click',open);row.addEventListener('keydown',event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();open(event)}})});
+  recurringModalBody.querySelectorAll('[data-recurring-field]').forEach(select=>select.addEventListener('change',async event=>{const item=rows[Number(event.target.dataset.recurringRow)];await updateRecurringProfile(item,{[event.target.dataset.recurringField]:event.target.value})}));
+  if(state.activeRecurringSeries&&tab==='series'){const index=rows.findIndex(item=>item.series_id===state.activeRecurringSeries);if(index>=0)recurringModalBody.querySelector(`[data-recurring-detail-row="${index}"]`)?.click()}
+}
+
+async function loadRecurringModal(force=false){
+  recurringModalBody.innerHTML='<p class="loading-state">Loading recurring details…</p>';
+  try{renderRecurringModal(await fetchRecurring(state.recurringModalPeriod,force))}catch(error){recurringModalBody.innerHTML=`<p class="empty-state">${escapeHtml(error.message)}</p>`}
+}
+function openRecurringModal(tab='series',index=null){
+  state.recurringModalPeriod=state.period;state.recurringTab=tab;state.activeRecurringSeries='';
+  const panelData=state.recurringCache.get(recurringCacheKey(state.period));if(tab==='series'&&index!=null)state.activeRecurringSeries=panelData?.series[index]?.series_id||'';
+  setRecurringModal(true);loadRecurringModal();
+}
+async function updateRecurringProfile(item,changes){
+  const payload={canonical_group_id:item.canonical_group_id,recurring_type:changes.recurring_type||item.recurring_type,cadence:changes.cadence||item.cadence,lifecycle_status:changes.lifecycle_status||item.lifecycle_status,end_month:changes.end_month!==undefined?changes.end_month:(item.end_month||'')};
+  const scrollTop=recurringModalBody.scrollTop;
+  try{const response=await fetch('/api/recurring-profile',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});const result=await response.json();if(!response.ok)throw new Error(result.error||'Could not update recurring profile');state.recurringCache.clear();showToast(payload.lifecycle_status==='ended'?'Ended lifecycle saved. Later periods will no longer expect this payment.':'Recurring profile saved to the local database.','Recurring updated');await loadRecurringPanel(true);await loadRecurringModal(true);setTimeout(()=>{recurringModalBody.scrollTop=scrollTop},0)}catch(error){showToast(error.message,'Recurring update failed');await loadRecurringModal(true);setTimeout(()=>{recurringModalBody.scrollTop=scrollTop},0)}
+}
+
+document.querySelector('#openRecurringModal').addEventListener('click',()=>openRecurringModal());
+function openRecurringManagement(source=null){setRecurringModal(false);openMerchants(source,{recurringFilter:'all'})}
+document.querySelector('#manageRecurringMerchants').addEventListener('click',()=>openRecurringManagement());
+document.querySelectorAll('[data-recurring-open]').forEach(button=>button.addEventListener('click',()=>openRecurringModal(button.dataset.recurringOpen)));
+recurringPanel.addEventListener('click',event=>{const row=event.target.closest('[data-recurring-preview]');if(row)openRecurringModal(row.dataset.recurringPreview,Number(row.dataset.recurringIndex))});
+document.querySelector('#recurringModalClose').addEventListener('click',()=>setRecurringModal(false));
+recurringModal.addEventListener('click',event=>{if(event.target===recurringModal)setRecurringModal(false)});
+document.querySelectorAll('[data-recurring-period]').forEach(button=>button.addEventListener('click',()=>{state.recurringModalPeriod=button.dataset.recurringPeriod;state.activeRecurringSeries='';loadRecurringModal()}));
+document.querySelectorAll('[data-recurring-tab]').forEach(button=>button.addEventListener('click',()=>{state.recurringTab=button.dataset.recurringTab;state.activeRecurringSeries='';loadRecurringModal()}));
+
 document.addEventListener('click',event=>{
+  const adjustmentTarget=event.target.closest('[data-adjust-transaction]');
+  if(adjustmentTarget){event.preventDefault();event.stopPropagation();openSpendingAdjustment(adjustmentTarget.dataset.adjustTransaction);return}
   const transactionEditTarget=event.target.closest('[data-edit-transaction]');
   if(transactionEditTarget){event.preventDefault();openTransactionEditor(transactionEditTarget.dataset.editTransaction);return}
   const merchantEditTarget=event.target.closest('[data-edit-merchant]');
@@ -664,7 +939,7 @@ document.addEventListener('click',event=>{
   else if(action==='duplicates')openImportAudit()
   else if(action==='largest')openDetail('transactions',actionTarget,state.data?.insights.largest_transaction?.merchant_raw||'')
   else if(action==='open-import'){setDetailModal(false);document.querySelector('#mappingSummary').hidden=true;setModal(true)}
-  else if(action==='recurring')showToast('Recurring-payment detection is the next analysis module.','Not implemented yet');
+  else if(action==='recurring')openRecurringManagement(actionTarget);
   else if(action==='cards-help')showToast('Select a card to filter every metric and chart.','Card filtering');
   else if(action==='notifications')showToast(`${state.data?.insights.merchants_needing_review||0} merchants currently need classification.`,'Data review');
   else if(action==='profile')showToast('This dashboard uses your private local workspace.','Local profile');
@@ -710,7 +985,8 @@ document.querySelector('#modalClose').addEventListener('click',()=>setModal(fals
 modal.addEventListener('click',event=>{if(event.target===modal)setModal(false)});
 document.querySelector('#merchantEditorClose').addEventListener('click',()=>setMerchantEditor(false));document.querySelector('#merchantEditorCancel').addEventListener('click',()=>setMerchantEditor(false));merchantEditorModal.addEventListener('click',event=>{if(event.target===merchantEditorModal)setMerchantEditor(false)});document.querySelector('#merchantReviewButton').addEventListener('click',reviewMerchantImpact);document.querySelector('#merchantApplyButton').addEventListener('click',applyMerchantChanges);
 document.querySelector('#transactionEditorClose').addEventListener('click',()=>setTransactionEditor(false));document.querySelector('#transactionEditorCancel').addEventListener('click',()=>setTransactionEditor(false));transactionEditorModal.addEventListener('click',event=>{if(event.target===transactionEditorModal)setTransactionEditor(false)});document.querySelector('#transactionSaveButton').addEventListener('click',saveTransactionCorrection);
-document.addEventListener('keydown',event=>{if(event.key==='Escape'){setModal(false);setMerchantEditor(false);setTransactionEditor(false);setDetailModal(false)}});
+document.querySelector('#spendingAdjustmentClose').addEventListener('click',()=>setSpendingAdjustmentModal(false));document.querySelector('#spendingAdjustmentCancel').addEventListener('click',()=>setSpendingAdjustmentModal(false));spendingAdjustmentModal.addEventListener('click',event=>{if(event.target===spendingAdjustmentModal)setSpendingAdjustmentModal(false)});document.querySelector('#spendingAdjustmentSave').addEventListener('click',()=>saveSpendingAdjustment(false));spendingAdjustmentRemove.addEventListener('click',()=>{if(spendingAdjustmentRemove.dataset.confirmed==='1'){saveSpendingAdjustment(true);return}spendingAdjustmentRemove.dataset.confirmed='1';spendingAdjustmentRemove.textContent='Confirm removal'});
+document.addEventListener('keydown',event=>{if(event.key==='Escape'){setManageMenu(false);setModal(false);setMerchantEditor(false);setTransactionEditor(false);setDetailModal(false);setRecurringModal(false)}});
 fileInput.addEventListener('change',()=>analyzeImportFiles(fileInput.files));
 
 function closeDisplayMenus(except=null){

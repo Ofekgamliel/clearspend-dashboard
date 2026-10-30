@@ -52,6 +52,24 @@ Changes to installment reconstruction or reporting require before/after totals,
 representative plan checks, duplicate checks, and migration tests against the
 existing local database.
 
+## Recurring spending and scheduled obligations
+
+- Only user-reviewed recurring profiles participate in recurring summaries.
+- Recurring membership is decided per normalized merchant alias. Several
+  included aliases may share one display identity and combined history, while
+  excluded aliases under that display identity contribute neither charges nor
+  missing-payment expectations.
+- Amounts actually billed are spending; expected future windows are
+  informational and never increase totals.
+- A stopped supplier is `ended`, not `missing`. An end month is sufficient; an
+  exact day, end reason, and replacement merchant are not required.
+- Ended profiles remain in historical periods but stop appearing as expected or
+  missing after their end month.
+- Annual obligations appear in a monthly view only when paid, one month before
+  the expected month, due, or overdue. They remain available in longer-period
+  history.
+- Installment commitments remain separate from indefinite recurring profiles.
+
 ## Income and amount left
 
 - Combine all contributors into one monthly income total.
@@ -62,6 +80,22 @@ existing local database.
 - Income and amount-left metrics are all-card household metrics; selecting one
   card must not reinterpret them as card-specific income.
 - Missing income is unknown, not automatically zero.
+
+## Reimbursed purchases
+
+- Preserve the original card transaction, card charge, merchant, and category.
+- Store a full or partial reimbursement as a separate transaction-specific
+  spending adjustment.
+- Personal spending is the positive card charge minus the reviewed reimbursed
+  amount, never below zero.
+- Dashboard spending, categories, cards, averages, amount left, and spending
+  trends use personal spending. Original card charges remain available for
+  audit and statement reconciliation.
+- A reimbursement is not salary, income, or a card refund.
+- Removing an adjustment restores the full original charge to personal
+  spending without deleting transaction history.
+- A future imported bank transfer may be linked as evidence, but must not apply
+  the reimbursement a second time.
 
 ## Averages
 

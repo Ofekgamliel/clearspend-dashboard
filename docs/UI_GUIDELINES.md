@@ -41,6 +41,11 @@ Local review prototypes derived from real dashboard data must remain ignored.
 - Preserve original merchant descriptions inside expanded/individual details.
 - Use a compact edit affordance, such as the approved edit icon on hover/focus,
   instead of repeating a large action beneath every category.
+- In the all-transactions table, reimbursement editing uses a compact icon-only
+  action column pinned to the right edge. It opens directly without adding an
+  expandable transaction row and has an accessible label and tooltip.
+- An adjusted transaction continues to show its original charge and clearly
+  labels the personal amount and reimbursement status.
 
 ## Merchant management
 
@@ -50,6 +55,12 @@ Local review prototypes derived from real dashboard data must remain ignored.
   exact matches, and whether categories differ inside one display identity.
 - Transaction-specific category correction remains accessible from transaction
   details and must state that it does not change the permanent merchant rule.
+- Adding or removing a recurring decision belongs in merchant management. The
+  Recurring & commitments modal links there but remains focused on monitoring.
+- When a display identity contains several original merchant aliases, recurring
+  management must show and save the included aliases explicitly.
+- Removing a recurring decision requires confirmation, preserves transactions
+  and the previous profile settings, and is distinct from an ended lifecycle.
 
 ## Income privacy
 

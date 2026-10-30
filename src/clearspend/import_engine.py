@@ -522,6 +522,14 @@ CREATE TABLE IF NOT EXISTS transaction_category_overrides (
   subcategory TEXT,
   updated_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS transaction_spending_adjustments (
+  transaction_id INTEGER PRIMARY KEY REFERENCES transactions(id) ON DELETE CASCADE,
+  adjustment_type TEXT NOT NULL CHECK(adjustment_type IN ('full_reimbursement','partial_reimbursement')),
+  reimbursed_amount TEXT NOT NULL,
+  reimbursement_date TEXT,
+  note TEXT,
+  updated_at TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS import_transactions (
   import_id INTEGER NOT NULL REFERENCES imports(id),
   transaction_id INTEGER NOT NULL REFERENCES transactions(id),
@@ -552,6 +560,28 @@ CREATE TABLE IF NOT EXISTS income_entries (
   created_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_income_entries_month ON income_entries(month);
+CREATE TABLE IF NOT EXISTS recurring_profiles (
+  canonical_group_id TEXT PRIMARY KEY,
+  display_name TEXT NOT NULL,
+  verdict TEXT NOT NULL CHECK(verdict IN ('recurring','not_recurring')),
+  recurring_type TEXT,
+  cadence TEXT,
+  cadence_months INTEGER,
+  lifecycle_status TEXT NOT NULL DEFAULT 'active'
+    CHECK(lifecycle_status IN ('active','ended','paused','unknown')),
+  end_month TEXT,
+  review_count INTEGER NOT NULL DEFAULT 1,
+  updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS recurring_profile_members (
+  canonical_group_id TEXT NOT NULL REFERENCES recurring_profiles(canonical_group_id) ON DELETE CASCADE,
+  merchant_normalized TEXT NOT NULL,
+  included INTEGER NOT NULL DEFAULT 1 CHECK(included IN (0,1)),
+  updated_at TEXT NOT NULL,
+  PRIMARY KEY(canonical_group_id,merchant_normalized)
+);
+CREATE INDEX IF NOT EXISTS idx_recurring_members_merchant
+  ON recurring_profile_members(merchant_normalized,included);
 """
 
 
@@ -564,6 +594,26 @@ class ImportDatabase:
         transaction_columns = {
             row["name"] for row in self.connection.execute("PRAGMA table_info(transactions)")
         }
+        recurring_columns = {
+            row["name"] for row in self.connection.execute("PRAGMA table_info(recurring_profiles)")
+        }
+        if "review_count" not in recurring_columns:
+            self.connection.execute(
+                "ALTER TABLE recurring_profiles ADD COLUMN review_count INTEGER NOT NULL DEFAULT 1"
+            )
+        self.connection.execute(
+            """INSERT OR IGNORE INTO recurring_profile_members(
+            canonical_group_id,merchant_normalized,included,updated_at
+            )
+            SELECT p.canonical_group_id,t.merchant_normalized,
+              CASE WHEN p.verdict='recurring' THEN 1 ELSE 0 END,p.updated_at
+            FROM recurring_profiles p
+            JOIN transactions t
+            LEFT JOIN merchant_display_mappings d
+              ON d.merchant_normalized=t.merchant_normalized
+            WHERE COALESCE(d.canonical_group_id,t.merchant_normalized)=p.canonical_group_id
+            GROUP BY p.canonical_group_id,t.merchant_normalized"""
+        )
         reporting_columns_added = False
         for column, definition in (
             ("billing_month", "TEXT"),
