@@ -70,6 +70,42 @@ existing local database.
   history.
 - Installment commitments remain separate from indefinite recurring profiles.
 
+## Financial observations and patterns
+
+- Month view reports transaction-level observations only. It may surface
+  duplicates, recurring or fee changes, category increases, merchant activity,
+  large purchases, reliable transaction outliers, and amount-left pressure.
+- Latest year and All time do not aggregate monthly observations. They scan for
+  lasting changes in spending, amount left, categories, recurring burden,
+  installment burden, and merchant habits.
+- Latest year reports shifts whose start month is inside the selected year. All
+  time reports the strongest lasting shifts across imported history.
+- Historical patterns exclude the incomplete current month and isolated large
+  purchases. Income-derived patterns require all-card scope, visible income,
+  and matching covered income and spending months.
+- A spending shift needs three post-change months on the same side of the
+  earlier median, with at least two individually crossing both 20% and ₪1,000.
+- Category shifts count covered zero-spending months as zero and report the
+  merchants that drove the shekel change without claiming that category share
+  changed.
+- Recurring burden uses normalized monthly equivalents and shows cost and
+  active-service count together. Installments remain a separate pattern.
+- Merchant habits use purchase dates. Reviewed recurring aliases, installment
+  transactions, and money transfers are excluded. A merchant may become regular
+  through an average of at least ₪200 per month or through repeated purchase
+  frequency: at least six purchases on four purchase days across three
+  consecutive active months, or eight purchases on six purchase days in four of
+  six months, with little earlier activity.
+- Later merchant-frequency growth is folded into the established-habit finding
+  rather than emitted as a duplicate observation.
+- Review decisions are available only for possible duplicates, additional
+  recurring charges, and unusual transactions. They apply to the exact
+  transaction group, recurring occurrence, or transaction that was reviewed;
+  a different future finding remains eligible.
+- Reviewed findings are suppressed from active observation cards but remain
+  reversible. Resolving one row in a grouped card does not resolve its other
+  rows.
+
 ## Income and amount left
 
 - Combine all contributors into one monthly income total.

@@ -433,6 +433,46 @@ def dashboard_payload(database: Path, period: str, card: str, month: str = "") -
         for item in categories:
             item["share"] = round((item["amount"] / spent * 100), 1) if spent else 0
 
+        category_comparison = {"available": False, "previous_month": None}
+        if period == "month":
+            previous_month = add_months(datetime.strptime(start, "%Y-%m-%d").date(), -1).strftime("%Y-%m")
+            previous_conditions = [f"{REPORTING_MONTH_SQL} = ?"]
+            previous_parameters: list[object] = [previous_month]
+            if card != "all" and ":" in card:
+                provider, last4 = card.split(":", 1)
+                previous_conditions.extend(["t.provider = ?", "t.card_last4 = ?"])
+                previous_parameters.extend([provider, last4])
+            previous_where = " AND ".join(previous_conditions)
+            previous_count = int(connection.execute(
+                f"SELECT COUNT(*) FROM transactions t WHERE {previous_where}",
+                previous_parameters,
+            ).fetchone()[0])
+            previous_rows = connection.execute(
+                f"""SELECT COALESCE(o.category,t.user_category,t.provider_category,'Needs review') category,
+                ROUND(SUM({personal_charge_sql()}),2) amount
+                FROM transactions t
+                LEFT JOIN transaction_category_overrides o ON o.transaction_id=t.id
+                WHERE {previous_where}
+                GROUP BY COALESCE(o.category,t.user_category,t.provider_category,'Needs review')""",
+                previous_parameters,
+            ).fetchall()
+            previous_amounts = {row["category"]: float(row["amount"]) for row in previous_rows}
+            category_comparison = {"available": previous_count > 0, "previous_month": previous_month}
+            for item in categories:
+                item["previous_amount"] = round(previous_amounts.get(item["category"], 0), 2)
+                if not previous_count:
+                    item["comparison"] = "unavailable"
+                    item["change_percent"] = None
+                    continue
+                previous_amount = item["previous_amount"]
+                if previous_amount <= 0:
+                    item["comparison"] = "new"
+                    item["change_percent"] = None
+                    continue
+                change_percent = round((float(item["amount"]) - previous_amount) / previous_amount * 100)
+                item["change_percent"] = change_percent
+                item["comparison"] = "up" if change_percent > 0 else "down" if change_percent < 0 else "same"
+
         recent = [dict(row) for row in connection.execute(
             f"""SELECT t.merchant_raw,COALESCE(o.category,t.user_category,t.provider_category,'Needs review') category,
             COALESCE(o.subcategory,t.user_subcategory) subcategory,t.provider,t.card_last4,
@@ -575,6 +615,7 @@ def dashboard_payload(database: Path, period: str, card: str, month: str = "") -
             },
             "cards": cards,
             "categories": categories,
+            "category_comparison": category_comparison,
             "recent_transactions": recent,
             "trend": trend,
             "trend_mode": "purchase_activity" if period == "month" else "billing_summary",
@@ -1438,6 +1479,124 @@ def save_transaction_adjustment(
         connection.close()
 
 
+OBSERVATION_RESOLUTIONS = {
+    "POSSIBLE DUPLICATE": "not_duplicate",
+    "ADDITIONAL RECURRING CHARGE": "expected_charge",
+    "UNUSUAL TRANSACTION": "not_unusual",
+}
+
+
+def observation_reviews_payload(database: Path) -> dict:
+    connection = sqlite3.connect(database)
+    connection.row_factory = sqlite3.Row
+    try:
+        rows = connection.execute(
+            """SELECT finding_key,observation_type,resolution,month,transaction_ids,
+            recurring_series_id,occurrence_start,occurrence_end,merchant_label,reviewed_at,updated_at
+            FROM observation_reviews WHERE active=1 ORDER BY updated_at DESC"""
+        ).fetchall()
+        reviews = []
+        for row in rows:
+            item = dict(row)
+            try:
+                item["transaction_ids"] = json.loads(item["transaction_ids"] or "[]")
+            except json.JSONDecodeError:
+                item["transaction_ids"] = []
+            reviews.append(item)
+        return {"reviews": reviews}
+    finally:
+        connection.close()
+
+
+def save_observation_review(
+    database: Path,
+    finding_key: str,
+    observation_type: str,
+    resolution: str,
+    month: str,
+    transaction_ids: object,
+    recurring_series_id: str = "",
+    occurrence_start: str = "",
+    occurrence_end: str = "",
+    merchant_label: str = "",
+    remove: bool = False,
+) -> dict:
+    finding_key = finding_key.strip()
+    observation_type = observation_type.strip().upper()
+    resolution = resolution.strip()
+    month = month.strip()
+    recurring_series_id = recurring_series_id.strip()
+    occurrence_start = occurrence_start.strip()
+    occurrence_end = occurrence_end.strip()
+    merchant_label = merchant_label.strip()
+    expected_resolution = OBSERVATION_RESOLUTIONS.get(observation_type)
+    if not expected_resolution:
+        raise ValueError("This observation type cannot be resolved")
+    if not finding_key or len(finding_key) > 1000 or not finding_key.startswith(f"{observation_type}:"):
+        raise ValueError("A valid finding key is required")
+    if resolution != expected_resolution:
+        raise ValueError("Invalid resolution for this observation type")
+    if not re.fullmatch(r"\d{4}-\d{2}", month):
+        raise ValueError("A valid observation month is required")
+    if not isinstance(transaction_ids, list):
+        raise ValueError("Transaction IDs must be a list")
+    try:
+        ids = sorted({int(value) for value in transaction_ids if int(value) > 0})
+    except (TypeError, ValueError) as error:
+        raise ValueError("Transaction IDs must be positive integers") from error
+    if observation_type == "POSSIBLE DUPLICATE" and len(ids) < 2:
+        raise ValueError("A duplicate review requires at least two transactions")
+    if observation_type == "UNUSUAL TRANSACTION" and len(ids) != 1:
+        raise ValueError("An unusual-transaction review requires one transaction")
+    if observation_type == "ADDITIONAL RECURRING CHARGE" and (len(ids) < 2 or not recurring_series_id):
+        raise ValueError("A recurring-charge review requires its series and transactions")
+    for value in (occurrence_start, occurrence_end):
+        if value:
+            try:
+                date.fromisoformat(value)
+            except ValueError as error:
+                raise ValueError("Occurrence dates must be valid dates") from error
+    connection = sqlite3.connect(database)
+    try:
+        if ids:
+            placeholders = ",".join("?" for _ in ids)
+            found = connection.execute(
+                f"SELECT COUNT(*) FROM transactions WHERE id IN ({placeholders})", ids
+            ).fetchone()[0]
+            if found != len(ids):
+                raise ValueError("One or more reviewed transactions were not found")
+        now = datetime.now().astimezone().isoformat()
+        if remove:
+            changed = connection.execute(
+                """UPDATE observation_reviews SET active=0,updated_at=?
+                WHERE finding_key=? AND active=1""",
+                (now, finding_key),
+            ).rowcount
+            connection.commit()
+            return {"status": "restored", "finding_key": finding_key, "changed": bool(changed)}
+        connection.execute(
+            """INSERT INTO observation_reviews(
+            finding_key,observation_type,resolution,month,transaction_ids,recurring_series_id,
+            occurrence_start,occurrence_end,merchant_label,active,reviewed_at,updated_at
+            ) VALUES(?,?,?,?,?,?,?,?,?,1,?,?)
+            ON CONFLICT(finding_key) DO UPDATE SET
+            observation_type=excluded.observation_type,resolution=excluded.resolution,
+            month=excluded.month,transaction_ids=excluded.transaction_ids,
+            recurring_series_id=excluded.recurring_series_id,
+            occurrence_start=excluded.occurrence_start,occurrence_end=excluded.occurrence_end,
+            merchant_label=excluded.merchant_label,active=1,updated_at=excluded.updated_at""",
+            (
+                finding_key, observation_type, resolution, month,
+                json.dumps(ids, separators=(",", ":")), recurring_series_id or None,
+                occurrence_start or None, occurrence_end or None, merchant_label or None, now, now,
+            ),
+        )
+        connection.commit()
+        return {"status": "reviewed", "finding_key": finding_key, "resolution": resolution}
+    finally:
+        connection.close()
+
+
 class ClearSpendHandler(BaseHTTPRequestHandler):
     server_version = "ClearSpend/0.1"
 
@@ -1523,6 +1682,12 @@ class ClearSpendHandler(BaseHTTPRequestHandler):
             except Exception as error:
                 self.send_json({"error": str(error)}, 500)
             return
+        if parsed.path == "/api/observation-reviews":
+            try:
+                self.send_json(observation_reviews_payload(self.app.database))
+            except Exception as error:
+                self.send_json({"error": str(error)}, 500)
+            return
         self.serve_static(parsed.path)
 
     def do_POST(self) -> None:
@@ -1585,6 +1750,28 @@ class ClearSpendHandler(BaseHTTPRequestHandler):
                     float(payload.get("reimbursed_amount", 0) or 0),
                     str(payload.get("reimbursement_date", "")),
                     str(payload.get("note", "")),
+                    bool(payload.get("remove", False)),
+                ))
+            except (TypeError, ValueError, json.JSONDecodeError) as error:
+                self.send_json({"error": str(error)}, 400)
+            except Exception as error:
+                self.send_json({"error": str(error)}, 500)
+            return
+        if parsed_path == "/api/observation-review":
+            try:
+                length = min(int(self.headers.get("Content-Length", "0")), 1024 * 1024)
+                payload = json.loads(self.rfile.read(length) or b"{}")
+                self.send_json(save_observation_review(
+                    self.app.database,
+                    str(payload.get("finding_key", "")),
+                    str(payload.get("observation_type", "")),
+                    str(payload.get("resolution", "")),
+                    str(payload.get("month", "")),
+                    payload.get("transaction_ids", []),
+                    str(payload.get("recurring_series_id", "")),
+                    str(payload.get("occurrence_start", "")),
+                    str(payload.get("occurrence_end", "")),
+                    str(payload.get("merchant_label", "")),
                     bool(payload.get("remove", False)),
                 ))
             except (TypeError, ValueError, json.JSONDecodeError) as error:

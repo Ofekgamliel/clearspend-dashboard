@@ -79,6 +79,10 @@ The principal SQLite tables have separate responsibilities:
 - `recurring_profile_members`: the exact normalized merchant aliases included
   in or excluded from each recurring profile. A shared display identity does
   not automatically make every underlying alias recurring.
+- `observation_reviews`: reversible reviewed decisions for an exact duplicate
+  group, recurring billing occurrence, or unusual transaction. Structured
+  transaction and recurring-series references keep one decision from
+  suppressing a different future finding.
 
 Do not merge these concepts. In particular, display identity, merchant category,
 and transaction-specific category are intentionally independent.

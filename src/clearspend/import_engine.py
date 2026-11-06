@@ -582,6 +582,22 @@ CREATE TABLE IF NOT EXISTS recurring_profile_members (
 );
 CREATE INDEX IF NOT EXISTS idx_recurring_members_merchant
   ON recurring_profile_members(merchant_normalized,included);
+CREATE TABLE IF NOT EXISTS observation_reviews (
+  finding_key TEXT PRIMARY KEY,
+  observation_type TEXT NOT NULL,
+  resolution TEXT NOT NULL,
+  month TEXT NOT NULL,
+  transaction_ids TEXT NOT NULL DEFAULT '[]',
+  recurring_series_id TEXT,
+  occurrence_start TEXT,
+  occurrence_end TEXT,
+  merchant_label TEXT,
+  active INTEGER NOT NULL DEFAULT 1 CHECK(active IN (0,1)),
+  reviewed_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_observation_reviews_active
+  ON observation_reviews(active,observation_type,month);
 """
 
 

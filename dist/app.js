@@ -1,13 +1,27 @@
 const state={period:'month',month:'',card:'all',data:null,detailTransactions:[],mappingData:null,merchantData:null,activeMerchant:null,activeTransaction:null,activeAdjustmentTransaction:null,detailMode:'',activeCategory:'',detailSort:{key:'transaction_date',direction:'desc'},categoryTransactions:[],categoryView:'grouped',categorySearch:'',categoryGroupSort:{key:'latest_date',direction:'desc'},expandedMerchantGroups:new Set(),categoryExpandedSort:new Map(),merchantRecurringFilter:'all',recurringCache:new Map(),recurringModalPeriod:'month',recurringTab:'series',activeRecurringSeries:'',recurringSorts:{series:{key:'display_name',direction:'asc'},commitments:{key:'remaining',direction:'desc'}}};
 const colors=['#6658e8','#41b98c','#e6a14b','#e76b77','#5b8def','#a66dd4','#42a5b3','#d17b49','#8f9b4f','#d45f9f','#62748f','#9b7b58'];
-const cardFilter=document.querySelector('#cardFilter');
-const monthFilter=document.querySelector('#monthFilter');
+const cardPicker=document.querySelector('#cardPicker');
+const cardPickerButton=document.querySelector('#cardPickerButton');
+const cardPickerLabel=document.querySelector('#cardPickerLabel');
+const cardPickerPopover=document.querySelector('#cardPickerPopover');
+const monthPicker=document.querySelector('#monthPicker');
+const monthPickerButton=document.querySelector('#monthPickerButton');
+const monthPickerPopover=document.querySelector('#monthPickerPopover');
+const monthPickerLabel=document.querySelector('#monthPickerLabel');
+const monthPickerYear=document.querySelector('#monthPickerYear');
+const monthPickerGrid=document.querySelector('#monthPickerGrid');
+const monthYearPrevious=document.querySelector('#monthYearPrevious');
+const monthYearNext=document.querySelector('#monthYearNext');
+const monthPickerLatest=document.querySelector('#monthPickerLatest');
 const toast=document.querySelector('#toast');
 const incomePanel=document.querySelector('#incomePanel');
 const incomeHeaderToggle=document.querySelector('#incomeHeaderToggle');
 const manageMenuButton=document.querySelector('#manageMenuButton');
 const manageMenu=document.querySelector('#manageMenu');
 let toastTimer;
+let availableMonths=[];
+let monthPickerViewYear=null;
+let monthPickerSelected='';
 
 const money=value=>new Intl.NumberFormat('en-IL',{style:'currency',currency:'ILS',maximumFractionDigits:2}).format(Number(value)||0).replace('ILS','₪');
 const compact=value=>new Intl.NumberFormat('en',{notation:'compact',maximumFractionDigits:1}).format(Number(value)||0);
@@ -35,6 +49,7 @@ async function loadDashboard(announce=false){
     if(!response.ok)throw new Error(data.error||'Could not load dashboard');
     renderDashboard(data);
     loadRecurringPanel();
+    window.loadFinancialObservations?.();
     if(announce)showToast(`Showing ${data.period.label}`);
   }catch(error){
     document.querySelector('#spentNote').textContent='Start the ClearSpend local server to load your data.';
@@ -61,9 +76,8 @@ function renderDashboard(data){
   document.querySelector('#cardsPeriod').textContent=data.period.label;
   renderCards(data.cards,data.selected_card);
   renderIncome(data.income_summary,data.period);
-  renderCategories(data.categories,m.spent);
+  renderCategories(data.categories,m.spent,data.category_comparison);
   renderTransactions(data.recent_transactions);
-  renderInsights(data.insights);
   renderTrend(data.trend,data);
   renderImportStatus(data.latest_import);
 }
@@ -102,7 +116,7 @@ function setIncomeVisibility(hidden){
   incomeHeaderToggle.textContent=hidden?'Show income':'Hide income';
   incomeHeaderToggle.setAttribute('aria-pressed',String(!hidden));
   try{localStorage.setItem('clearspend-income-hidden',hidden?'1':'0')}catch(_error){}
-  if(state.data)renderTrend(state.data.trend,state.data);
+  if(state.data){renderTrend(state.data.trend,state.data);window.loadFinancialObservations?.()}
 }
 
 let incomeHidden=false;
@@ -119,15 +133,55 @@ manageMenuButton.addEventListener('click',event=>{event.stopPropagation();setMan
 manageMenu.addEventListener('click',()=>setManageMenu(false));
 document.addEventListener('click',event=>{if(!event.target.closest('#manageMenu')&&!event.target.closest('#manageMenuButton'))setManageMenu(false)});
 
+function availableMonthYears(){return [...new Set(availableMonths.map(month=>Number(month.slice(0,4))))].sort((a,b)=>a-b)}
+
+function renderMonthPickerGrid(){
+  const years=availableMonthYears();
+  if(!years.length){
+    monthPickerYear.textContent='—';monthPickerGrid.innerHTML='';monthYearPrevious.disabled=true;monthYearNext.disabled=true;monthPickerLatest.disabled=true;return;
+  }
+  if(!years.includes(monthPickerViewYear))monthPickerViewYear=years.at(-1);
+  const yearIndex=years.indexOf(monthPickerViewYear);
+  monthPickerYear.textContent=monthPickerViewYear;
+  monthYearPrevious.disabled=yearIndex<=0;
+  monthYearNext.disabled=yearIndex>=years.length-1;
+  monthPickerLatest.disabled=false;
+  const shortMonths=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  monthPickerGrid.innerHTML=shortMonths.map((label,index)=>{
+    const month=`${monthPickerViewYear}-${String(index+1).padStart(2,'0')}`;
+    const available=availableMonths.includes(month),selected=month===monthPickerSelected;
+    return `<button class="month-picker-month${available?' available':''}${selected?' selected':''}" type="button" data-month="${month}" ${available?'':'disabled'} aria-label="${escapeHtml(formatMonth(month))}"${selected?' aria-current="date"':''}>${label}</button>`;
+  }).join('');
+}
+
+function setMonthPickerOpen(open){
+  monthPickerPopover.hidden=!open;
+  monthPickerButton.setAttribute('aria-expanded',String(open));
+  if(open)renderMonthPickerGrid();
+}
+
+function selectDashboardMonth(month){
+  if(!availableMonths.includes(month))return;
+  state.month=month;monthPickerSelected=month;monthPickerViewYear=Number(month.slice(0,4));
+  monthPickerLabel.textContent=formatMonth(month);setMonthPickerOpen(false);state.period='month';
+  document.querySelectorAll('#periodTabs button').forEach(button=>button.classList.toggle('active',button.dataset.period==='month'));
+  loadDashboard(true);
+}
+
 function renderMonthFilter(months,start){
-  const selected=state.month||(state.period==='month'&&start?start.slice(0,7):'');
-  monthFilter.innerHTML=months.map(month=>`<option value="${month}">${escapeHtml(formatMonth(month))}</option>`).join('');
-  if(selected&&months.includes(selected))monthFilter.value=selected;
+  availableMonths=[...new Set(months.filter(month=>/^\d{4}-\d{2}$/.test(month)))].sort();
+  const requested=state.month||(state.period==='month'&&start?start.slice(0,7):'');
+  const latest=availableMonths.at(-1)||'';
+  monthPickerSelected=availableMonths.includes(requested)?requested:latest;
+  monthPickerViewYear=Number((monthPickerSelected||latest||String(new Date().getFullYear())).slice(0,4));
+  monthPickerLabel.textContent=monthPickerSelected?formatMonth(monthPickerSelected):'No months available';
+  renderMonthPickerGrid();
 }
 
 function renderCards(cards,selected){
-  cardFilter.innerHTML='<option value="all">All cards</option>'+cards.map(card=>`<option value="${escapeHtml(card.key)}">${escapeHtml(card.product_name)} •• ${escapeHtml(card.card_last4)}</option>`).join('');
-  cardFilter.value=selected;
+  const selectedCard=cards.find(card=>card.key===selected);
+  cardPickerLabel.textContent=selectedCard?`${selectedCard.product_name} •• ${selectedCard.card_last4}`:'All cards';
+  cardPickerPopover.innerHTML=`<button class="card-picker-option${selected==='all'?' selected':''}" type="button" role="option" aria-selected="${selected==='all'}" data-card="all"><span><strong>All cards</strong><small>Combined dashboard view</small></span><i>${selected==='all'?'✓':''}</i></button>`+cards.map(card=>`<button class="card-picker-option${selected===card.key?' selected':''}" type="button" role="option" aria-selected="${selected===card.key}" data-card="${escapeHtml(card.key)}"><span><strong>${escapeHtml(card.product_name)} •• ${escapeHtml(card.card_last4)}</strong><small>${escapeHtml(card.provider.toUpperCase())}</small></span><i>${selected===card.key?'✓':''}</i></button>`).join('');
   const list=document.querySelector('#cardList');
   list.innerHTML=cards.length?cards.map(card=>`
     <button class="payment-card ${selected===card.key?'selected':''}" data-card="${escapeHtml(card.key)}">
@@ -136,12 +190,13 @@ function renderCards(cards,selected){
       <span class="card-total"><strong>${money(card.amount)}</strong><small>${card.share}% · ${card.transactions} trx</small></span>
       <span class="card-bar"><i style="width:${Math.min(card.share,100)}%"></i></span>
     </button>`).join(''):'<p>No transactions in this period.</p>';
-  list.querySelectorAll('.payment-card').forEach(button=>button.addEventListener('click',()=>{
-    state.card=button.dataset.card;cardFilter.value=state.card;loadDashboard(true);
-  }));
+  list.querySelectorAll('.payment-card').forEach(button=>button.addEventListener('click',()=>selectDashboardCard(button.dataset.card)));
 }
 
-function renderCategories(categories,total){
+function setCardPickerOpen(open){cardPickerPopover.hidden=!open;cardPickerButton.setAttribute('aria-expanded',String(open))}
+function selectDashboardCard(card){state.card=card;setCardPickerOpen(false);loadDashboard(true)}
+
+function renderCategories(categories,total,comparison){
   const donut=document.querySelector('#categoryDonut');
   const tooltip=document.querySelector('#categoryDonutTooltip');
   document.querySelector('#donutTotal').textContent=`₪${compact(total)}`;
@@ -170,8 +225,24 @@ function renderCategories(categories,total){
     tooltip.classList.add('show');
   };
   donut.onmouseleave=()=>tooltip.classList.remove('show');
+  const previousMonth=comparison?.previous_month?formatMonth(comparison.previous_month):'the previous month';
+  const comparisonMarkup=category=>{
+    if(!comparison?.previous_month)return '';
+    const status=category.comparison||'unavailable';
+    const labels={
+      up:`↑ ${Math.abs(Number(category.change_percent))}%`,
+      down:`↓ ${Math.abs(Number(category.change_percent))}%`,
+      same:'0%',new:'New',unavailable:'—',
+    };
+    const detail=status==='unavailable'
+      ?`No transactions are available for ${previousMonth}`
+      :status==='new'
+        ?`No spending in ${previousMonth}; ${money(category.amount)} in the selected month`
+        :`${money(category.previous_amount)} in ${previousMonth}; ${money(category.amount)} in the selected month`;
+    return `<i class="category-change ${status}" title="${escapeHtml(detail)}" aria-label="${escapeHtml(detail)}">${labels[status]||'—'}</i>`;
+  };
   document.querySelector('#categoryList').innerHTML=categories.length?categories.map((category,index)=>`
-    <button type="button" data-category="${escapeHtml(category.category)}"><i class="cat-dot" style="background:${colors[index%colors.length]}"></i><span>${escapeHtml(category.category)}</span><strong>${money(category.amount)}</strong><em>${category.share}%</em></button>`).join(''):'<div><span>No category data</span></div>';
+    <button type="button" data-category="${escapeHtml(category.category)}"><i class="cat-dot" style="background:${colors[index%colors.length]}"></i><span>${escapeHtml(category.category)}</span><strong>${money(category.amount)}</strong><em>${category.share}%</em>${comparisonMarkup(category)}</button>`).join(''):'<div><span>No category data</span></div>';
 }
 
 function transactionRow(item){
@@ -188,14 +259,6 @@ function transactionRow(item){
 
 function renderTransactions(transactions){
   document.querySelector('#transactionRows').innerHTML=transactions.length?transactions.map(transactionRow).join(''):'<tr><td>No transactions found.</td><td></td><td></td><td></td><td></td></tr>';
-}
-
-function renderInsights(insights){
-  const largest=insights.largest_transaction;
-  document.querySelector('#insightList').innerHTML=`
-    <button class="insight warning" data-action="mapping"><span class="insight-icon">!</span><span><strong>${insights.merchants_needing_review} merchants need classification</strong><small>Open the mapping queue to assign a category and subcategory.</small></span><b>›</b></button>
-    <button class="insight info" data-action="duplicates"><span class="insight-icon">↗</span><span><strong>${insights.duplicate_rows_prevented} duplicate rows prevented</strong><small>Open the import audit to see how duplicate files and rows were handled.</small></span><b>›</b></button>
-    <button class="insight success" data-action="largest"><span class="insight-icon">${largest?'₪':'✓'}</span><span><strong>${largest?`${money(largest.amount)} largest charge`:'Imports look healthy'}</strong><small>${largest?escapeHtml(largest.merchant_raw):'No import issues detected.'}</small></span><b>›</b></button>`;
 }
 
 const chartSize={width:720,height:204,top:14,bottom:218};
@@ -261,16 +324,21 @@ function renderImportStatus(latest){
 
 document.querySelector('#periodTabs').addEventListener('click',event=>{
   if(!event.target.dataset.period)return;
+  setMonthPickerOpen(false);setCardPickerOpen(false);
   state.period=event.target.dataset.period;
   document.querySelectorAll('#periodTabs button').forEach(button=>button.classList.toggle('active',button===event.target));
   loadDashboard(true);
 });
-cardFilter.addEventListener('change',()=>{state.card=cardFilter.value;loadDashboard(true)});
-monthFilter.addEventListener('change',()=>{
-  state.month=monthFilter.value;state.period='month';
-  document.querySelectorAll('#periodTabs button').forEach(button=>button.classList.toggle('active',button.dataset.period==='month'));
-  loadDashboard(true);
-});
+monthPickerButton.addEventListener('click',()=>{setCardPickerOpen(false);setMonthPickerOpen(monthPickerPopover.hidden)});
+monthPickerGrid.addEventListener('click',event=>{const button=event.target.closest('[data-month]');if(button)selectDashboardMonth(button.dataset.month)});
+monthYearPrevious.addEventListener('click',()=>{const years=availableMonthYears(),index=years.indexOf(monthPickerViewYear);if(index>0){monthPickerViewYear=years[index-1];renderMonthPickerGrid()}});
+monthYearNext.addEventListener('click',()=>{const years=availableMonthYears(),index=years.indexOf(monthPickerViewYear);if(index>=0&&index<years.length-1){monthPickerViewYear=years[index+1];renderMonthPickerGrid()}});
+monthPickerLatest.addEventListener('click',()=>{const latest=availableMonths.at(-1);if(latest)selectDashboardMonth(latest)});
+cardPickerButton.addEventListener('click',()=>{setMonthPickerOpen(false);setCardPickerOpen(cardPickerPopover.hidden)});
+cardPickerPopover.addEventListener('click',event=>{const button=event.target.closest('[data-card]');if(button)selectDashboardCard(button.dataset.card)});
+document.addEventListener('click',event=>{if(!event.target.closest('#monthPicker'))setMonthPickerOpen(false)});
+document.addEventListener('click',event=>{if(!event.target.closest('#cardPicker'))setCardPickerOpen(false)});
+document.addEventListener('keydown',event=>{if(event.key!=='Escape')return;if(!monthPickerPopover.hidden){setMonthPickerOpen(false);monthPickerButton.focus()}else if(!cardPickerPopover.hidden){setCardPickerOpen(false);cardPickerButton.focus()}});
 
 const detailModal=document.querySelector('#detailModal');
 const detailContent=document.querySelector('#detailContent');
@@ -288,7 +356,7 @@ function setActiveNav(element){
   navItem.classList.add('active');
 }
 
-async function openDetail(view,source,initialSearch=''){
+async function openDetail(view,source,initialSearch='',transactionIds=[]){
   setActiveNav(source);
   state.detailMode=view;state.activeCategory='';
   const isTransactions=view==='transactions';
@@ -302,12 +370,16 @@ async function openDetail(view,source,initialSearch=''){
     const response=await fetch(`/api/${view}?period=${state.period}&month=${encodeURIComponent(state.month)}&card=${encodeURIComponent(state.card)}`,{cache:'no-store'});
     const data=await response.json();if(!response.ok)throw new Error(data.error||`Could not load ${view}`);
     if(isTransactions){
-      state.detailTransactions=data.transactions;
+      const selectedIds=new Set((transactionIds||[]).map(value=>String(value)));
+      const scopedTransactions=selectedIds.size
+        ?data.transactions.filter(item=>selectedIds.has(String(item.id)))
+        :data.transactions;
+      state.detailTransactions=scopedTransactions;
       state.detailSort={key:'transaction_date',direction:'desc'};
       const initialTerm=initialSearch.trim().toLocaleLowerCase();
       const transactionText=item=>Object.values(item).filter(value=>value!==null).join(' ').toLocaleLowerCase();
-      const initialRows=initialTerm?state.detailTransactions.filter(item=>transactionText(item).includes(initialTerm)):data.transactions;
-      renderFullTransactions(initialRows,data.total,initialTerm);
+      const initialRows=initialTerm?state.detailTransactions.filter(item=>transactionText(item).includes(initialTerm)):state.detailTransactions;
+      renderFullTransactions(initialRows,scopedTransactions.length,initialTerm);
       document.querySelector('#transactionSearch').addEventListener('input',event=>{
         const term=event.target.value.trim().toLocaleLowerCase();
         const filtered=state.detailTransactions.filter(item=>transactionText(item).includes(term));
@@ -897,9 +969,9 @@ async function loadRecurringModal(force=false){
   recurringModalBody.innerHTML='<p class="loading-state">Loading recurring details…</p>';
   try{renderRecurringModal(await fetchRecurring(state.recurringModalPeriod,force))}catch(error){recurringModalBody.innerHTML=`<p class="empty-state">${escapeHtml(error.message)}</p>`}
 }
-function openRecurringModal(tab='series',index=null){
+function openRecurringModal(tab='series',index=null,seriesId=''){
   state.recurringModalPeriod=state.period;state.recurringTab=tab;state.activeRecurringSeries='';
-  const panelData=state.recurringCache.get(recurringCacheKey(state.period));if(tab==='series'&&index!=null)state.activeRecurringSeries=panelData?.series[index]?.series_id||'';
+  const panelData=state.recurringCache.get(recurringCacheKey(state.period));if(tab==='series')state.activeRecurringSeries=seriesId||(index!=null?panelData?.series[index]?.series_id||'':'');
   setRecurringModal(true);loadRecurringModal();
 }
 async function updateRecurringProfile(item,changes){
@@ -933,7 +1005,6 @@ document.addEventListener('click',event=>{
   event.preventDefault();const action=actionTarget.dataset.action;
   if(action==='overview'){setActiveNav(actionTarget);window.scrollTo({top:0,behavior:'smooth'})}
   else if(action==='cards'){setActiveNav(actionTarget);document.querySelector('#cards').scrollIntoView({behavior:'smooth',block:'center'})}
-  else if(action==='insights'){setActiveNav(actionTarget);document.querySelector('#insights').scrollIntoView({behavior:'smooth',block:'center'})}
   else if(action==='merchants')openMerchants(actionTarget)
   else if(action==='mapping')openMapping(actionTarget)
   else if(action==='duplicates')openImportAudit()

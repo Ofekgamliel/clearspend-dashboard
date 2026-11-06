@@ -38,8 +38,27 @@
           <button data-period="all">All time</button>
         </div>
         <div class="filter-controls">
-          <label class="date-button"><svg viewBox="0 0 24 24"><path d="M7 2h2v2h6V2h2v2h2a2 2 0 0 1 2 2v14H3V6a2 2 0 0 1 2-2h2V2ZM5 9v9h14V9H5Z"/></svg><select id="monthFilter" aria-label="Choose month"><option value="">Latest month</option></select><b>⌄</b></label>
-          <label class="select-wrap"><span>Card</span><select id="cardFilter"><option value="all">All cards</option></select></label>
+          <div class="month-picker" id="monthPicker">
+            <button class="date-button month-picker-button" id="monthPickerButton" type="button" aria-label="Choose month" aria-haspopup="dialog" aria-expanded="false" aria-controls="monthPickerPopover">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 2h2v2h6V2h2v2h2a2 2 0 0 1 2 2v14H3V6a2 2 0 0 1 2-2h2V2ZM5 9v9h14V9H5Z"/></svg>
+              <span id="monthPickerLabel">Latest month</span><b aria-hidden="true">⌄</b>
+            </button>
+            <div class="month-picker-popover" id="monthPickerPopover" role="dialog" aria-label="Choose a reporting month" hidden>
+              <div class="month-picker-year">
+                <button type="button" id="monthYearPrevious" aria-label="Previous available year">‹</button>
+                <strong id="monthPickerYear">—</strong>
+                <button type="button" id="monthYearNext" aria-label="Next available year">›</button>
+              </div>
+              <div class="month-picker-grid" id="monthPickerGrid"></div>
+              <div class="month-picker-footer"><span><i></i> Imported data</span><button type="button" id="monthPickerLatest">Latest month</button></div>
+            </div>
+          </div>
+          <div class="card-picker" id="cardPicker">
+            <button class="select-wrap card-picker-button" id="cardPickerButton" type="button" aria-label="Choose card" aria-haspopup="listbox" aria-expanded="false" aria-controls="cardPickerPopover">
+              <span>Card</span><strong id="cardPickerLabel">All cards</strong><b aria-hidden="true">⌄</b>
+            </button>
+            <div class="card-picker-popover" id="cardPickerPopover" role="listbox" aria-label="Choose a card" hidden></div>
+          </div>
         </div>
       </section>
 
@@ -120,9 +139,12 @@
           <div class="card-list" id="cardList"><p>Loading cards…</p></div>
         </article>
 
-        <article class="panel insight-panel" id="insights">
-          <div class="panel-head"><div><h2>Data insights</h2><p>Based on imported statements</p></div><span class="insight-count">LIVE</span></div>
-          <div id="insightList"><p>Loading insights…</p></div>
+        <article class="panel financial-observations-panel" id="financialObservations">
+          <div class="panel-head">
+            <div><h2 id="observationTitle">Financial observations</h2><p id="observationScope">Checking the selected period against your local history…</p></div>
+            <span class="observation-count" id="observationCount">CHECKING</span>
+          </div>
+          <div class="observation-grid" id="observationGrid"><div class="observation-loading">Analyzing local financial activity…</div></div>
         </article>
 
         <article class="panel recurring-panel" id="recurringPanel">
@@ -201,7 +223,15 @@
       <div class="recurring-modal-body" id="recurringModalBody"><p class="loading-state">Loading recurring details…</p></div>
     </div>
   </div>
+  <div class="modal-backdrop" id="observationModal" aria-hidden="true">
+    <section class="modal observation-modal" role="dialog" aria-modal="true" aria-labelledby="observationModalTitle">
+      <header class="observation-modal-head"><span id="observationModalType"><i></i>FINANCIAL OBSERVATION</span><h2 id="observationModalTitle">Observation details</h2><p id="observationModalDescription"></p><button type="button" class="modal-close" id="observationModalClose" aria-label="Close">×</button></header>
+      <div class="observation-modal-body"><div class="observation-comparison"><div><span id="observationModalValueLabel">Observed value</span><strong id="observationModalValue">—</strong></div><div><span id="observationModalComparisonLabel">Baseline</span><strong id="observationModalComparison">—</strong></div><div><span id="observationModalResultLabel">Change</span><strong id="observationModalResult">—</strong></div></div><div class="observation-rule"><strong>Why this appeared</strong><p id="observationModalRule"></p></div><section class="observation-evidence"><div class="observation-evidence-head"><h3 id="observationEvidenceTitle">Finding details</h3><span id="observationEvidenceCount"></span></div><div class="observation-evidence-list" id="observationModalEvidence"></div></section></div>
+      <footer class="observation-modal-footer"><div><button type="button" class="observation-resolution-button" id="observationResolution" data-resolution-action hidden></button><div class="observation-single-resolution-status" id="observationResolutionStatus" hidden><span></span><button type="button" id="observationResolutionUndo">Undo</button></div><button type="button" class="upload-button observation-primary" id="observationModalPrimary">Open related activity</button></div></footer>
+    </section>
+  </div>
   <div class="toast" id="toast"><span>✓</span><div><strong>Filter updated</strong><small id="toastText">Showing all cards</small></div></div>
   <script src="app.js"></script>
+  <script src="observations.js"></script>
 </body>
 </html>
