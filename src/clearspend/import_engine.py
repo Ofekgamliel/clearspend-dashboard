@@ -598,6 +598,29 @@ CREATE TABLE IF NOT EXISTS observation_reviews (
 );
 CREATE INDEX IF NOT EXISTS idx_observation_reviews_active
   ON observation_reviews(active,observation_type,month);
+CREATE TABLE IF NOT EXISTS events (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  event_type TEXT NOT NULL DEFAULT 'trip',
+  destination TEXT,
+  icon TEXT,
+  start_date TEXT NOT NULL,
+  end_date TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'completed'
+    CHECK(status IN ('planned','active','completed','cancelled')),
+  budget TEXT,
+  notes TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  CHECK(end_date >= start_date)
+);
+CREATE TABLE IF NOT EXISTS event_transactions (
+  transaction_id INTEGER PRIMARY KEY REFERENCES transactions(id) ON DELETE CASCADE,
+  event_id TEXT NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+  assigned_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_event_transactions_event
+  ON event_transactions(event_id,transaction_id);
 """
 
 
@@ -613,6 +636,11 @@ class ImportDatabase:
         recurring_columns = {
             row["name"] for row in self.connection.execute("PRAGMA table_info(recurring_profiles)")
         }
+        event_columns = {
+            row["name"] for row in self.connection.execute("PRAGMA table_info(events)")
+        }
+        if "destination" not in event_columns:
+            self.connection.execute("ALTER TABLE events ADD COLUMN destination TEXT")
         if "review_count" not in recurring_columns:
             self.connection.execute(
                 "ALTER TABLE recurring_profiles ADD COLUMN review_count INTEGER NOT NULL DEFAULT 1"

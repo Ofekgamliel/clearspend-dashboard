@@ -2,7 +2,7 @@
 (()=>{
 const panel=document.querySelector('#financialObservations');
 if(!panel)return;
-const grid=document.querySelector('#observationGrid'),count=document.querySelector('#observationCount'),scope=document.querySelector('#observationScope');
+const grid=document.querySelector('#observationGrid'),count=document.querySelector('#observationCount'),scope=document.querySelector('#observationScope'),emptyLabel=document.querySelector('#observationEmptyLabel');
 const modal=document.querySelector('#observationModal');
 let loadSequence=0,currentGroups=[],currentRawFindings=[],activeGroup=null,currentObservationView=null;
 const reviewedFindingKeys=new Set();
@@ -220,6 +220,7 @@ function setModal(show){modal.classList.toggle('show',show);modal.setAttribute('
 function renderObservationCards(){
   if(!currentObservationView)return;
   const active=currentRawFindings.filter(item=>!item.findingKey||!reviewedFindingKeys.has(item.findingKey));
+  const empty=!active.length;panel.classList.toggle('is-empty',empty);emptyLabel.hidden=!empty;emptyLabel.textContent=currentObservationView.period==='month'?'No observations':'No lasting patterns';
   currentGroups=groupFindings(active);count.textContent=active.length?`${active.length} ${currentObservationView.period==='month'?'FINDINGS':'PATTERNS'} · ${currentGroups.length} TYPES`:currentObservationView.period==='month'?'NO ALERTS':'NO LASTING SHIFTS';
   grid.innerHTML=currentGroups.map(cardHtml).join('')||currentObservationView.emptyHtml;
   grid.querySelectorAll('[data-observation-index]').forEach(button=>button.addEventListener('click',()=>openObservation(currentGroups[Number(button.dataset.observationIndex)])));
@@ -260,7 +261,7 @@ document.addEventListener('keydown',event=>{if(event.key==='Escape'&&modal.class
 
 async function loadObservations(){
   if(!state.data)return;const sequence=++loadSequence,period=state.period,selectedMonth=state.month||(state.data.period?.start||'').slice(0,7),card=state.card;
-  grid.innerHTML='<div class="observation-loading">Analyzing income versus spending, category changes, transactions, recurring aliases, fees, and overlapping signals…</div>';count.textContent='CHECKING';
+  panel.classList.remove('is-empty');emptyLabel.hidden=true;grid.innerHTML='<div class="observation-loading">Analyzing income versus spending, category changes, transactions, recurring aliases, fees, and overlapping signals…</div>';count.textContent='CHECKING';
   try{
     const dashboard=state.data,available=[...(dashboard.available_months||[])].sort(),scopeStart=(dashboard.period?.start||'').slice(0,7),scopeEnd=(dashboard.period?.end||selectedMonth).slice(0,7);
     const targetMonths=period==='month'?[selectedMonth]:available.filter(value=>value>=scopeStart&&value<=scopeEnd),fetchMonths=available.filter(value=>value<=scopeEnd),recurringMonths=period==='month'?targetMonths:fetchMonths;

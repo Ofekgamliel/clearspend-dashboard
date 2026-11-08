@@ -52,6 +52,7 @@ The server currently exposes operations for:
 - Merchant mappings and merchant management
 - Transaction-specific category corrections
 - Transaction-specific full or partial reimbursement adjustments
+- Projects/events and transaction-specific event assignment
 - Reviewed recurring profiles, merchant-level add/remove decisions, lifecycle,
   cadence, and installment summaries
 - Import analysis and approved import commits
@@ -71,6 +72,11 @@ The principal SQLite tables have separate responsibilities:
 - `transaction_category_overrides`: exceptions applying to one transaction.
 - `transaction_spending_adjustments`: reviewed full or partial reimbursements
   keyed to one transaction; the imported card charge remains unchanged.
+- `events`: project/event identity, type, optional business-trip destination,
+  display dates, status, and optional budget. Business-trip destination is
+  presentation metadata; it does not determine transaction membership.
+- `event_transactions`: exact transaction membership for an event. Membership
+  does not alter the transaction category or merchant mapping.
 - `import_transactions`: links imports to inserted or duplicate transactions.
 - `income_imports`: income-file import audit records.
 - `income_entries`: monthly income contributions used in aggregate calculations.

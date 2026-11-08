@@ -1,4 +1,4 @@
-const state={period:'month',month:'',card:'all',data:null,detailTransactions:[],mappingData:null,merchantData:null,activeMerchant:null,activeTransaction:null,activeAdjustmentTransaction:null,detailMode:'',activeCategory:'',detailSort:{key:'transaction_date',direction:'desc'},categoryTransactions:[],categoryView:'grouped',categorySearch:'',categoryGroupSort:{key:'latest_date',direction:'desc'},expandedMerchantGroups:new Set(),categoryExpandedSort:new Map(),merchantRecurringFilter:'all',recurringCache:new Map(),recurringModalPeriod:'month',recurringTab:'series',activeRecurringSeries:'',recurringSorts:{series:{key:'display_name',direction:'asc'},commitments:{key:'remaining',direction:'desc'}}};
+const state={period:'month',month:'',card:'all',data:null,detailTransactions:[],mappingData:null,merchantData:null,activeMerchant:null,activeTransaction:null,activeAdjustmentTransaction:null,detailMode:'',activeCategory:'',detailSort:{key:'transaction_date',direction:'desc'},categoryTransactions:[],categoryView:'grouped',categorySearch:'',categoryGroupSort:{key:'latest_date',direction:'desc'},expandedMerchantGroups:new Set(),categoryExpandedSort:new Map(),merchantRecurringFilter:'all',recurringCache:new Map(),recurringModalPeriod:'month',recurringTab:'series',activeRecurringSeries:'',recurringSorts:{series:{key:'display_name',direction:'asc'},commitments:{key:'remaining',direction:'desc'}},eventsData:null,activeEvent:null,activeEventGroup:null,activeEventCategory:'all'};
 const colors=['#6658e8','#41b98c','#e6a14b','#e76b77','#5b8def','#a66dd4','#42a5b3','#d17b49','#8f9b4f','#d45f9f','#62748f','#9b7b58'];
 const cardPicker=document.querySelector('#cardPicker');
 const cardPickerButton=document.querySelector('#cardPickerButton');
@@ -49,6 +49,7 @@ async function loadDashboard(announce=false){
     if(!response.ok)throw new Error(data.error||'Could not load dashboard');
     renderDashboard(data);
     loadRecurringPanel();
+    loadEventsPanel();
     window.loadFinancialObservations?.();
     if(announce)showToast(`Showing ${data.period.label}`);
   }catch(error){
@@ -389,6 +390,163 @@ async function openDetail(view,source,initialSearch='',transactionIds=[]){
   }catch(error){detailContent.innerHTML=`<p class="empty-state">${escapeHtml(error.message)}</p>`}
 }
 
+function eventAssignmentOptions(selected=''){
+  const events=state.eventsData?.available_events||[];
+  return `<option value="">${selected?'No event':'+ Event'}</option>`+events.map(event=>`<option value="${escapeHtml(event.id)}"${event.id===selected?' selected':''}${event.status==='cancelled'?' disabled':''}>${escapeHtml(event.name)}${event.status==='cancelled'?' (cancelled)':''}</option>`).join('');
+}
+
+function eventBadge(item){
+  const assigned=Boolean(item.event_id);
+  const selectedEvent=state.eventsData?.available_events?.find(event=>event.id===item.event_id);
+  const business=(item.event_type||selectedEvent?.event_type)==='business_trip';
+  return `<select class="transaction-event-badge${assigned?' assigned':''}${business?' business-event':''}" data-transaction-event="${item.id}" aria-label="${assigned?'Change event':'Assign event'} for ${escapeHtml(item.merchant_display_name||item.merchant_raw)}" title="${assigned?'Event label · choose another existing event':'Assign an existing event'}">${eventAssignmentOptions(item.event_id||'')}</select>`;
+}
+
+function eventIcon(event){
+  const icons={plane:'✈',sun:'☀',home:'⌂',trip:'✈',celebration:'✦',other:'◆'};
+  return icons[event.icon]||event.icon||icons[event.event_type]||'◆';
+}
+
+const businessBriefcaseIcon='<svg class="business-briefcase-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 7V5.8A1.8 1.8 0 0 1 10.8 4h2.4A1.8 1.8 0 0 1 15 5.8V7"></path><rect x="3" y="7" width="18" height="13" rx="2"></rect><path d="M3 12.5c4.8 2 13.2 2 18 0"></path><path d="M10 13h4"></path></svg>';
+function eventIconMarkup(event){return event.event_type==='business_trip'?businessBriefcaseIcon:escapeHtml(eventIcon(event))}
+
+function refreshEventBadges(){
+  document.querySelectorAll('[data-transaction-event]').forEach(select=>{
+    const selected=select.value;select.innerHTML=eventAssignmentOptions(selected);select.value=selected;
+    const selectedEvent=state.eventsData?.available_events?.find(event=>event.id===selected);
+    select.classList.toggle('business-event',selectedEvent?.event_type==='business_trip');
+  });
+}
+
+async function loadEventsPanel(){
+  const grid=document.querySelector('#eventsGrid'),panel=document.querySelector('#projectsEventsPanel'),emptyLabel=document.querySelector('#eventsEmptyLabel');
+  try{
+    const response=await fetch(`/api/events?period=${state.period}&month=${encodeURIComponent(state.month)}&card=${encodeURIComponent(state.card)}`,{cache:'no-store'});
+    const data=await response.json();
+    if(!response.ok)throw new Error(data.error||'Could not load events');
+    state.eventsData=data;renderEventsPanel(data);refreshEventBadges();return data;
+  }catch(error){panel.classList.remove('is-empty');emptyLabel.hidden=true;grid.innerHTML=`<p class="events-empty">${escapeHtml(error.message)}</p>`}
+}
+
+function renderEventsPanel(data){
+  const empty=!data.events.length,panel=document.querySelector('#projectsEventsPanel'),emptyLabel=document.querySelector('#eventsEmptyLabel');
+  panel.classList.toggle('is-empty',empty);emptyLabel.hidden=!empty;
+  const combinedSpending=data.events.reduce((sum,event)=>sum+Number(event.amount||0),0);
+  document.querySelector('#eventsPeriod').textContent=`${data.events.length} events · ${money(combinedSpending)}`;
+  const grid=document.querySelector('#eventsGrid');
+  const items=[];state.eventGroups=new Map();const groupedIds=new Set();
+  if(state.period!=='month'){
+    const byDestination=new Map();data.events.filter(event=>event.event_type==='business_trip'&&event.destination).forEach(event=>{const key=event.destination.trim().toLocaleLowerCase('he');if(!byDestination.has(key))byDestination.set(key,[]);byDestination.get(key).push(event)});
+    [...byDestination.entries()].filter(([,events])=>events.length>1).forEach(([key,events],index)=>{const id=`business-group-${index}`;state.eventGroups.set(id,events);events.forEach(event=>groupedIds.add(event.id));items.push({kind:'group',id,destination:events[0].destination,events,start_date:events.reduce((value,event)=>value<event.start_date?value:event.start_date,events[0].start_date)})});
+  }
+  data.events.filter(event=>!groupedIds.has(event.id)).forEach(event=>items.push({kind:'event',event,start_date:event.start_date}));items.sort((left,right)=>String(right.start_date).localeCompare(String(left.start_date)));
+  grid.innerHTML=items.length?items.map(item=>{if(item.kind==='group'){const events=item.events,amount=events.reduce((sum,event)=>sum+Number(event.amount||0),0),completed=events.every(event=>event.status==='completed');return `<button class="event-card business-event-card" type="button" data-event-group="${item.id}"><span class="event-card-icon">${businessBriefcaseIcon}${completed?'<i>✓</i>':''}</span><span class="event-card-copy"><strong>${escapeHtml(`נסיעות עבודה ל${item.destination}`)}</strong><small>${events.length} business trips · ${state.period==='year'?'Latest year':'All time'}</small></span><span class="event-card-amount"><strong>${money(amount)}</strong><small>PERSONAL SPENDING</small></span></button>`}const event=item.event,business=event.event_type==='business_trip';return `<button class="event-card${business?' business-event-card':''}" type="button" data-event-id="${escapeHtml(event.id)}"><span class="event-card-icon">${eventIconMarkup(event)}${event.status==='completed'?'<i>✓</i>':''}</span><span class="event-card-copy"><strong>${escapeHtml(event.name)}</strong><small>${formatDate(event.start_date)} – ${formatDate(event.end_date)}</small></span><span class="event-card-amount"><strong>${money(event.amount)}</strong><small>${state.period==='month'?'THIS MONTH':'PERSONAL SPENDING'}</small></span></button>`}).join(''):'<p class="events-empty">No reviewed event overlaps this period and card selection. Change the period or card filter to see other events.</p>';
+  grid.querySelectorAll('[data-event-id]').forEach(button=>button.addEventListener('click',()=>openEventModal(button.dataset.eventId)));
+  grid.querySelectorAll('[data-event-group]').forEach(button=>button.addEventListener('click',()=>openEventGroup(button.dataset.eventGroup)));
+}
+
+function setEventCreateModal(show){
+  const modal=document.querySelector('#eventCreateModal'),form=document.querySelector('#eventCreateForm'),error=document.querySelector('#eventCreateError');
+  modal.classList.toggle('show',show);modal.setAttribute('aria-hidden',String(!show));
+  if(show){form.reset();form.elements.status.value='planned';syncEventDestinationField(form);error.textContent='';setTimeout(()=>form.elements.name.focus(),40)}
+}
+
+function syncEventDestinationField(form){
+  const field=form.querySelector('[data-event-destination-field]'),input=form.elements.destination,business=form.elements.event_type.value==='business_trip';
+  field.hidden=!business;input.required=business;if(!business)input.value='';
+}
+
+async function createEvent(form){
+  const button=form.querySelector('button[type="submit"]'),error=document.querySelector('#eventCreateError'),values=Object.fromEntries(new FormData(form));
+  error.textContent='';
+  if(values.end_date<values.start_date){error.textContent='End date cannot be before the start date.';form.elements.end_date.focus();return}
+  button.disabled=true;button.textContent='Creating…';
+  try{
+    const response=await fetch('/api/events',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(values)}),result=await response.json();
+    if(!response.ok)throw new Error(result.error||'Could not create event');
+    setEventCreateModal(false);await loadEventsPanel();showToast(`${result.event.name} is ready for transaction assignments`,'Event created');
+  }catch(createError){error.textContent=createError.message;showToast(createError.message,'Creation failed')}
+  finally{button.disabled=false;button.textContent='Create event'}
+}
+
+function renderEventTransactions(category='all'){
+  state.activeEventCategory=category;
+  const rows=category==='all'?state.activeEvent.transactions:state.activeEvent.transactions.filter(item=>item.category===category);
+  document.querySelector('#eventTransactionsTitle').textContent=category==='all'?`All transactions · ${rows.length}`:`${category} · ${rows.length}`;
+  document.querySelector('#eventTransactionList').innerHTML=rows.length?rows.map(item=>`<div class="event-transaction-row"><span><strong>${escapeHtml(item.merchant_display_name||item.merchant_raw)}</strong><small>${escapeHtml(item.category)}</small></span><span>${formatDate(item.transaction_date)}</span><span>${escapeHtml(item.provider.toUpperCase())} •• ${escapeHtml(item.card_last4)}</span><strong>${money(item.personal_amount)}</strong></div>`).join(''):'<p class="events-empty">No transactions in this category.</p>';
+  document.querySelectorAll('[data-event-category]').forEach(button=>button.classList.toggle('active',button.dataset.eventCategory===category));
+}
+
+function openEventGroup(groupId){
+  const events=state.eventGroups?.get(groupId)||[];if(!events.length)return;
+  state.activeEvent=null;state.activeEventGroup={id:groupId,events,destination:events[0].destination};
+  const transactions=events.flatMap(event=>event.transactions||[]),categories=new Set(transactions.map(item=>item.category).filter(Boolean)),cards=new Set(transactions.map(item=>`${item.provider}:${item.card_last4}`));
+  document.querySelector('#eventModalTitle').textContent=`נסיעות עבודה ל${state.activeEventGroup.destination}`;
+  document.querySelector('#eventModalSubtitle').textContent=`${events.length} business trips · ${state.period==='year'?'Latest year':'All imported history'}`;
+  document.querySelector('#eventEditOpen').hidden=true;document.querySelector('#eventGroupBack').hidden=true;document.querySelector('#eventDetailBody').hidden=true;
+  const body=document.querySelector('#eventGroupBody');body.hidden=false;body.innerHTML=`<div class="event-summary"><div><span>Personal spending</span><strong>${money(events.reduce((sum,event)=>sum+Number(event.total_amount||0),0))}</strong><small>Across these trips</small></div><div><span>Transactions</span><strong>${transactions.length}</strong><small>Exact transaction IDs</small></div><div><span>Categories</span><strong>${categories.size}</strong><small>Cross-category events</small></div><div><span>Cards</span><strong>${cards.size}</strong><small>Across these trips</small></div></div><div class="business-trip-list"><div class="business-trip-row business-trip-head"><span>Trip</span><span>Dates</span><span>Transactions</span><span>Personal spending</span><span></span></div>${events.map(event=>`<button type="button" class="business-trip-row" data-business-trip-id="${escapeHtml(event.id)}"><span><strong>${escapeHtml(event.name)}</strong><small>Business trip</small></span><span>${formatDate(event.start_date)} – ${formatDate(event.end_date)}</span><span>${event.total_transaction_count}</span><b>${money(event.total_amount)}</b><i>›</i></button>`).join('')}</div><p class="business-group-note">This card is generated automatically from individual business trips sharing the destination “${escapeHtml(state.activeEventGroup.destination)}”. It is not stored as another event.</p>`;
+  body.querySelectorAll('[data-business-trip-id]').forEach(button=>button.addEventListener('click',()=>openEventModal(button.dataset.businessTripId,true)));
+  const modal=document.querySelector('#eventModal');modal.classList.add('show');modal.setAttribute('aria-hidden','false');
+}
+
+function openEventModal(eventId,fromGroup=false){
+  const event=state.eventsData?.events.find(item=>item.id===eventId);
+  if(!event)return;
+  if(!fromGroup)state.activeEventGroup=null;
+  state.activeEvent=event;state.activeEventCategory='all';
+  document.querySelector('#eventGroupBody').hidden=true;document.querySelector('#eventDetailBody').hidden=false;document.querySelector('#eventGroupBack').hidden=!fromGroup;document.querySelector('#eventEditOpen').hidden=false;
+  document.querySelector('#eventModalTitle').textContent=event.name;
+  document.querySelector('#eventModalSubtitle').textContent=`${event.event_type==='business_trip'?'Business trip · ':''}${formatDate(event.start_date)} – ${formatDate(event.end_date)}`;
+  document.querySelector('#eventSummary').innerHTML=`<div><span>Personal spending</span><strong>${money(event.total_amount)}</strong><small>Entire event</small></div><div><span>Transactions</span><strong>${event.total_transaction_count}</strong><small>Exact transaction membership</small></div><div><span>Categories</span><strong>${event.category_count}</strong><small>Across this event</small></div><div><span>Cards</span><strong>${event.card_count}</strong><small>Used during this event</small></div>`;
+  const totals=new Map();event.transactions.forEach(item=>totals.set(item.category,(totals.get(item.category)||0)+Number(item.personal_amount||0)));
+  const categories=[...totals.entries()].sort((left,right)=>right[1]-left[1]);
+  document.querySelector('#eventCategoryList').innerHTML=`<button type="button" class="event-category active" data-event-category="all"><i style="background:#aaa8b7"></i><span>All categories</span><b>${money(event.total_amount)}</b></button>`+categories.map(([category,amount],index)=>`<button type="button" class="event-category" data-event-category="${escapeHtml(category)}"><i style="background:${colors[index%colors.length]}"></i><span>${escapeHtml(category)}</span><b>${money(amount)}</b></button>`).join('');
+  document.querySelectorAll('[data-event-category]').forEach(button=>button.addEventListener('click',()=>renderEventTransactions(button.dataset.eventCategory)));
+  renderEventTransactions('all');
+  const modal=document.querySelector('#eventModal');modal.classList.add('show');modal.setAttribute('aria-hidden','false');
+}
+
+function closeEventModal(){const modal=document.querySelector('#eventModal');modal.classList.remove('show');modal.setAttribute('aria-hidden','true');state.activeEventGroup=null}
+
+function setEventEditModal(show){
+  const modal=document.querySelector('#eventEditModal'),form=document.querySelector('#eventEditForm'),error=document.querySelector('#eventEditError');
+  modal.classList.toggle('show',show);modal.setAttribute('aria-hidden',String(!show));
+  if(!show)return;
+  const event=state.activeEvent;if(!event){setEventEditModal(false);return}
+  form.elements.name.value=event.name||'';form.elements.event_type.value=event.event_type||'trip';form.elements.destination.value=event.destination||'';form.elements.start_date.value=event.start_date||'';form.elements.end_date.value=event.end_date||'';form.elements.budget.value=event.budget??'';form.elements.status.value=event.status||'completed';syncEventDestinationField(form);error.textContent='';
+  setTimeout(()=>form.elements.name.focus(),40);
+}
+
+async function saveEventSettings(form){
+  if(!state.activeEvent)return;
+  const values=Object.fromEntries(new FormData(form));
+  const button=form.querySelector('button[type="submit"]'),error=document.querySelector('#eventEditError');error.textContent='';
+  if(values.end_date<values.start_date){error.textContent='End date cannot be before the start date.';form.elements.end_date.focus();return}
+  button.disabled=true;button.textContent='Saving…';
+  try{
+    const response=await fetch('/api/event-settings',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({event_id:state.activeEvent.id,...values})});
+    const result=await response.json();if(!response.ok)throw new Error(result.error||'Could not save event');
+    const eventId=state.activeEvent.id,fromGroup=Boolean(state.activeEventGroup);const data=await loadEventsPanel();const updated=data?.events.find(event=>event.id===eventId);
+    setEventEditModal(false);if(updated)openEventModal(eventId,fromGroup);else closeEventModal();
+    showToast(`${result.event.name} was updated`,'Event saved');
+  }catch(saveError){error.textContent=saveError.message;showToast(saveError.message,'Update failed')}
+  finally{button.disabled=false;button.textContent='Save changes'}
+}
+
+async function updateTransactionEvent(select){
+  const transactionId=Number(select.dataset.transactionEvent),eventId=select.value,prior=select.dataset.previous||'';
+  select.disabled=true;
+  try{
+    const response=await fetch('/api/transaction-event',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({transaction_id:transactionId,event_id:eventId})});
+    const result=await response.json();if(!response.ok)throw new Error(result.error||'Could not update event');
+    const update=item=>{if(Number(item.id)!==transactionId)return;item.event_id=result.event_id;item.event_name=result.event_name;item.event_type=result.event_type;item.event_destination=result.event_destination};
+    state.detailTransactions.forEach(update);state.categoryTransactions.forEach(update);
+    select.dataset.previous=eventId;select.classList.toggle('assigned',Boolean(eventId));select.classList.toggle('business-event',result.event_type==='business_trip');select.innerHTML=eventAssignmentOptions(eventId);select.value=eventId;
+    await loadEventsPanel();showToast(eventId?`Assigned to ${result.event_name}`:'Event assignment removed','Event updated');
+  }catch(error){select.value=prior;showToast(error.message,'Update failed')}
+  finally{select.disabled=false}
+}
+
 const transactionColumns=[
   ['merchant','Merchant'],['category','Category / subcategory'],['card','Provider / card / source'],
   ['transaction_date','Transaction date'],['billing_date','Billing date'],['billing_month','Reporting month'],['amount','Charged amount'],
@@ -427,7 +585,7 @@ function fullTransactionRow(item){
     :'<button type="button" class="transaction-adjustment-icon" aria-label="Spending adjustment unavailable for a refund transaction" title="Unavailable for refunds" disabled>✎</button>';
   return `<tr>
     <td><strong>${escapeHtml(item.merchant_raw)}</strong><small>${item.merchant_display_name&&item.merchant_display_name!==item.merchant_raw?`Display: ${escapeHtml(item.merchant_display_name)} · `:''}${escapeHtml(item.merchant_normalized)}</small>${reimbursementLabel}</td>
-    <td><span class="tag editable-category-tag ${item.category==='Needs review'?'amber-tag':''}"><span>${escapeHtml(item.category)}</span><button type="button" class="transaction-category-icon" data-edit-transaction="${item.id}" aria-label="Change category for ${escapeHtml(item.merchant_display_name||item.merchant_raw)}" title="Change category">✎</button></span>${item.category_source==='transaction_override'?'<i class="transaction-override-label">One-off correction</i>':''}<small>${displayValue(item.subcategory)}</small></td>
+    <td><span class="transaction-category-line"><span class="tag editable-category-tag ${item.category==='Needs review'?'amber-tag':''}"><span>${escapeHtml(item.category)}</span><button type="button" class="transaction-category-icon" data-edit-transaction="${item.id}" aria-label="Change category for ${escapeHtml(item.merchant_display_name||item.merchant_raw)}" title="Change category">✎</button></span>${eventBadge(item)}</span>${item.category_source==='transaction_override'?'<i class="transaction-override-label">One-off correction</i>':''}<small>${displayValue(item.subcategory)}</small></td>
     <td><strong>${escapeHtml(item.provider.toUpperCase())} •• ${escapeHtml(item.card_last4)}</strong><small>${displayValue(item.source_sheet)}</small></td>
     <td>${formatDate(item.transaction_date)}</td><td>${formatDate(item.billing_date)}</td>
     <td><strong>${formatMonth(item.billing_month)}</strong><small>${escapeHtml(reportingSource(item.billing_month_source))}${item.installment_number?` · ${item.installment_number}/${item.installment_total||'?'}`:''}</small></td>
@@ -1057,7 +1215,25 @@ modal.addEventListener('click',event=>{if(event.target===modal)setModal(false)})
 document.querySelector('#merchantEditorClose').addEventListener('click',()=>setMerchantEditor(false));document.querySelector('#merchantEditorCancel').addEventListener('click',()=>setMerchantEditor(false));merchantEditorModal.addEventListener('click',event=>{if(event.target===merchantEditorModal)setMerchantEditor(false)});document.querySelector('#merchantReviewButton').addEventListener('click',reviewMerchantImpact);document.querySelector('#merchantApplyButton').addEventListener('click',applyMerchantChanges);
 document.querySelector('#transactionEditorClose').addEventListener('click',()=>setTransactionEditor(false));document.querySelector('#transactionEditorCancel').addEventListener('click',()=>setTransactionEditor(false));transactionEditorModal.addEventListener('click',event=>{if(event.target===transactionEditorModal)setTransactionEditor(false)});document.querySelector('#transactionSaveButton').addEventListener('click',saveTransactionCorrection);
 document.querySelector('#spendingAdjustmentClose').addEventListener('click',()=>setSpendingAdjustmentModal(false));document.querySelector('#spendingAdjustmentCancel').addEventListener('click',()=>setSpendingAdjustmentModal(false));spendingAdjustmentModal.addEventListener('click',event=>{if(event.target===spendingAdjustmentModal)setSpendingAdjustmentModal(false)});document.querySelector('#spendingAdjustmentSave').addEventListener('click',()=>saveSpendingAdjustment(false));spendingAdjustmentRemove.addEventListener('click',()=>{if(spendingAdjustmentRemove.dataset.confirmed==='1'){saveSpendingAdjustment(true);return}spendingAdjustmentRemove.dataset.confirmed='1';spendingAdjustmentRemove.textContent='Confirm removal'});
-document.addEventListener('keydown',event=>{if(event.key==='Escape'){setManageMenu(false);setModal(false);setMerchantEditor(false);setTransactionEditor(false);setDetailModal(false);setRecurringModal(false)}});
+document.addEventListener('keydown',event=>{if(event.key==='Escape'){setManageMenu(false);setModal(false);setMerchantEditor(false);setTransactionEditor(false);setDetailModal(false);setRecurringModal(false);if(document.querySelector('#eventEditModal').classList.contains('show'))setEventEditModal(false);else closeEventModal();setEventCreateModal(false)}});
+document.querySelector('#eventModalClose').addEventListener('click',closeEventModal);
+document.querySelector('#eventModal').addEventListener('click',event=>{if(event.target.id==='eventModal')closeEventModal()});
+document.querySelector('#eventGroupBack').addEventListener('click',()=>{if(state.activeEventGroup)openEventGroup(state.activeEventGroup.id)});
+document.querySelector('#eventEditOpen').addEventListener('click',()=>setEventEditModal(true));
+document.querySelector('#eventEditClose').addEventListener('click',()=>setEventEditModal(false));
+document.querySelector('#eventEditCancel').addEventListener('click',()=>setEventEditModal(false));
+document.querySelector('#eventEditModal').addEventListener('click',event=>{if(event.target.id==='eventEditModal')setEventEditModal(false)});
+document.querySelector('#eventEditForm').addEventListener('submit',event=>{event.preventDefault();saveEventSettings(event.currentTarget)});
+document.querySelector('#eventEditForm').elements.event_type.addEventListener('change',event=>syncEventDestinationField(event.currentTarget.form));
+document.querySelector('#eventCreateButton').addEventListener('click',()=>setEventCreateModal(true));
+document.querySelector('#eventCreateClose').addEventListener('click',()=>setEventCreateModal(false));
+document.querySelector('#eventCreateCancel').addEventListener('click',()=>setEventCreateModal(false));
+document.querySelector('#eventCreateModal').addEventListener('click',event=>{if(event.target.id==='eventCreateModal')setEventCreateModal(false)});
+document.querySelector('#eventCreateForm').addEventListener('submit',event=>{event.preventDefault();createEvent(event.currentTarget)});
+document.querySelector('#eventCreateForm').elements.event_type.addEventListener('change',event=>syncEventDestinationField(event.currentTarget.form));
+document.addEventListener('click',event=>{if(event.target.matches('[data-transaction-event]'))event.stopPropagation()});
+document.addEventListener('focusin',event=>{if(event.target.matches('[data-transaction-event]'))event.target.dataset.previous=event.target.value});
+document.addEventListener('change',event=>{if(event.target.matches('[data-transaction-event]'))updateTransactionEvent(event.target)});
 fileInput.addEventListener('change',()=>analyzeImportFiles(fileInput.files));
 
 function closeDisplayMenus(except=null){

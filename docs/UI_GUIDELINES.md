@@ -46,6 +46,35 @@ Local review prototypes derived from real dashboard data must remain ignored.
   expandable transaction row and has an accessible label and tooltip.
 - An adjusted transaction continues to show its original charge and clearly
   labels the personal amount and reimbursement status.
+- In individual transaction tables, show a compact event label immediately to
+  the right of the category. Selecting an existing event saves immediately;
+  event creation belongs in event management.
+- Do not show one event label on a collapsed merchant row because its underlying
+  transactions may belong to different events.
+- Event settings allow editing name, type, start/end dates, budget, and status.
+  Keep the event details view tabless and open these fields in a separate,
+  compact `Edit event` dialog. Do not include a notes field. Date edits affect
+  period visibility only and must not change exact transaction membership.
+- Create events from the Projects & events panel before assigning individual
+  transactions. The creation form includes name, type, dates, optional budget,
+  and status; it does not include notes.
+- Business trip is a distinct event type. Selecting it reveals a required
+  destination field in both create and edit dialogs. Use a blue suitcase icon
+  and blue transaction-event label to distinguish it from personal events.
+- In a month view, show every business trip as its own event. In Latest year or
+  All time, automatically combine two or more visible business trips sharing
+  the same normalized destination into one destination group. A single trip
+  remains an ordinary event card. The group is a computed view, not another
+  stored event.
+- Opening a business-trip group shows the same four summary metrics used by an
+  individual event, followed by a centered list of its trips. Opening a trip
+  from that list shows the normal event details and `Edit event`; use the clean
+  back-arrow control to return to the destination group.
+- When the selected scope contains no events, collapse Projects & events to its
+  header with `No active projects` and the New event action. When no financial
+  observation crosses its threshold, collapse that panel to its header with
+  `No observations` or `No lasting patterns`. Loading and error states remain
+  expanded so their messages are visible.
 
 ## Merchant management
 

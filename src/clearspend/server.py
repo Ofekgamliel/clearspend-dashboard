@@ -690,15 +690,240 @@ def transactions_payload(
             CAST(a.reimbursed_amount AS REAL) reimbursed_amount,
             a.reimbursement_date,a.note reimbursement_note,
             CAST(original_amount AS REAL) original_amount,original_currency,
-            transaction_type,voucher_number,notes,execution_method,exchange_rate
+            t.transaction_type,t.voucher_number,t.notes,t.execution_method,t.exchange_rate,
+            e.id event_id,e.name event_name,e.event_type,e.destination event_destination
             FROM transactions t LEFT JOIN merchant_display_mappings d
               ON d.merchant_normalized=t.merchant_normalized
             LEFT JOIN transaction_category_overrides o ON o.transaction_id=t.id
             LEFT JOIN transaction_spending_adjustments a ON a.transaction_id=t.id
+            LEFT JOIN event_transactions et ON et.transaction_id=t.id
+            LEFT JOIN events e ON e.id=et.event_id
             WHERE {where} ORDER BY COALESCE(billing_date,billing_month||'-01',transaction_date) DESC,t.id DESC LIMIT 1000""",
             parameters,
         )]
         return {"period": period_data, "selected_card": card, "total": int(total), "transactions": rows}
+    finally:
+        connection.close()
+
+
+def events_payload(database: Path, period: str, card: str, month: str = "") -> dict:
+    connection = sqlite3.connect(database)
+    connection.row_factory = sqlite3.Row
+    try:
+        start, end, label = period_bounds(connection, period, month)
+        event_rows = connection.execute(
+            """SELECT id,name,event_type,destination,icon,start_date,end_date,status,budget,notes
+            FROM events WHERE status!='cancelled' AND start_date<=? AND end_date>=?
+            ORDER BY start_date DESC,name""",
+            (end, start),
+        ).fetchall()
+        available_events = [dict(row) for row in connection.execute(
+            """SELECT id,name,event_type,destination,icon,start_date,end_date,status
+            FROM events ORDER BY start_date DESC,name"""
+        )]
+        events = []
+        for event_row in event_rows:
+            conditions = ["et.event_id=?"]
+            parameters: list[object] = [event_row["id"]]
+            if card != "all" and ":" in card:
+                provider, last4 = card.split(":", 1)
+                conditions.extend(["t.provider=?", "t.card_last4=?"])
+                parameters.extend([provider, last4])
+            where = " AND ".join(conditions)
+            transactions = [dict(row) for row in connection.execute(
+                f"""SELECT t.id,t.merchant_raw,
+                COALESCE(d.display_name,t.merchant_raw) merchant_display_name,
+                COALESCE(o.category,t.user_category,t.provider_category,'Needs review') category,
+                t.transaction_date,t.provider,t.card_last4,
+                CAST(t.charged_amount AS REAL) amount,{personal_charge_sql()} personal_amount
+                FROM event_transactions et JOIN transactions t ON t.id=et.transaction_id
+                LEFT JOIN merchant_display_mappings d ON d.merchant_normalized=t.merchant_normalized
+                LEFT JOIN transaction_category_overrides o ON o.transaction_id=t.id
+                WHERE {where} ORDER BY t.transaction_date DESC,t.id DESC""",
+                parameters,
+            )]
+            if card != "all" and not transactions:
+                continue
+            scoped_transactions = [
+                row for row in transactions if start <= str(row["transaction_date"] or "") <= end
+            ]
+            item = dict(event_row)
+            item["transactions"] = transactions
+            item["transaction_count"] = len(scoped_transactions)
+            item["amount"] = round(sum(float(row["personal_amount"] or 0) for row in scoped_transactions), 2)
+            item["total_transaction_count"] = len(transactions)
+            item["total_amount"] = round(sum(float(row["personal_amount"] or 0) for row in transactions), 2)
+            item["category_count"] = len({row["category"] for row in transactions})
+            item["card_count"] = len({(row["provider"], row["card_last4"]) for row in transactions})
+            events.append(item)
+        return {
+            "period": {"key": period, "start": start, "end": end, "label": label},
+            "selected_card": card,
+            "events": events,
+            "available_events": available_events,
+        }
+    finally:
+        connection.close()
+
+
+def save_transaction_event(database: Path, transaction_id: int, event_id: str) -> dict:
+    if transaction_id <= 0:
+        raise ValueError("A valid transaction is required")
+    event_id = event_id.strip()
+    connection = sqlite3.connect(database)
+    connection.row_factory = sqlite3.Row
+    try:
+        transaction = connection.execute(
+            "SELECT id,merchant_raw FROM transactions WHERE id=?", (transaction_id,)
+        ).fetchone()
+        if not transaction:
+            raise ValueError("Transaction not found")
+        now = datetime.now().astimezone().isoformat()
+        if not event_id:
+            connection.execute("DELETE FROM event_transactions WHERE transaction_id=?", (transaction_id,))
+            connection.commit()
+            return {"status": "unassigned", "transaction_id": transaction_id,
+                    "merchant_raw": transaction["merchant_raw"], "event_id": None,
+                    "event_name": None, "event_type": None, "event_destination": None}
+        event = connection.execute(
+            "SELECT id,name,event_type,destination FROM events WHERE id=? AND status!='cancelled'", (event_id,)
+        ).fetchone()
+        if not event:
+            raise ValueError("Event not found")
+        connection.execute(
+            """INSERT INTO event_transactions(transaction_id,event_id,assigned_at)
+            VALUES(?,?,?) ON CONFLICT(transaction_id) DO UPDATE SET
+            event_id=excluded.event_id,assigned_at=excluded.assigned_at""",
+            (transaction_id, event_id, now),
+        )
+        connection.commit()
+        return {"status": "assigned", "transaction_id": transaction_id,
+                "merchant_raw": transaction["merchant_raw"], "event_id": event["id"],
+                "event_name": event["name"], "event_type": event["event_type"],
+                "event_destination": event["destination"]}
+    finally:
+        connection.close()
+
+
+def create_event(
+    database: Path,
+    name: str,
+    event_type: str,
+    start_date: str,
+    end_date: str,
+    budget: object,
+    status: str,
+    destination: str = "",
+) -> dict:
+    name = name.strip()
+    event_type = event_type.strip()
+    destination = destination.strip()
+    status = status.strip()
+    if not name:
+        raise ValueError("Event name is required")
+    if event_type not in {"trip", "business_trip", "celebration", "home", "other"}:
+        raise ValueError("Invalid event type")
+    if event_type == "business_trip" and not destination:
+        raise ValueError("Destination is required for a business trip")
+    if event_type != "business_trip":
+        destination = ""
+    if status not in {"planned", "active", "completed"}:
+        raise ValueError("Invalid event status")
+    try:
+        start = date.fromisoformat(start_date)
+        end = date.fromisoformat(end_date)
+    except ValueError as error:
+        raise ValueError("Valid start and end dates are required") from error
+    if end < start:
+        raise ValueError("End date cannot be before start date")
+    budget_value = None
+    if budget is not None and budget != "":
+        try:
+            budget_value = round(float(budget), 2)
+        except (TypeError, ValueError) as error:
+            raise ValueError("Budget must be a number") from error
+        if budget_value < 0:
+            raise ValueError("Budget cannot be negative")
+    event_id = f"event-{uuid.uuid4().hex}"
+    now = datetime.now().astimezone().isoformat()
+    connection = sqlite3.connect(database)
+    connection.row_factory = sqlite3.Row
+    try:
+        connection.execute(
+            """INSERT INTO events(
+            id,name,event_type,destination,icon,start_date,end_date,status,budget,notes,created_at,updated_at
+            ) VALUES(?,?,?,?,NULL,?,?,?,?,NULL,?,?)""",
+            (event_id, name, event_type, destination or None, start.isoformat(), end.isoformat(), status,
+             budget_value, now, now),
+        )
+        connection.commit()
+        row = connection.execute(
+            """SELECT id,name,event_type,destination,icon,start_date,end_date,status,budget,notes
+            FROM events WHERE id=?""", (event_id,),
+        ).fetchone()
+        return {"status": "created", "event": dict(row)}
+    finally:
+        connection.close()
+
+
+def save_event_settings(
+    database: Path,
+    event_id: str,
+    name: str,
+    event_type: str,
+    start_date: str,
+    end_date: str,
+    budget: object,
+    status: str,
+    destination: str = "",
+) -> dict:
+    event_id = event_id.strip()
+    name = name.strip()
+    event_type = event_type.strip()
+    destination = destination.strip()
+    status = status.strip()
+    if not event_id or not name:
+        raise ValueError("Event and name are required")
+    if event_type not in {"trip", "business_trip", "celebration", "home", "other"}:
+        raise ValueError("Invalid event type")
+    if event_type == "business_trip" and not destination:
+        raise ValueError("Destination is required for a business trip")
+    if event_type != "business_trip":
+        destination = ""
+    if status not in {"planned", "active", "completed", "cancelled"}:
+        raise ValueError("Invalid event status")
+    try:
+        start = date.fromisoformat(start_date)
+        end = date.fromisoformat(end_date)
+    except ValueError as error:
+        raise ValueError("Valid start and end dates are required") from error
+    if end < start:
+        raise ValueError("End date cannot be before start date")
+    budget_value = None
+    if budget is not None and budget != "":
+        try:
+            budget_value = round(float(budget), 2)
+        except (TypeError, ValueError) as error:
+            raise ValueError("Budget must be a number") from error
+        if budget_value < 0:
+            raise ValueError("Budget cannot be negative")
+    connection = sqlite3.connect(database)
+    connection.row_factory = sqlite3.Row
+    try:
+        if not connection.execute("SELECT 1 FROM events WHERE id=?", (event_id,)).fetchone():
+            raise ValueError("Event not found")
+        connection.execute(
+            """UPDATE events SET name=?,event_type=?,destination=?,start_date=?,end_date=?,budget=?,status=?,updated_at=?
+            WHERE id=?""",
+            (name, event_type, destination or None, start.isoformat(), end.isoformat(), budget_value, status,
+             datetime.now().astimezone().isoformat(), event_id),
+        )
+        connection.commit()
+        row = connection.execute(
+            """SELECT id,name,event_type,destination,icon,start_date,end_date,status,budget,notes
+            FROM events WHERE id=?""", (event_id,),
+        ).fetchone()
+        return {"status": "updated", "event": dict(row)}
     finally:
         connection.close()
 
@@ -1682,6 +1907,22 @@ class ClearSpendHandler(BaseHTTPRequestHandler):
             except Exception as error:
                 self.send_json({"error": str(error)}, 500)
             return
+        if parsed.path == "/api/events":
+            query = parse_qs(parsed.query)
+            period = query.get("period", ["month"])[0]
+            if period not in {"month", "year", "all"}:
+                self.send_json({"error": "Invalid period"}, 400)
+                return
+            try:
+                self.send_json(events_payload(
+                    self.app.database,
+                    period,
+                    query.get("card", ["all"])[0],
+                    query.get("month", [""])[0],
+                ))
+            except Exception as error:
+                self.send_json({"error": str(error)}, 500)
+            return
         if parsed.path == "/api/observation-reviews":
             try:
                 self.send_json(observation_reviews_payload(self.app.database))
@@ -1751,6 +1992,59 @@ class ClearSpendHandler(BaseHTTPRequestHandler):
                     str(payload.get("reimbursement_date", "")),
                     str(payload.get("note", "")),
                     bool(payload.get("remove", False)),
+                ))
+            except (TypeError, ValueError, json.JSONDecodeError) as error:
+                self.send_json({"error": str(error)}, 400)
+            except Exception as error:
+                self.send_json({"error": str(error)}, 500)
+            return
+        if parsed_path == "/api/transaction-event":
+            try:
+                length = min(int(self.headers.get("Content-Length", "0")), 1024 * 1024)
+                payload = json.loads(self.rfile.read(length) or b"{}")
+                self.send_json(save_transaction_event(
+                    self.app.database,
+                    int(payload.get("transaction_id", 0)),
+                    str(payload.get("event_id", "")),
+                ))
+            except (TypeError, ValueError, json.JSONDecodeError) as error:
+                self.send_json({"error": str(error)}, 400)
+            except Exception as error:
+                self.send_json({"error": str(error)}, 500)
+            return
+        if parsed_path == "/api/events":
+            try:
+                length = min(int(self.headers.get("Content-Length", "0")), 1024 * 1024)
+                payload = json.loads(self.rfile.read(length) or b"{}")
+                self.send_json(create_event(
+                    self.app.database,
+                    str(payload.get("name", "")),
+                    str(payload.get("event_type", "")),
+                    str(payload.get("start_date", "")),
+                    str(payload.get("end_date", "")),
+                    payload.get("budget"),
+                    str(payload.get("status", "planned")),
+                    str(payload.get("destination", "")),
+                ), 201)
+            except (TypeError, ValueError, json.JSONDecodeError) as error:
+                self.send_json({"error": str(error)}, 400)
+            except Exception as error:
+                self.send_json({"error": str(error)}, 500)
+            return
+        if parsed_path == "/api/event-settings":
+            try:
+                length = min(int(self.headers.get("Content-Length", "0")), 1024 * 1024)
+                payload = json.loads(self.rfile.read(length) or b"{}")
+                self.send_json(save_event_settings(
+                    self.app.database,
+                    str(payload.get("event_id", "")),
+                    str(payload.get("name", "")),
+                    str(payload.get("event_type", "")),
+                    str(payload.get("start_date", "")),
+                    str(payload.get("end_date", "")),
+                    payload.get("budget"),
+                    str(payload.get("status", "")),
+                    str(payload.get("destination", "")),
                 ))
             except (TypeError, ValueError, json.JSONDecodeError) as error:
                 self.send_json({"error": str(error)}, 400)

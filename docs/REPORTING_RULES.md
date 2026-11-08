@@ -155,6 +155,23 @@ existing local database.
 - Transaction-specific category overrides take precedence in reporting without
   rewriting the permanent merchant rule.
 
+## Projects and events
+
+- Event membership is assigned to exact transaction IDs, never to an entire
+  merchant or display identity.
+- Event spending uses personal amount after any reviewed reimbursement.
+- Month-scoped event activity uses purchase date. An event crossing two months
+  can appear in both, with only that month's assigned purchases in its amount.
+- Event display dates control period visibility; changing them must not add or
+  remove transaction membership.
+- An event label is independent of category and must not recategorize a
+  transaction.
+- A business trip requires an explicit destination. In month views it remains
+  an individual event. In Latest year and All time, two or more visible
+  business trips with the same normalized destination are grouped for display;
+  this computed group must not create another database event or change exact
+  transaction assignments.
+
 ## Filters
 
 Timeframe, selected month, and card filters must use the same underlying scope
