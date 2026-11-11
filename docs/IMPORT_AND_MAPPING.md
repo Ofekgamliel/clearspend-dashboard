@@ -22,6 +22,11 @@ New statement files must follow this sequence:
 
 Analyzing or staging a file must not insert transactions or permanent mappings.
 
+The staged UI is organized as Files, Checks, Merchants, Reconcile, and Approve.
+The final preview lists every row that will be inserted. Rows marked pending are
+not final charges and are excluded from the approved transaction set; they may
+appear in a later finalized statement.
+
 ## Duplicate protection
 
 Duplicate checks operate at three levels:
@@ -109,6 +114,23 @@ classification policy. Do not overwrite it or publish it without review.
 
 ## Three independent decisions
 
+The merchant table exposes four related controls:
+
+- **Resolution** chooses whether to create an exact merchant rule, link the
+  statement name to an existing display identity, or leave it unresolved.
+- **Category** is the permanent category proposed for that exact normalized
+  merchant name.
+- **Display name** is the existing or new canonical label used for grouping.
+  The selector searches existing display identities and also permits a new
+  label based on the original statement merchant.
+- **Apply to** distinguishes a decision for this staged batch from an exact-name
+  rule that should also apply to future imports. Linking a new alias to an
+  existing display identity is inherently a permanent exact-name decision.
+
+Automatic suggestions may preselect a display identity, unanimous category,
+resolution, and permanent scope when an existing alias-family match is clear.
+Suggestions remain editable and are not persisted until import approval.
+
 ### Permanent merchant category
 
 Stored in `merchant_mappings` and keyed by exact normalized merchant name. It
@@ -155,6 +177,14 @@ scope from a one-row action.
 - Preserve existing reviewed decisions when new evidence conflicts.
 - Apply bulk category or display-name changes only after a backup and explicit
   approval.
+
+Event membership is not a merchant-resolution decision. Import transactions
+first, then assign exact transaction IDs to an existing or newly created event.
+Never infer that every future purchase from the merchant belongs to that event.
+
+ClearSpend does not browse the web when a statement is uploaded. Online merchant
+research is a separate, explicitly authorized review activity and follows the
+privacy limits above.
 
 ## Provider-specific information
 

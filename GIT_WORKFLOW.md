@@ -7,7 +7,7 @@ on the local computer and must never be committed or pushed to GitHub.
 
 Commit reusable application material only:
 
-- Production frontend files in `dist/`
+- Production frontend files in `dist/` that are part of the live application
 - Application source in `src/`
 - Generic, reusable utilities explicitly allowed by `.gitignore`
 - Dependency declarations and project documentation
@@ -23,6 +23,8 @@ Never commit or push:
 - `data/`, `samples/`, `analysis/`, or `backups/`
 - Merchant research or mappings derived from real transactions
 - Review mockups containing real merchants, amounts, dates, or card suffixes
+- Standalone design-review HTML files and screenshots, even when synthetic,
+  unless they have deliberately become maintained production documentation
 - Statement-derived tests or fixtures
 - Local hosting/account metadata, virtual environments, or OS metadata
 - Credentials, access tokens, SSH keys, passwords, or secrets
@@ -99,6 +101,10 @@ Run every command from the repository root.
 Uploading a new statement through ClearSpend changes local ignored files, mainly
 `data/clearspend.db` and local backups. It does not require a Git commit or push.
 Only commit when the application code itself changes.
+
+The same rule applies to income entries, merchant decisions, recurring rules,
+event assignments, reimbursements, and observation reviews: they are database
+state, not source-code changes.
 
 When cloning the repository on another computer, Git provides a clean app with
 no personal transactions. Transfer the database separately through an approved,

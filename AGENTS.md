@@ -8,7 +8,9 @@ These rules apply to every automated or AI-assisted change in this repository.
 - Runtime boundaries, persistence, migrations: `docs/ARCHITECTURE.md`
 - Imports, duplicates, merchants, categories: `docs/IMPORT_AND_MAPPING.md`
 - Dates, installments, income, charts, totals: `docs/REPORTING_RULES.md`
+- Observation eligibility, thresholds, merging, reviews: `docs/FINANCIAL_OBSERVATIONS.md`
 - Layout and interaction behavior: `docs/UI_GUIDELINES.md`
+- Running, backups, restore, and incident recovery: `docs/OPERATIONS_AND_RECOVERY.md`
 
 Read every document relevant to the requested change before acting. If code,
 documentation, and user instructions conflict, do not silently choose one;
@@ -40,6 +42,11 @@ surface the conflict and preserve user data while resolving it.
 - Maintain all three duplicate layers: exact file, semantic statement, and
   transaction identity.
 - Stage and review an import before writing it to the live transaction set.
+- Preserve observation thresholds, exclusions, precedence, and review identity.
+  A UI-only change must not silently alter what qualifies as a finding.
+- Income privacy is a data-exposure boundary, not merely a blur effect. Hidden
+  values must not remain available in visible text, tooltips, charts, or the
+  accessibility tree.
 
 ## Git operations
 
@@ -64,5 +71,7 @@ surface the conflict and preserve user data while resolving it.
 - Confirm ignored financial files remain ignored and production assets contain
   no embedded private data.
 - Verify before/after counts and totals for data-model or reporting changes.
+- For observation changes, verify representative qualifying, suppressed,
+  grouped, reviewed, and future-period cases.
 - Report backups, tests, files changed, commits created, and whether anything
   was pushed.

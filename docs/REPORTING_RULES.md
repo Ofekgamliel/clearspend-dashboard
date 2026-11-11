@@ -72,6 +72,10 @@ existing local database.
 
 ## Financial observations and patterns
 
+This section defines their reporting relationship. Exact eligibility,
+thresholds, precedence, grouping, and review behavior are documented in
+[`FINANCIAL_OBSERVATIONS.md`](FINANCIAL_OBSERVATIONS.md).
+
 - Month view reports transaction-level observations only. It may surface
   duplicates, recurring or fee changes, category increases, merchant activity,
   large purchases, reliable transaction outliers, and amount-left pressure.
@@ -159,6 +163,13 @@ existing local database.
   in different categories must remain in separate groups.
 - Transaction-specific category overrides take precedence in reporting without
   rewriting the permanent merchant rule.
+- With no query, the all-transactions API returns the newest 1,000 rows in the
+  active scope for responsive browsing. A non-empty search runs against the
+  complete database history inside the active period, card, and event scope.
+- Search is case-insensitive substring matching across original/normalized
+  merchant text, canonical display name, and effective category. Selecting
+  `All time` therefore searches every imported period, but a selected card still
+  limits the result until the user chooses all cards.
 
 ## Projects and events
 

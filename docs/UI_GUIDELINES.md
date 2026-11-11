@@ -93,20 +93,48 @@ Local review prototypes derived from real dashboard data must remain ignored.
 
 ## Income privacy
 
+- Use the approved compact `Income & spending` panel: income, net spending,
+  amount left, a spent/left allocation bar, and contextual monthly averages.
+- Keep the panel vertically compact and use an eye-only icon with an accessible
+  label for visibility; do not repeat `Hide income` as visible button text.
 - Income and balance information can be hidden.
 - The same control governs income cards, chart bars, legends, and tooltips.
 - Do not reveal hidden income through secondary labels, accessibility text, or
   stale chart elements.
 - Income comparisons are shown only where the reporting scope supports the
   all-card household calculation.
+- Visual blurring alone is insufficient. Replace or remove sensitive accessible
+  text while hidden so assistive technology and stale DOM content cannot expose
+  the value.
 
 ## Filters and navigation
 
 - Keep timeframe controls visually separate from month and card selectors.
+- Use the year/month grid picker for historical months rather than an
+  ever-growing one-dimensional list. Keep the card menu anchored below its
+  control and no wider than the control unless content requires it.
+- The primary dashboard uses a header and content flow without a permanent
+  sidebar. Put import, merchant, recurring, and other management destinations
+  in the header's data-management menu.
 - Preserve one shared filter state across dashboard panels and detail views.
 - Category and card panels must reflect the selected timeframe accurately.
 - Management/import actions should be discoverable without competing with the
   primary analytical content.
+
+## Staged imports and observations
+
+- Keep the staged-import steps visually distinct and show complete row status,
+  reconciliation, coverage warnings, merchant decisions, and insertion preview
+  before approval.
+- Select controls in dense tables must match the surrounding typography, keep
+  their arrow inset, and open above neighboring panels rather than behind them.
+- Observation cards open their evidence without changing transactions or rules.
+  Factual cards have no dismissal action. Only the explicitly reviewable types
+  documented in `FINANCIAL_OBSERVATIONS.md` show a compact resolution action.
+- For grouped reviewable cards, resolve individual findings rather than the
+  whole group. Show the undo result outside the closed modal as a temporary
+  action, and let opening a related transaction or recurring occurrence navigate
+  to its real detail view.
 
 ## Accessibility and responsive behavior
 

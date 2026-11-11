@@ -16,7 +16,8 @@ income, dates, card suffixes, or other statement-derived information.
 
 ```text
 Browser
-  -> dist/index.html, dist/styles.css, dist/app.js
+  -> dist/index.html, dist/styles.css, dist/import-duplicates.css
+  -> dist/app.js, dist/observations.js
   -> local /api requests
 Python server
   -> parsing, validation, dashboard queries, mappings, imports
@@ -36,6 +37,9 @@ data, imports, mapping changes, or other API-backed behavior.
 ## Source layout
 
 - `dist/` contains the production browser application.
+- `dist/observations.js` calculates and presents monthly findings and
+  longer-period patterns from API data; it does not write financial records.
+- `dist/import-duplicates.css` contains the staged-import review presentation.
 - `src/clearspend/server.py` serves static assets and implements the local API.
 - `src/clearspend/import_engine.py` parses statements, owns the SQLite schema,
   imports normalized records, and applies duplicate protection.
@@ -49,6 +53,7 @@ The server currently exposes operations for:
 
 - Health and dashboard summaries
 - Transactions and categories
+- Full-database transaction search within the selected period/card/event scope
 - Merchant mappings and merchant management
 - Transaction-specific category corrections
 - Transaction-specific full or partial reimbursement adjustments
@@ -56,6 +61,12 @@ The server currently exposes operations for:
 - Reviewed recurring profiles, merchant-level add/remove decisions, lifecycle,
   cadence, and installment summaries
 - Import analysis and approved import commits
+- Reversible observation-review decisions
+
+Import analysis and import commit are intentionally separate API operations.
+Analysis returns a staged preview without inserting live transactions or rules.
+The approved commit revalidates the batch, creates a timestamped pre-import
+backup under `data/backups/`, and then writes the batch.
 
 The frontend must obtain user data through these local APIs. Do not generate a
 tracked HTML or JavaScript snapshot containing live database results.
@@ -104,6 +115,7 @@ database through a separate approved backup process.
 
 The default database is `data/clearspend.db`. Uploaded statements, database
 backups, mappings, and research artifacts must remain in ignored local paths.
+See `OPERATIONS_AND_RECOVERY.md` for the supported backup and restore procedure.
 
 ## Database-change requirements
 
