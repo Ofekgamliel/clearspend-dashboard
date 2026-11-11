@@ -78,6 +78,9 @@ The principal SQLite tables have separate responsibilities:
 - `event_transactions`: exact transaction membership for an event. Membership
   does not alter the transaction category or merchant mapping.
 - `import_transactions`: links imports to inserted or duplicate transactions.
+- `import_coverage`: per-import, per-card statement provenance and coverage,
+  including statement period/as-of date, purchase and billing ranges, pending
+  and outside-cycle counts, and official totals when supplied by the provider.
 - `income_imports`: income-file import audit records.
 - `income_entries`: monthly income contributions used in aggregate calculations.
 - `recurring_profiles`: reviewed recurring/not-recurring decisions and editable

@@ -6,6 +6,7 @@
   <meta name="description" content="ClearSpend personal finance dashboard demo">
   <title>ClearSpend — Personal Finance Dashboard</title>
   <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="import-duplicates.css">
 </head>
 <body>
   <div class="shell">
@@ -16,7 +17,6 @@
           <span>clear<em>spend</em></span>
         </a>
         <div class="header-actions">
-          <button class="income-header-toggle" id="incomeHeaderToggle" type="button">Hide income</button>
           <button class="manage-button" id="manageMenuButton" type="button" aria-label="Manage data" aria-expanded="false" aria-controls="manageMenu" title="Manage data">
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h10M18 7h2M4 17h2M10 17h10M14 4v6M6 14v6"/><circle cx="14" cy="7" r="2.5"/><circle cx="8" cy="17" r="2.5"/></svg>
           </button>
@@ -62,22 +62,28 @@
         </div>
       </section>
 
-      <section class="panel income-panel" id="incomePanel" aria-label="Income and remaining balance">
+      <section class="panel income-panel" id="incomePanel" aria-label="Income and spending">
         <div class="income-head">
-          <div><h2>Income &amp; balance</h2><p id="incomePeriod">Selected period · all cards</p></div>
-          <button class="income-hide-button" id="incomeHideButton" type="button" aria-label="Hide income across the dashboard">◉ Hide income</button>
+          <div><h2>Income &amp; spending</h2><p id="incomePeriod">Selected period · All cards</p></div>
+          <button class="income-privacy-button" id="incomeHideButton" type="button" aria-label="Hide income values" title="Hide income values" aria-pressed="false">
+            <svg class="income-eye-on" viewBox="0 0 24 24" aria-hidden="true"><path d="M2.5 12s3.5-6 9.5-6 9.5 6 9.5 6-3.5 6-9.5 6-9.5-6-9.5-6Z"/><circle cx="12" cy="12" r="2.7"/></svg>
+            <svg class="income-eye-off" viewBox="0 0 24 24" aria-hidden="true"><path d="m3 3 18 18M10.6 6.1A10.7 10.7 0 0 1 12 6c6 0 9.5 6 9.5 6a15 15 0 0 1-2.6 3.2M6.6 6.7C4 8.4 2.5 12 2.5 12s3.5 6 9.5 6c1 0 2-.2 2.9-.5"/></svg>
+          </button>
         </div>
-        <div class="income-metrics">
-          <div><span>Total income</span><strong id="incomeValue">—</strong><small>Combined contributors</small></div>
-          <div><span>Net card spending</span><strong id="incomeSpendingValue">—</strong><small id="incomeSpendingNote">All cards, after refunds</small></div>
+        <div class="income-metrics income-sensitive">
+          <div><span>Income</span><strong id="incomeValue">—</strong></div>
+          <div><span>Net spending</span><strong id="incomeSpendingValue">—</strong></div>
           <div class="income-remaining" id="incomeRemainingCard"><span>Amount left</span><strong id="incomeRemainingValue">—</strong><small id="incomeRemainingPercent">—</small></div>
         </div>
-        <div class="income-averages">
+        <div class="income-allocation income-sensitive" id="incomeAllocation" aria-label="Income allocation">
+          <span class="income-spent-segment" id="incomeProgressBar"><b id="incomeSpentPercent">—</b></span>
+          <span class="income-left-segment" id="incomeLeftSegment"><b id="incomeLeftPercent">—</b></span>
+        </div>
+        <div class="income-averages income-sensitive">
           <div class="income-average-title"><strong>Monthly averages</strong><small id="incomeAverageScope">Available months</small></div>
           <div><span>Average spending</span><strong id="averageSpendingValue">—</strong><small id="averageSpendingMonths">—</small></div>
           <div class="average-left" id="averageLeftCard"><span>Average amount left</span><strong id="averageLeftValue">—</strong><small id="averageLeftMonths">—</small></div>
         </div>
-        <div class="income-progress" aria-hidden="true"><i id="incomeProgressBar"></i></div>
       </section>
 
       <section class="kpi-grid" aria-label="Key metrics">
@@ -127,7 +133,7 @@
         </article>
 
         <article class="panel category-panel" id="categories">
-          <div class="panel-head"><div><h2>Categories</h2><p>All categories in the selected period</p></div><button class="text-button" data-view="categories">View details →</button></div>
+          <div class="panel-head"><div><h2>Categories</h2></div><div class="category-head-actions"><div class="category-scope-toggle" role="group" aria-label="Category spending scope"><button class="active" type="button" data-category-scope="all" aria-pressed="true">All spending</button><button type="button" data-category-scope="routine" aria-pressed="false">Routine only</button></div><button class="text-button" data-view="categories">View details →</button></div></div>
           <div class="donut-row">
             <div class="donut" id="categoryDonut"><div><strong id="donutTotal">—</strong><span>Total</span></div><span class="donut-tooltip" id="categoryDonutTooltip" role="tooltip"></span></div>
             <div class="category-list" id="categoryList"><div><span>Loading categories…</span></div></div>
@@ -184,7 +190,6 @@
       <input type="file" id="fileInput" name="files" accept=".xlsx,.pdf" multiple hidden>
       <div class="staged-import-body" id="importStageBody"></div>
       <div class="staged-import-footer"><span id="importStageHelp">Analyze files without changing the database.</span><div><button class="secondary-button" id="importBack" disabled>Back</button><button class="upload-button editor-primary" id="importNext" disabled>Continue</button></div></div>
-      <div class="dropzone" id="dropzone" hidden><strong>Drop files here</strong><span>or click to browse · XLSX, PDF</span></div>
       <div class="mapping-summary" id="mappingSummary" hidden></div>
     </div>
   </div>

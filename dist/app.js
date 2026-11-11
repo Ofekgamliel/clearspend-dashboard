@@ -1,4 +1,4 @@
-const state={period:'month',month:'',card:'all',data:null,detailTransactions:[],mappingData:null,merchantData:null,activeMerchant:null,activeTransaction:null,activeAdjustmentTransaction:null,detailMode:'',activeCategory:'',detailSort:{key:'transaction_date',direction:'desc'},categoryTransactions:[],categoryView:'grouped',categorySearch:'',categoryGroupSort:{key:'latest_date',direction:'desc'},expandedMerchantGroups:new Set(),categoryExpandedSort:new Map(),merchantRecurringFilter:'all',recurringCache:new Map(),recurringModalPeriod:'month',recurringTab:'series',activeRecurringSeries:'',recurringSorts:{series:{key:'display_name',direction:'asc'},commitments:{key:'remaining',direction:'desc'}},eventsData:null,activeEvent:null,activeEventGroup:null,activeEventCategory:'all'};
+const state={period:'month',month:'',card:'all',data:null,detailTransactions:[],mappingData:null,merchantData:null,activeMerchant:null,activeTransaction:null,activeAdjustmentTransaction:null,detailMode:'',activeCategory:'',detailSort:{key:'transaction_date',direction:'desc'},categoryScope:'all',categoryTransactions:[],categoryView:'grouped',categorySearch:'',categoryGroupSort:{key:'latest_date',direction:'desc'},expandedMerchantGroups:new Set(),categoryExpandedSort:new Map(),merchantRecurringFilter:'all',recurringCache:new Map(),recurringModalPeriod:'month',recurringTab:'series',activeRecurringSeries:'',recurringSorts:{series:{key:'display_name',direction:'asc'},commitments:{key:'remaining',direction:'desc'}},eventsData:null,activeEvent:null,activeEventGroup:null,activeEventCategory:'all'};
 const colors=['#6658e8','#41b98c','#e6a14b','#e76b77','#5b8def','#a66dd4','#42a5b3','#d17b49','#8f9b4f','#d45f9f','#62748f','#9b7b58'];
 const cardPicker=document.querySelector('#cardPicker');
 const cardPickerButton=document.querySelector('#cardPickerButton');
@@ -15,18 +15,19 @@ const monthYearNext=document.querySelector('#monthYearNext');
 const monthPickerLatest=document.querySelector('#monthPickerLatest');
 const toast=document.querySelector('#toast');
 const incomePanel=document.querySelector('#incomePanel');
-const incomeHeaderToggle=document.querySelector('#incomeHeaderToggle');
 const manageMenuButton=document.querySelector('#manageMenuButton');
 const manageMenu=document.querySelector('#manageMenu');
 let toastTimer;
 let availableMonths=[];
 let monthPickerViewYear=null;
 let monthPickerSelected='';
+let categoryScopeSequence=0;
 
 const money=value=>new Intl.NumberFormat('en-IL',{style:'currency',currency:'ILS',maximumFractionDigits:2}).format(Number(value)||0).replace('ILS','₪');
 const compact=value=>new Intl.NumberFormat('en',{notation:'compact',maximumFractionDigits:1}).format(Number(value)||0);
 const escapeHtml=value=>String(value??'').replace(/[&<>'"]/g,char=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[char]));
 const formatDate=value=>value?new Intl.DateTimeFormat('en-GB',{day:'numeric',month:'short',year:'2-digit'}).format(new Date(`${value}T12:00:00`)):'—';
+const formatDateTime=value=>value?new Intl.DateTimeFormat('en-GB',{day:'numeric',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'}).format(new Date(value.replace(' ','T'))):'—';
 const formatMonth=value=>value?new Intl.DateTimeFormat('en-GB',{month:'long',year:'numeric'}).format(new Date(`${value}-01T12:00:00`)):'Latest month';
 const reportingPeriod=item=>item.billing_date?formatDate(item.billing_date):item.billing_month?formatMonth(item.billing_month):formatDate(item.transaction_date);
 const reportingSource=value=>({provider:'Provider billing date',statement:'Statement month',estimated:'Estimated installment month',purchase_date:'Purchase date fallback'}[value]||'Reporting month');
@@ -77,11 +78,36 @@ function renderDashboard(data){
   document.querySelector('#cardsPeriod').textContent=data.period.label;
   renderCards(data.cards,data.selected_card);
   renderIncome(data.income_summary,data.period);
-  renderCategories(data.categories,m.spent,data.category_comparison);
+  renderCategoryScope();
   renderTransactions(data.recent_transactions);
   renderTrend(data.trend,data);
   renderImportStatus(data.latest_import);
 }
+
+function categoryScopeQuery(){return `period=${state.period}&month=${encodeURIComponent(state.month)}&card=${encodeURIComponent(state.card)}&event_scope=${state.categoryScope}`}
+function updateCategoryScopeControls(){document.querySelectorAll('[data-category-scope]').forEach(button=>{const active=button.dataset.categoryScope===state.categoryScope;button.classList.toggle('active',active);button.setAttribute('aria-pressed',String(active))})}
+async function renderCategoryScope(){
+  updateCategoryScopeControls();
+  if(!state.data)return;
+  const sequence=++categoryScopeSequence;
+  if(state.categoryScope==='all'){
+    renderCategories(state.data.categories,state.data.metrics.spent,state.data.category_comparison);
+    return;
+  }
+  document.querySelector('#categoryList').innerHTML='<div><span>Loading routine categories…</span></div>';
+  try{
+    const response=await fetch(`/api/categories?${categoryScopeQuery()}`,{cache:'no-store'}),data=await response.json();
+    if(!response.ok)throw new Error(data.error||'Could not load routine categories');
+    if(sequence!==categoryScopeSequence)return;
+    renderCategories(data.categories,data.total,data.category_comparison);
+  }catch(error){if(sequence!==categoryScopeSequence)return;document.querySelector('#categoryList').innerHTML=`<div><span>${escapeHtml(error.message)}</span></div>`}
+}
+function setCategoryScope(scope){
+  if(!['all','routine'].includes(scope)||state.categoryScope===scope)return;
+  state.categoryScope=scope;
+  renderCategoryScope();
+}
+window.setCategoryScope=setCategoryScope;
 
 function renderIncome(summary,period){
   const hasIncome=Boolean(summary?.has_income);
@@ -89,21 +115,27 @@ function renderIncome(summary,period){
   const percentage=summary?.remaining_percentage;
   const spentPercentage=Number(summary?.spent_percentage||0);
   const averages=summary?.averages||{};
-  document.querySelector('#incomePeriod').textContent=`${period.label} · all cards`;
+  const partialMonth=period.key==='month'&&averages.current_month_partial;
+  document.querySelector('#incomePeriod').textContent=`${period.label} · All cards${partialMonth?' · Partial month':''}`;
   document.querySelector('#incomeValue').textContent=hasIncome?money(summary.income):'No income data';
   document.querySelector('#incomeSpendingValue').textContent=money(summary?.spending);
-  document.querySelector('#incomeSpendingNote').textContent=`All cards · ${money(summary?.refunds)} refunds deducted`;
   document.querySelector('#incomeRemainingValue').textContent=hasIncome?money(remaining):'—';
-  document.querySelector('#incomeRemainingPercent').textContent=hasIncome?`${percentage}% of income remaining`:'Import an income XLSX to calculate the balance';
+  document.querySelector('#incomeRemainingPercent').textContent=hasIncome?`${percentage}% of income left`:'Import an income XLSX to calculate the balance';
   const remainingCard=document.querySelector('#incomeRemainingCard');
   const progress=document.querySelector('#incomeProgressBar');
+  const leftSegment=document.querySelector('#incomeLeftSegment');
+  const boundedSpent=hasIncome?Math.min(Math.max(spentPercentage,0),100):100;
   remainingCard.classList.toggle('over',hasIncome&&remaining<0);
   progress.classList.toggle('over',hasIncome&&spentPercentage>100);
-  progress.style.width=`${hasIncome?Math.min(Math.max(spentPercentage,0),100):0}%`;
+  progress.classList.toggle('unavailable',!hasIncome);
+  progress.style.width=`${boundedSpent}%`;
+  leftSegment.style.width=`${hasIncome?100-boundedSpent:100}%`;
+  document.querySelector('#incomeSpentPercent').textContent=hasIncome?`${spentPercentage}% spent`:'Income unavailable';
+  document.querySelector('#incomeLeftPercent').textContent=hasIncome&&percentage>0?`${percentage}% left`:'';
   const averageRange=averages.start_month&&averages.end_month
-    ?`${formatMonth(averages.start_month)} – ${formatMonth(averages.end_month)}`
+    ?`${new Intl.DateTimeFormat('en-GB',{month:'short',year:'numeric'}).format(new Date(`${averages.start_month}-01T12:00:00`))} – ${new Intl.DateTimeFormat('en-GB',{month:'short',year:'numeric'}).format(new Date(`${averages.end_month}-01T12:00:00`))}`
     :'No monthly history';
-  document.querySelector('#incomeAverageScope').textContent=`${averageRange}${averages.current_month_partial?' · current month partial':''}`;
+  document.querySelector('#incomeAverageScope').textContent=`${averageRange}${averages.current_month_partial?' · Includes partial current month':''}`;
   document.querySelector('#averageSpendingValue').textContent=averages.spending_months?money(averages.spending):'—';
   document.querySelector('#averageSpendingMonths').textContent=averages.spending_months?`${averages.spending_months} spending months · all cards`:'No spending months';
   document.querySelector('#averageLeftValue').textContent=averages.amount_left_months?money(averages.amount_left):'—';
@@ -113,9 +145,11 @@ function renderIncome(summary,period){
 
 function setIncomeVisibility(hidden){
   incomeHidden=hidden;
-  incomePanel.hidden=hidden;
-  incomeHeaderToggle.textContent=hidden?'Show income':'Hide income';
-  incomeHeaderToggle.setAttribute('aria-pressed',String(!hidden));
+  incomePanel.classList.toggle('income-private',hidden);
+  const toggle=document.querySelector('#incomeHideButton');
+  toggle.setAttribute('aria-pressed',String(hidden));
+  toggle.setAttribute('aria-label',hidden?'Show income values':'Hide income values');
+  toggle.title=hidden?'Show income values':'Hide income values';
   try{localStorage.setItem('clearspend-income-hidden',hidden?'1':'0')}catch(_error){}
   if(state.data){renderTrend(state.data.trend,state.data);window.loadFinancialObservations?.()}
 }
@@ -123,8 +157,7 @@ function setIncomeVisibility(hidden){
 let incomeHidden=false;
 try{incomeHidden=localStorage.getItem('clearspend-income-hidden')==='1'}catch(_error){}
 setIncomeVisibility(incomeHidden);
-document.querySelector('#incomeHideButton').addEventListener('click',()=>setIncomeVisibility(true));
-incomeHeaderToggle.addEventListener('click',()=>setIncomeVisibility(!incomeHidden));
+document.querySelector('#incomeHideButton').addEventListener('click',()=>setIncomeVisibility(!incomeHidden));
 
 function setManageMenu(show){
   manageMenu.hidden=!show;
@@ -357,21 +390,24 @@ function setActiveNav(element){
   navItem.classList.add('active');
 }
 
-async function openDetail(view,source,initialSearch='',transactionIds=[]){
+async function openDetail(view,source,initialSearch='',transactionIds=[],eventScope='all'){
   setActiveNav(source);
   state.detailMode=view;state.activeCategory='';
   const isTransactions=view==='transactions';
   setDetailEyebrow(isTransactions?'TRANSACTION EXPLORER':'CATEGORY BREAKDOWN');
   document.querySelector('#detailTitle').textContent=isTransactions?'All transactions':'All categories';
-  document.querySelector('#detailSubtitle').textContent=`${state.data?.period.label||''} · ${state.card==='all'?'all cards':'selected card'}`;
-  detailTools.innerHTML=isTransactions?`<label class="detail-search"><span>⌕</span><input id="transactionSearch" type="search" value="${escapeHtml(initialSearch)}" placeholder="Search merchant or category"></label>`:'';
+  const detailEventScope=isTransactions?eventScope:state.categoryScope;
+  const baseSubtitle=`${state.data?.period.label||''} · ${state.card==='all'?'all cards':'selected card'}${detailEventScope==='routine'?' · routine only':''}`;
+  document.querySelector('#detailSubtitle').textContent=baseSubtitle;
+  detailTools.innerHTML=isTransactions?`<div class="transaction-search-tools"><label class="detail-search"><span>⌕</span><input id="transactionSearch" type="search" value="${escapeHtml(initialSearch)}" placeholder="Search merchant, display name or category"></label><label class="transaction-search-scope"><input id="transactionSearchAllTime" type="checkbox"><span>Search all time</span></label></div>`:'';
   detailContent.innerHTML='<p class="loading-state">Loading local data…</p>';
   setDetailModal(true);
   try{
-    const response=await fetch(`/api/${view}?period=${state.period}&month=${encodeURIComponent(state.month)}&card=${encodeURIComponent(state.card)}`,{cache:'no-store'});
+    const selectedIds=new Set((transactionIds||[]).map(value=>String(value)));
+    const initialQuery=isTransactions&&!selectedIds.size?`&q=${encodeURIComponent(initialSearch.trim())}`:'';
+    const response=await fetch(`/api/${view}?period=${state.period}&month=${encodeURIComponent(state.month)}&card=${encodeURIComponent(state.card)}&event_scope=${detailEventScope}${initialQuery}`,{cache:'no-store'});
     const data=await response.json();if(!response.ok)throw new Error(data.error||`Could not load ${view}`);
     if(isTransactions){
-      const selectedIds=new Set((transactionIds||[]).map(value=>String(value)));
       const scopedTransactions=selectedIds.size
         ?data.transactions.filter(item=>selectedIds.has(String(item.id)))
         :data.transactions;
@@ -380,12 +416,32 @@ async function openDetail(view,source,initialSearch='',transactionIds=[]){
       const initialTerm=initialSearch.trim().toLocaleLowerCase();
       const transactionText=item=>Object.values(item).filter(value=>value!==null).join(' ').toLocaleLowerCase();
       const initialRows=initialTerm?state.detailTransactions.filter(item=>transactionText(item).includes(initialTerm)):state.detailTransactions;
-      renderFullTransactions(initialRows,scopedTransactions.length,initialTerm);
-      document.querySelector('#transactionSearch').addEventListener('input',event=>{
-        const term=event.target.value.trim().toLocaleLowerCase();
-        const filtered=state.detailTransactions.filter(item=>transactionText(item).includes(term));
-        renderFullTransactions(filtered,data.total,term);
-      });
+      renderFullTransactions(initialRows,selectedIds.size?scopedTransactions.length:data.total,initialTerm);
+      const searchInput=document.querySelector('#transactionSearch');
+      const allTimeInput=document.querySelector('#transactionSearchAllTime');
+      let searchTimer=0,searchRequest=0;
+      const runSearch=async()=>{
+        const rawTerm=searchInput.value.trim();
+        const term=rawTerm.toLocaleLowerCase();
+        document.querySelector('#detailSubtitle').textContent=allTimeInput.checked&&term?`${baseSubtitle} · searching all time`:baseSubtitle;
+        if(selectedIds.size){
+          const filtered=term?state.detailTransactions.filter(item=>transactionText(item).includes(term)):state.detailTransactions;
+          renderFullTransactions(filtered,state.detailTransactions.length,term);return;
+        }
+        const request=++searchRequest;
+        const searchPeriod=allTimeInput.checked&&term?'all':state.period;
+        try{
+          const searchResponse=await fetch(`/api/transactions?period=${searchPeriod}&month=${encodeURIComponent(state.month)}&card=${encodeURIComponent(state.card)}&event_scope=${detailEventScope}&q=${encodeURIComponent(rawTerm)}`,{cache:'no-store'});
+          const searchData=await searchResponse.json();
+          if(!searchResponse.ok)throw new Error(searchData.error||'Could not search transactions');
+          if(request!==searchRequest)return;
+          state.detailTransactions=searchData.transactions;
+          renderFullTransactions(searchData.transactions,searchData.total,term);
+        }catch(error){if(request===searchRequest)detailContent.innerHTML=`<p class="empty-state">${escapeHtml(error.message)}</p>`}
+      };
+      const scheduleSearch=()=>{clearTimeout(searchTimer);searchTimer=setTimeout(runSearch,250)};
+      searchInput.addEventListener('input',scheduleSearch);
+      allTimeInput.addEventListener('change',runSearch);
     }else renderFullCategories(data);
   }catch(error){detailContent.innerHTML=`<p class="empty-state">${escapeHtml(error.message)}</p>`}
 }
@@ -610,7 +666,8 @@ function renderFullTransactions(rows,total,term=''){
   const sortedRows=sortedTransactionRows(rows,state.detailSort);
   const label=term?`${rows.length.toLocaleString()} matches`:`${total.toLocaleString()} transactions`;
   const sortHeaders=transactionSortHeaders(state.detailSort,'data-sort');
-  detailContent.innerHTML=`<div class="detail-summary"><strong>${label}</strong><span>Sorted by ${escapeHtml(transactionColumns.find(([key])=>key===state.detailSort.key)?.[1]||'Transaction date')} ${state.detailSort.direction==='asc'?'ascending':'descending'} · up to 1,000 rows</span></div><div class="table-wrap detail-table"><table class="full-transaction-table"><thead><tr>${sortHeaders}<th class="transaction-action-column" aria-label="Actions"></th></tr></thead><tbody>${sortedRows.length?sortedRows.map(fullTransactionRow).join(''):'<tr><td colspan="14">No matching transactions.</td></tr>'}</tbody></table></div>`;
+  const rowScope=term?'all matching rows':'up to 1,000 rows';
+  detailContent.innerHTML=`<div class="detail-summary"><strong>${label}</strong><span>Sorted by ${escapeHtml(transactionColumns.find(([key])=>key===state.detailSort.key)?.[1]||'Transaction date')} ${state.detailSort.direction==='asc'?'ascending':'descending'} · ${rowScope}</span></div><div class="table-wrap detail-table"><table class="full-transaction-table"><thead><tr>${sortHeaders}<th class="transaction-action-column" aria-label="Actions"></th></tr></thead><tbody>${sortedRows.length?sortedRows.map(fullTransactionRow).join(''):'<tr><td colspan="14">No matching transactions.</td></tr>'}</tbody></table></div>`;
   detailContent.querySelectorAll('[data-sort]').forEach(button=>button.addEventListener('click',()=>{
     const key=button.dataset.sort;
     state.detailSort=state.detailSort.key===key
@@ -720,16 +777,16 @@ function renderGroupedCategoryTransactions(rows){
   });
 }
 
-async function openCategoryTransactions(category,source){
+async function openCategoryTransactions(category,source,eventScope=state.categoryScope){
   setActiveNav(source);
   state.detailMode='category-transactions';state.activeCategory=category;
   setDetailEyebrow('CATEGORY TRANSACTIONS');
   document.querySelector('#detailTitle').textContent=category;
-  document.querySelector('#detailSubtitle').textContent=`${state.data?.period.label||''} · ${state.card==='all'?'all cards':'selected card'}`;
+  document.querySelector('#detailSubtitle').textContent=`${state.data?.period.label||''} · ${state.card==='all'?'all cards':'selected card'}${eventScope==='routine'?' · routine only':''}`;
   detailTools.innerHTML='<div class="category-transaction-tools"><label class="detail-search"><span>⌕</span><input id="transactionSearch" type="search" placeholder="Search within this category"></label><div class="category-view-toggle" role="group" aria-label="Transaction view"><button type="button" class="active" data-category-view="grouped">Grouped by merchant</button><button type="button" data-category-view="individual">Individual transactions</button></div></div>';
   detailContent.innerHTML='<p class="loading-state">Loading category transactions…</p>';setDetailModal(true);
   try{
-    const response=await fetch(`/api/transactions?period=${state.period}&month=${encodeURIComponent(state.month)}&card=${encodeURIComponent(state.card)}&category=${encodeURIComponent(category)}`,{cache:'no-store'});
+    const response=await fetch(`/api/transactions?period=${state.period}&month=${encodeURIComponent(state.month)}&card=${encodeURIComponent(state.card)}&category=${encodeURIComponent(category)}&event_scope=${eventScope}`,{cache:'no-store'});
     const data=await response.json();if(!response.ok)throw new Error(data.error||'Could not load category transactions');
     const categoryRows=data.transactions;
     state.categoryTransactions=categoryRows;
@@ -990,7 +1047,7 @@ async function openImportAudit(){
   detailTools.innerHTML='';detailContent.innerHTML='<p class="loading-state">Loading import history…</p>';setDetailModal(true);
   try{
     const data=await fetchMappingData();
-    detailContent.innerHTML=`<div class="detail-summary"><strong>${state.data?.insights.duplicate_rows_prevented||0} duplicate rows prevented</strong><span>Recent 8 imports</span></div><div class="audit-list">${data.recent_imports.map(item=>`<div><span><strong>${escapeHtml(item.original_name)}</strong><small>${escapeHtml((item.provider||'unknown').toUpperCase())} ${item.card_last4?`•• ${escapeHtml(item.card_last4)}`:''}</small></span><span><strong class="audit-status ${escapeHtml(item.status)}">${escapeHtml(item.status.replaceAll('_',' '))}</strong><small>${item.inserted_rows} inserted · ${item.duplicate_rows} duplicates</small></span></div>`).join('')}</div>`;
+    detailContent.innerHTML=`<div class="detail-summary"><strong>${state.data?.insights.duplicate_rows_prevented||0} duplicate rows prevented</strong><span>Recent 8 imports</span></div><div class="audit-list">${data.recent_imports.map(item=>{const coverage=item.coverage||[],cards=coverage.length?coverage.map(part=>`•• ${part.card_last4}`).join(' · '):(item.card_last4?`•• ${item.card_last4}`:'');const ranges=coverage.map(part=>part.purchase_date_from&&part.purchase_date_to?`${formatDate(part.purchase_date_from)}–${formatDate(part.purchase_date_to)}`:'').filter(Boolean).join(' · ');const pending=coverage.reduce((sum,part)=>sum+(part.pending_rows||0),0);return `<div><span><strong>${escapeHtml(item.original_name)}</strong><small>${escapeHtml((item.provider||'unknown').toUpperCase())} ${escapeHtml(cards)} · ${escapeHtml(item.statement_range||'period unavailable')}</small><small>${ranges?`Purchases ${escapeHtml(ranges)} · `:''}Imported ${formatDateTime(item.imported_at)}</small></span><span><strong class="audit-status ${escapeHtml(item.status)}">${escapeHtml(item.status.replaceAll('_',' '))}</strong><small>${item.inserted_rows} inserted · ${item.duplicate_rows} duplicates${pending?` · ${pending} pending not imported`:''}</small></span></div>`}).join('')}</div>`;
   }catch(error){detailContent.innerHTML=`<p class="empty-state">${escapeHtml(error.message)}</p>`}
 }
 
@@ -1149,6 +1206,8 @@ document.querySelectorAll('[data-recurring-period]').forEach(button=>button.addE
 document.querySelectorAll('[data-recurring-tab]').forEach(button=>button.addEventListener('click',()=>{state.recurringTab=button.dataset.recurringTab;state.activeRecurringSeries='';loadRecurringModal()}));
 
 document.addEventListener('click',event=>{
+  const categoryScopeTarget=event.target.closest('[data-category-scope]');
+  if(categoryScopeTarget){event.preventDefault();setCategoryScope(categoryScopeTarget.dataset.categoryScope);return}
   const adjustmentTarget=event.target.closest('[data-adjust-transaction]');
   if(adjustmentTarget){event.preventDefault();event.stopPropagation();openSpendingAdjustment(adjustmentTarget.dataset.adjustTransaction);return}
   const transactionEditTarget=event.target.closest('[data-edit-transaction]');
@@ -1182,17 +1241,37 @@ const importStepper=document.querySelector('#importStepper');
 const importBack=document.querySelector('#importBack');
 const importNext=document.querySelector('#importNext');
 const importStageHelp=document.querySelector('#importStageHelp');
-const importState={step:0,batch:null,decisions:new Map(),reconciled:new Set(),busy:false};
+const importState={step:0,batch:null,decisions:new Map(),duplicateDecisions:new Map(),reconciled:new Set(),busy:false};
 const importStepNames=['Files','Checks','Merchants','Reconcile','Approve'];
+const displayPortal=document.createElement('div');
+displayPortal.className='stage-combo-menu stage-combo-portal';
+displayPortal.setAttribute('role','listbox');
+displayPortal.hidden=true;
+document.body.appendChild(displayPortal);
+let activeDisplayInput=null;
 
 function importKey(value){return encodeURIComponent(value)}
 function importDecision(encodedKey){return importState.decisions.get(decodeURIComponent(encodedKey))}
-function manualReconciliationFiles(){return (importState.batch?.files||[]).filter(file=>file.kind==='statement'&&file.status==='ready'&&file.reconciliation?.status==='manual_required')}
+function manualReconciliationFiles(){return (importState.batch?.files||[]).filter(file=>file.kind==='statement'&&file.status==='ready'&&['manual_required','mismatch'].includes(file.reconciliation?.status))}
 function invalidMerchantDecisions(){return [...importState.decisions.values()].filter(item=>!['needs_review','exclude'].includes(item.resolution)&&(!item.category||item.category==='Needs review'||(item.resolution==='link'&&!item.canonical_group_id)))}
+function unresolvedDuplicateDecisions(){return (importState.batch?.possible_duplicates||[]).filter(item=>!['skip','import'].includes(importState.duplicateDecisions.get(item.candidate_id)))}
 function initializeImportDecisions(){
   importState.decisions.clear();
   for(const merchant of importState.batch?.merchants||[]){
     if(!merchant.needs_review)continue;
+    const suggestion=strongDisplayIdentitySuggestion(merchant.merchant_raw);
+    if(suggestion){
+      importState.decisions.set(merchant.merchant_normalized,{
+        merchant_normalized:merchant.merchant_normalized,
+        resolution:'link',
+        category:suggestion.category_status==='unanimous'?suggestion.category:'Needs review',
+        display_name:suggestion.display_name,
+        canonical_group_id:suggestion.canonical_group_id,
+        scope:'exact',
+        suggested_match:true
+      });
+      continue;
+    }
     importState.decisions.set(merchant.merchant_normalized,{
       merchant_normalized:merchant.merchant_normalized,
       resolution:merchant.provider_category?'provider':'needs_review',
@@ -1236,18 +1315,20 @@ document.addEventListener('focusin',event=>{if(event.target.matches('[data-trans
 document.addEventListener('change',event=>{if(event.target.matches('[data-transaction-event]'))updateTransactionEvent(event.target)});
 fileInput.addEventListener('change',()=>analyzeImportFiles(fileInput.files));
 
-function closeDisplayMenus(except=null){
-  document.querySelectorAll('.stage-combo-menu').forEach(menu=>{if(menu!==except)menu.hidden=true});
+function closeDisplayMenus(){
+  if(activeDisplayInput){activeDisplayInput.setAttribute('aria-expanded','false');activeDisplayInput=null}
+  displayPortal.hidden=true;
 }
 
 function renderImportStage(){
+  closeDisplayMenus();
   importStepper.innerHTML=importStepNames.map((name,index)=>`<button type="button" class="import-step ${index===importState.step?'active':''} ${index<importState.step?'done':''}" data-import-step="${index}" ${(!importState.batch&&index)||index>importState.step?'disabled':''}><b>${index<importState.step?'✓':index+1}</b><span>${name}</span></button>`).join('');
   const renderers=[renderImportFiles,renderImportChecks,renderImportMerchants,renderImportReconcile,renderImportApprove];
   importStageBody.innerHTML=importState.busy?'<p class="loading-state">Analyzing files without changing your database…</p>':renderers[importState.step]();
   importBack.disabled=importState.busy||importState.step===0;
-  importNext.disabled=importState.busy||importState.step===0||(importState.step===2&&invalidMerchantDecisions().length>0)||(importState.step===3&&manualReconciliationFiles().some(file=>!importState.reconciled.has(file.filename)));
+  importNext.disabled=importState.busy||importState.step===0||(importState.step===1&&unresolvedDuplicateDecisions().length>0)||(importState.step===2&&invalidMerchantDecisions().length>0)||(importState.step===3&&manualReconciliationFiles().some(file=>!importState.reconciled.has(file.filename)));
   importNext.textContent=importState.step===4?'Approve & import':'Continue';
-  const help=['Select XLSX or PDF statements. Nothing is saved yet.','Confirm the parser and duplicate checks look right.','Resolve unfamiliar merchants or leave them for later.','Compare parsed totals with each original statement.','A database backup is created immediately before import.'];
+  const help=['Select XLSX or PDF statements. Nothing is saved yet.','Exact duplicates are listed and excluded automatically. Review every uncertain match.','Resolve unfamiliar merchants or leave them for later.','Compare parsed totals with each original statement.','A database backup is created immediately before import.'];
   importStageHelp.textContent=importState.busy?'Reading files and checking existing records…':help[importState.step];
 }
 
@@ -1258,10 +1339,24 @@ function renderImportFiles(){
 
 function renderImportChecks(){
   const files=importState.batch?.files||[];
-  const totals=files.reduce((sum,file)=>({parsed:sum.parsed+(file.parsed||0),newRows:sum.newRows+(file.new_rows||0),duplicates:sum.duplicates+(file.duplicates||0),plans:sum.plans+(file.installment_plans||0)}),{parsed:0,newRows:0,duplicates:0,plans:0});
-  return `<div class="stage-summary"><div class="stage-metric"><span>Parsed rows</span><strong>${totals.parsed}</strong><small>Across ${files.length} files</small></div><div class="stage-metric"><span>Ready to add</span><strong>${totals.newRows}</strong><small>Before your review</small></div><div class="stage-metric"><span>Duplicates found</span><strong>${totals.duplicates}</strong><small>Will not be inserted</small></div><div class="stage-metric"><span>Installment plans</span><strong>${totals.plans}</strong><small>Detected from statement data</small></div></div>
+  const exact=importState.batch?.exact_duplicates||[];const possible=importState.batch?.possible_duplicates||[];
+  const totals=files.reduce((sum,file)=>({parsed:sum.parsed+(file.parsed||0),newRows:sum.newRows+(file.new_rows||0),exact:sum.exact+(file.exact_duplicates||0),possible:sum.possible+(file.possible_duplicates||0),pending:sum.pending+(file.pending_rows||0),plans:sum.plans+(file.installment_plans||0)}),{parsed:0,newRows:0,exact:0,possible:0,pending:0,plans:0});
+  const warnings=importState.batch?.coverage_warnings||[];
+  return `<div class="stage-summary"><div class="stage-metric"><span>Parsed rows</span><strong>${totals.parsed}</strong><small>Across ${files.length} files</small></div><div class="stage-metric"><span>Confirmed new</span><strong>${totals.newRows}</strong><small>Safe to add</small></div><div class="stage-metric"><span>Exact duplicates</span><strong>${totals.exact}</strong><small>Automatically excluded</small></div><div class="stage-metric"><span>Needs review</span><strong>${totals.possible}</strong><small>Possible duplicates</small></div><div class="stage-metric"><span>Pending</span><strong>${totals.pending}</strong><small>Shown, not imported</small></div><div class="stage-metric"><span>Installment plans</span><strong>${totals.plans}</strong><small>Detected from statement data</small></div></div>
+  ${warnings.map(item=>`<div class="stage-callout amber"><strong>Card ••${escapeHtml(item.card_last4)} · ${escapeHtml(item.filename)}</strong> — ${escapeHtml(item.message)}${item.imports?.length?`<small>Related imports: ${escapeHtml(item.imports.join(', '))}</small>`:''}</div>`).join('')}
   ${(importState.batch?.upload_errors||[]).map(item=>`<div class="stage-callout amber"><strong>${escapeHtml(item.filename)}</strong> — ${escapeHtml(item.error||item.status)}</div>`).join('')}
-  <div class="stage-list"><div class="stage-row head"><span>File</span><span>Source</span><span>Period</span><span>Rows</span><span>Status</span></div>${files.map(file=>`<div class="stage-row"><span><strong>${escapeHtml(file.filename)}</strong><small>${escapeHtml(file.format)}${file.product_name?` · ${escapeHtml(file.product_name)}`:''}</small></span><span><strong>${escapeHtml((file.provider||'unknown').toUpperCase())}</strong><small>${file.card_last4?`•• ${escapeHtml(file.card_last4)}`:file.kind==='income'?'Monthly income':'Card not detected'}</small></span><span>${escapeHtml(file.statement_range||'—')}</span><span><strong>${file.new_rows||0} new</strong><small>${file.duplicates||0} duplicate</small></span><span class="stage-badge ${file.status==='ready'?'':'amber'}">${escapeHtml(file.status.replaceAll('_',' '))}</span></div>`).join('')}</div>`;
+  <div class="stage-list"><div class="stage-row head"><span>File</span><span>Source</span><span>Coverage</span><span>Rows</span><span>Status</span></div>${files.map(file=>{const coverage=file.coverage||[],dates=coverage.map(item=>item.purchase_date_from&&item.purchase_date_to?`${formatDate(item.purchase_date_from)}–${formatDate(item.purchase_date_to)}`:'').filter(Boolean).join(' · '),asOf=coverage.map(item=>item.statement_as_of_date).filter(Boolean).sort().at(-1);return `<div class="stage-row"><span><strong>${escapeHtml(file.filename)}</strong><small>${escapeHtml(file.format)}${file.product_name?` · ${escapeHtml(file.product_name)}`:''}</small></span><span><strong>${escapeHtml((file.provider||'unknown').toUpperCase())}</strong><small>${coverage.length?coverage.map(item=>`•• ${escapeHtml(item.card_last4)}`).join(' · '):file.card_last4?`•• ${escapeHtml(file.card_last4)}`:file.kind==='income'?'Monthly income':'Card not detected'}</small></span><span><strong>${escapeHtml(file.statement_range||'—')}</strong><small>${dates||'No purchase-date coverage'}${asOf?` · data as of ${formatDate(asOf)}`:''}</small></span><span><strong>${file.new_rows||0} confirmed new</strong><small>${file.exact_duplicates||0} exact · ${file.possible_duplicates||0} review · ${file.pending_rows||0} pending</small></span><span class="stage-badge ${file.status==='ready'?'':'amber'}">${escapeHtml(file.status.replaceAll('_',' '))}</span></div>`}).join('')}</div>
+  <section class="stage-duplicate-section"><div class="stage-duplicate-heading"><span><strong>Exact duplicates</strong><small>These rows already exist and will not be inserted again.</small></span><b>${exact.length} auto-excluded</b></div>${exact.length?`<div class="stage-duplicate-list">${exact.map(item=>renderExactDuplicate(item)).join('')}</div>`:'<p class="stage-empty-duplicates">No exact duplicates were found in this batch.</p>'}</section>
+  <section class="stage-duplicate-section possible"><div class="stage-duplicate-heading"><span><strong>Possible duplicates</strong><small>Nothing uncertain is removed automatically. Decide what to do with every row.</small></span><b>${possible.length} to review</b></div>${possible.length?`<div class="stage-duplicate-list">${possible.map(item=>renderPossibleDuplicate(item)).join('')}</div>`:'<p class="stage-empty-duplicates">No uncertain matches need review.</p>'}</section>`;
+}
+
+function duplicateAmount(item){return `${money(item.amount)}${item.currency&&item.currency!=='ILS'?` ${escapeHtml(item.currency)}`:''}`}
+function renderExactDuplicate(item){
+  return `<div class="stage-duplicate-row"><span><strong>${escapeHtml(item.merchant||'Income')}</strong><small>${escapeHtml(item.filename)} · ${formatDate(item.transaction_date)}</small></span><span><strong>${duplicateAmount(item)}</strong><small>${item.card_last4?`•• ${escapeHtml(item.card_last4)}`:'Income entry'}</small></span><span><strong>Excluded automatically</strong><small>${escapeHtml(item.reason||'Exact identity already exists')}${item.matched_transaction_id?` · DB #${item.matched_transaction_id}`:''}</small></span></div>`;
+}
+function renderPossibleDuplicate(item){
+  const action=importState.duplicateDecisions.get(item.candidate_id)||'';const match=item.matched_rows?.[0];
+  return `<div class="stage-duplicate-row possible"><span><strong>${escapeHtml(item.merchant)}</strong><small>Incoming · ${formatDate(item.transaction_date)} · ${escapeHtml(item.filename)}</small></span><span><strong>${duplicateAmount(item)}</strong><small>Existing DB ${item.matched_transaction_ids.map(id=>`#${id}`).join(', ')}${match?.billing_month?` · billed ${escapeHtml(match.billing_month)}`:''}</small></span><span><small>${escapeHtml(item.reason)}</small><select class="stage-control duplicate-decision" data-duplicate-decision="${item.candidate_id}"><option value=""${action?'':' selected'}>Choose an action…</option><option value="skip"${action==='skip'?' selected':''}>Treat as duplicate</option><option value="import"${action==='import'?' selected':''}>Import as new</option></select></span></div>`;
 }
 
 function categoryOptions(selected){
@@ -1281,32 +1376,96 @@ function renderMerchantDecisionRow(merchant){
   const decision=importState.decisions.get(merchant.merchant_normalized);
   const key=importKey(merchant.merchant_normalized);
   const rowClass=decision.resolution==='exclude'?'stage-excluded':decision.resolution==='needs_review'?'stage-deferred':'';
-  return `<div class="stage-row ${rowClass}" data-merchant-row="${key}"><span><strong>${escapeHtml(merchant.merchant_raw)}</strong><small>${merchant.transactions} transaction${merchant.transactions===1?'':'s'} · ${money(merchant.amount)}</small></span><span><strong>${escapeHtml(merchant.providers.join(', ').toUpperCase())}</strong><small>${formatDate(merchant.first_date)} – ${formatDate(merchant.last_date)}</small></span><select class="stage-control" data-decision-field="resolution" data-key="${key}"><option value="create"${decision.resolution==='create'?' selected':''}>Create new rule</option><option value="link"${decision.resolution==='link'?' selected':''}>Link existing merchant</option>${merchant.provider_category?`<option value="provider"${decision.resolution==='provider'?' selected':''}>Use provider value</option>`:''}<option value="needs_review"${decision.resolution==='needs_review'?' selected':''}>Needs review</option><option value="exclude"${decision.resolution==='exclude'?' selected':''}>Exclude rows</option></select><select class="stage-control" data-decision-field="category" data-key="${key}" ${decision.resolution==='exclude'?'disabled':''}>${categoryOptions(decision.category)}</select>${renderDisplayCombobox(decision,key)}<select class="stage-control" data-decision-field="scope" data-key="${key}" ${decision.resolution==='exclude'?'disabled':''}><option value="exact"${decision.scope==='exact'?' selected':''}>This name, future too</option><option value="batch"${decision.scope==='batch'?' selected':''}>This batch only</option></select></div>`;
+  const linked=decision.resolution==='link';
+  return `<div class="stage-row ${rowClass}" data-merchant-row="${key}"><span><strong>${escapeHtml(merchant.merchant_raw)}</strong><small>${merchant.transactions} transaction${merchant.transactions===1?'':'s'} · ${money(merchant.amount)}</small>${decision.suggested_match?`<small class="stage-identity-suggestion">Suggested match: ${escapeHtml(decision.display_name)}</small>`:''}</span><span><strong>${escapeHtml(merchant.providers.join(', ').toUpperCase())}</strong><small>${formatDate(merchant.first_date)} – ${formatDate(merchant.last_date)}</small></span><select class="stage-control" data-decision-field="resolution" data-key="${key}"><option value="create"${decision.resolution==='create'?' selected':''}>Create new rule</option><option value="link"${linked?' selected':''}>Link existing merchant</option>${merchant.provider_category?`<option value="provider"${decision.resolution==='provider'?' selected':''}>Use provider value</option>`:''}<option value="needs_review"${decision.resolution==='needs_review'?' selected':''}>Needs review</option><option value="exclude"${decision.resolution==='exclude'?' selected':''}>Exclude rows</option></select><select class="stage-control" data-decision-field="category" data-key="${key}" ${decision.resolution==='exclude'?'disabled':''}>${categoryOptions(decision.category)}</select>${renderDisplayCombobox(decision,key)}<select class="stage-control" data-decision-field="scope" data-key="${key}" ${(decision.resolution==='exclude'||linked)?'disabled':''} title="${linked?'Existing aliases are linked permanently for this exact statement name.':'Choose whether this decision applies to future exact matches.'}"><option value="exact"${decision.scope==='exact'?' selected':''}>This name, future too</option>${linked?'':`<option value="batch"${decision.scope==='batch'?' selected':''}>This batch only</option>`}</select></div>`;
 }
 
 function renderDisplayCombobox(decision,key){
-  return `<div class="stage-display-wrap"><input class="stage-control stage-display-input" data-display-input data-key="${key}" value="${escapeHtml(decision.display_name)}" autocomplete="off" ${decision.resolution==='exclude'?'disabled':''}><div class="stage-combo-menu" data-display-menu="${key}" hidden></div></div>`;
+  return `<div class="stage-display-wrap"><input class="stage-control stage-display-input" data-display-input data-key="${key}" value="${escapeHtml(decision.display_name)}" autocomplete="off" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-label="Search existing display names or enter a new one" ${decision.resolution==='exclude'?'disabled':''}></div>`;
 }
 
+function normalizeIdentityText(value){return String(value||'').normalize('NFKD').toLocaleLowerCase().replace(/[\u0591-\u05c7]/g,'').replace(/[^\p{L}\p{N}]+/gu,' ').replace(/\b\d+\b/g,' ').replace(/\s+/g,' ').trim()}
+function displayMatchScore(query,candidate){
+  const wanted=normalizeIdentityText(query),existing=normalizeIdentityText(candidate);if(!wanted)return 1;if(!existing)return 0;
+  if(wanted===existing)return 100;
+  if(wanted.includes(existing)||existing.includes(wanted))return 80+Math.min(existing.length,wanted.length)/Math.max(existing.length,wanted.length)*10;
+  const wantedTokens=new Set(wanted.split(' ').filter(Boolean)),existingTokens=new Set(existing.split(' ').filter(Boolean));
+  const overlap=[...wantedTokens].filter(token=>existingTokens.has(token)).length;if(!overlap)return 0;
+  return overlap/wantedTokens.size*55+overlap/existingTokens.size*25;
+}
+function strongDisplayIdentitySuggestion(query){
+  const matches=(importState.batch?.display_identities||[]).map(item=>({
+    item,
+    score:Math.max(displayMatchScore(query,item.display_name),...(item.alias_names||[]).map(alias=>displayMatchScore(query,alias)))
+  })).sort((a,b)=>b.score-a.score||b.item.transactions-a.item.transactions);
+  const best=matches[0],runnerUp=matches[1];
+  if(!best||best.score<80)return null;
+  if(runnerUp&&best.score-runnerUp.score<20)return null;
+  return best.item;
+}
+function identityCategorySummary(identity){
+  if(identity.category_status==='unanimous')return `${identity.category} · all ${identity.categories[0].aliases} mapped aliases`;
+  if(identity.category_status==='mixed')return `Mixed categories · ${identity.categories.map(item=>`${item.category} (${item.aliases})`).join(' · ')}`;
+  return 'No approved category for existing aliases';
+}
+function originalImportMerchant(decision){
+  return importState.batch?.merchants?.find(item=>item.merchant_normalized===decision.merchant_normalized)?.merchant_raw||decision.display_name;
+}
 function displayMenuHtml(query,decision){
-  const needle=query.trim().toLocaleLowerCase();
-  const matches=(importState.batch?.display_identities||[]).filter(item=>!needle||item.display_name.toLocaleLowerCase().includes(needle)).slice(0,8);
-  const choices=matches.map(item=>`<button type="button" data-display-choice data-key="${importKey(decision.merchant_normalized)}" data-name="${escapeHtml(item.display_name)}" data-group="${escapeHtml(item.canonical_group_id)}" data-category="${escapeHtml(item.category)}"><strong>${escapeHtml(item.display_name)}</strong><small>${item.aliases} aliases · ${item.transactions} transactions · ${escapeHtml(item.category)}</small></button>`).join('');
-  const create=query.trim()?`<button type="button" class="create-display" data-display-create data-key="${importKey(decision.merchant_normalized)}">Use “${escapeHtml(query.trim())}” as a new display name</button>`:'';
+  const matches=(importState.batch?.display_identities||[]).map(item=>({item,score:Math.max(displayMatchScore(query,item.display_name),...(item.alias_names||[]).map(alias=>displayMatchScore(query,alias)))})).filter(match=>!query.trim()||match.score>0).sort((a,b)=>b.score-a.score||b.item.transactions-a.item.transactions).slice(0,8);
+  const choices=matches.map(({item,score},index)=>`<button type="button" role="option" data-display-choice data-key="${importKey(decision.merchant_normalized)}" data-name="${escapeHtml(item.display_name)}" data-group="${escapeHtml(item.canonical_group_id)}" data-category-status="${escapeHtml(item.category_status)}" data-category="${item.category_status==='unanimous'?escapeHtml(item.category):''}"><strong>${escapeHtml(item.display_name)}${query.trim()&&index===0&&score>=70?'<em>Suggested match</em>':''}</strong><small>${item.aliases} aliases · ${item.transactions} transactions</small><small class="stage-category-context ${item.category_status==='mixed'?'mixed':''}">${escapeHtml(identityCategorySummary(item))}</small></button>`).join('');
+  const createName=decision.suggested_match?originalImportMerchant(decision):query.trim();
+  const create=createName?`<button type="button" class="create-display" data-display-create data-key="${importKey(decision.merchant_normalized)}" data-name="${escapeHtml(createName)}">Use “${escapeHtml(createName)}” as a new display name</button>`:'';
   return choices+create+(choices||create?'':'<button type="button" disabled>No matching display names</button>');
+}
+
+function positionDisplayPortal(){
+  if(!activeDisplayInput||!activeDisplayInput.isConnected||displayPortal.hidden)return;
+  const rect=activeDisplayInput.getBoundingClientRect(),gap=5,width=Math.max(rect.width,285),left=Math.min(Math.max(10,rect.left),window.innerWidth-width-10);
+  displayPortal.style.width=`${width}px`;displayPortal.style.left=`${left}px`;displayPortal.style.right='auto';displayPortal.style.maxHeight='240px';
+  const desiredHeight=Math.min(displayPortal.scrollHeight,240),spaceBelow=window.innerHeight-rect.bottom-gap,openUp=spaceBelow<Math.min(desiredHeight,150)&&rect.top>spaceBelow;
+  displayPortal.style.top=openUp?`${Math.max(10,rect.top-gap-desiredHeight)}px`:`${rect.bottom+gap}px`;
+}
+function openDisplayMenu(input,decision){
+  activeDisplayInput=input;displayPortal.innerHTML=displayMenuHtml(input.value,decision);displayPortal.hidden=false;input.setAttribute('aria-expanded','true');positionDisplayPortal();
 }
 
 function renderImportReconcile(){
   const files=importState.batch?.files||[];
-  return `<div class="stage-callout amber"><strong>Why this confirmation exists:</strong> the current parsers can total the transaction rows, but they do not yet reliably read every provider’s printed statement total. Check that number on the original file before approval.</div><div class="stage-list"><div class="stage-row head"><span>File</span><span>Parsed total</span><span>Official total</span><span>Difference</span><span>Confirmation</span></div>${files.map(file=>{const required=file.kind==='statement'&&file.status==='ready'&&file.reconciliation?.status==='manual_required';return `<div class="stage-row"><span><strong>${escapeHtml(file.filename)}</strong><small>${escapeHtml((file.provider||file.kind).toUpperCase())}${file.card_last4?` · •• ${escapeHtml(file.card_last4)}`:''}</small></span><span><strong>${money(file.reconciliation?.parsed_total)}</strong><small>${file.parsed||0} parsed rows</small></span><span>${required?'Check original':'Not applicable'}</span><span>—</span><span>${required?`<label class="reconcile-confirm"><input type="checkbox" data-reconcile-file="${escapeHtml(file.filename)}" ${importState.reconciled.has(file.filename)?'checked':''}> <span>I checked the statement total</span></label>`:'<span class="stage-badge">No check needed</span>'}</span></div>`}).join('')}</div>`;
+  return `<div class="stage-callout amber"><strong>Reconciliation compares only the scheduled statement charge.</strong> Pending and outside-cycle transactions remain visible separately and do not distort that total.</div><div class="stage-list"><div class="stage-row head"><span>File</span><span>Parsed total</span><span>Official total</span><span>Difference</span><span>Confirmation</span></div>${files.map(file=>{const reconciliation=file.reconciliation||{},required=file.kind==='statement'&&file.status==='ready'&&['manual_required','mismatch'].includes(reconciliation.status),matched=reconciliation.status==='matched',finalized=Math.max(0,(file.parsed||0)-(file.pending_rows||0));return `<div class="stage-row"><span><strong>${escapeHtml(file.filename)}</strong><small>${escapeHtml((file.provider||file.kind).toUpperCase())}${file.card_last4?` · •• ${escapeHtml(file.card_last4)}`:''}</small></span><span><strong>${money(reconciliation.parsed_total)}</strong><small>${finalized} finalized parsed rows</small></span><span>${reconciliation.official_total==null?'Check original':`<strong>${money(reconciliation.official_total)}</strong>`}</span><span>${reconciliation.difference==null?'—':money(reconciliation.difference)}</span><span>${required?`<label class="reconcile-confirm"><input type="checkbox" data-reconcile-file="${escapeHtml(file.filename)}" ${importState.reconciled.has(file.filename)?'checked':''}> <span>${reconciliation.status==='mismatch'?'I reviewed the mismatch':'I checked the statement total'}</span></label>`:`<span class="stage-badge ${matched?'':'purple'}">${matched?'Matched':'No check needed'}</span>`}</span></div>`}).join('')}</div>`;
 }
 
 function renderImportApprove(){
   const files=importState.batch?.files||[];const merchants=importState.batch?.merchants||[];const decisions=[...importState.decisions.values()];
-  const newRows=files.reduce((sum,file)=>sum+(file.new_rows||0),0);const duplicateRows=files.reduce((sum,file)=>sum+(file.duplicates||0),0);
+  const exactRows=(importState.batch?.exact_duplicates||[]).length;
+  const reviewedImport=[...importState.duplicateDecisions.values()].filter(value=>value==='import').length;const reviewedSkip=[...importState.duplicateDecisions.values()].filter(value=>value==='skip').length;const newRows=importPreviewRows().length;
   const permanent=decisions.filter(item=>!['needs_review','exclude'].includes(item.resolution)&&item.scope==='exact').length;
   const deferred=decisions.filter(item=>item.resolution==='needs_review').length;const excluded=decisions.filter(item=>item.resolution==='exclude').length;
-  return `<div class="stage-approve"><div class="stage-checks"><div class="stage-check"><b>✓</b><span><strong>Files parsed before import</strong><small>${files.length} files · ${newRows} new rows · ${duplicateRows} duplicate rows skipped</small></span></div><div class="stage-check"><b>✓</b><span><strong>Existing merchant rules have priority</strong><small>${merchants.filter(item=>!item.needs_review).length} merchants matched the database automatically</small></span></div><div class="stage-check"><b>✓</b><span><strong>Merchant decisions reviewed</strong><small>${permanent} permanent rules · ${deferred} left for review · ${excluded} excluded</small></span></div><div class="stage-check"><b>✓</b><span><strong>Statement totals confirmed</strong><small>${manualReconciliationFiles().length} statements manually checked</small></span></div><div class="stage-check"><b>✓</b><span><strong>Rollback protection</strong><small>A complete database backup will be created immediately before any records are written.</small></span></div></div><div class="stage-commit-card"><h3>Ready to import</h3><div class="stage-commit-line"><span>Files</span><strong>${files.length}</strong></div><div class="stage-commit-line"><span>New transaction rows</span><strong>${newRows}</strong></div><div class="stage-commit-line"><span>Known + reviewed merchants</span><strong>${merchants.length-deferred}</strong></div><div class="stage-commit-line"><span>Still needs review</span><strong>${deferred}</strong></div><p class="stage-callout">Nothing has been added to the dashboard yet. The next button is the only action that writes this batch to the database.</p></div></div>`;
+  return `<div class="stage-approve"><div class="stage-checks"><div class="stage-check"><b>✓</b><span><strong>Files parsed before import</strong><small>${files.length} files · ${newRows} rows to add · ${exactRows} exact duplicates automatically excluded</small></span></div><div class="stage-check"><b>✓</b><span><strong>Possible duplicates reviewed</strong><small>${reviewedSkip} treated as duplicate · ${reviewedImport} confirmed as new</small></span></div><div class="stage-check"><b>✓</b><span><strong>Existing merchant rules have priority</strong><small>${merchants.filter(item=>!item.needs_review).length} merchants matched the database automatically</small></span></div><div class="stage-check"><b>✓</b><span><strong>Merchant decisions reviewed</strong><small>${permanent} permanent rules · ${deferred} left for review · ${excluded} excluded</small></span></div><div class="stage-check"><b>✓</b><span><strong>Statement totals confirmed</strong><small>${manualReconciliationFiles().length} statements manually checked</small></span></div><div class="stage-check"><b>✓</b><span><strong>Rollback protection</strong><small>A complete database backup will be created immediately before any records are written.</small></span></div></div><div class="stage-commit-card"><h3>Ready to import</h3><div class="stage-commit-line"><span>Files</span><strong>${files.length}</strong></div><div class="stage-commit-line"><span>New transaction rows</span><strong>${newRows}</strong></div><div class="stage-commit-line"><span>Duplicates skipped</span><strong>${exactRows+reviewedSkip}</strong></div><div class="stage-commit-line"><span>Known + reviewed merchants</span><strong>${merchants.length-deferred}</strong></div><div class="stage-commit-line"><span>Still needs review</span><strong>${deferred}</strong></div><p class="stage-callout">Nothing has been added to the dashboard yet. The next button is the only action that writes this batch to the database.</p></div></div>${renderImportTransactionPreview()}`;
+}
+
+function importPreviewRows(){
+  const excluded=new Set([...importState.decisions.values()].filter(item=>item.resolution==='exclude').map(item=>item.merchant_normalized));
+  const confirmed=(importState.batch?.new_transactions||[]).filter(item=>!excluded.has(item.merchant_normalized));
+  const reviewed=(importState.batch?.possible_duplicates||[]).filter(item=>importState.duplicateDecisions.get(item.candidate_id)==='import'&&!excluded.has(item.merchant_normalized)).map(item=>({...item,reviewed_new:true}));
+  return [...confirmed,...reviewed].sort((a,b)=>String(b.billing_date||b.transaction_date||'').localeCompare(String(a.billing_date||a.transaction_date||''))||String(a.merchant||'').localeCompare(String(b.merchant||'')));
+}
+function importPreviewIdentity(row){
+  const decision=importState.decisions.get(row.merchant_normalized);const merchant=(importState.batch?.merchants||[]).find(item=>item.merchant_normalized===row.merchant_normalized);
+  return {display:decision?.display_name||merchant?.display_name||row.merchant,category:decision?.category||merchant?.category||'Needs review'};
+}
+function importPreviewStatus(row){
+  if(row.reviewed_new)return ['Reviewed as new','amber'];
+  if(row.source_status==='pending')return ['Pending · not final','amber'];
+  if(row.source_status==='outside_cycle')return ['Outside billing cycle','purple'];
+  if(row.installment_number)return [`Installment ${row.installment_number}${row.installment_total?`/${row.installment_total}`:''}`,'purple'];
+  return ['Confirmed new',''];
+}
+function renderImportTransactionPreview(){
+  const rows=importPreviewRows();
+  const pending=importState.batch?.pending_transactions||[];
+  const table=items=>`<div class="stage-insert-preview-table"><div class="stage-insert-preview-row head"><span>Date</span><span>Merchant</span><span>Category</span><span>Amount</span><span>Card</span><span>Status</span></div>${items.map(row=>{const identity=importPreviewIdentity(row),status=importPreviewStatus(row),previewAmount=row.amount??row.original_amount,previewCurrency=row.currency||row.original_currency||'ILS';return `<div class="stage-insert-preview-row"><span><strong>${formatDate(row.billing_date||row.transaction_date)}</strong><small>${row.billing_date&&row.transaction_date!==row.billing_date?`Purchased ${formatDate(row.transaction_date)}`:escapeHtml(row.filename)}</small></span><span><strong>${escapeHtml(identity.display)}</strong><small>${escapeHtml(row.merchant)}</small></span><span>${escapeHtml(identity.category)}</span><span><strong>${money(previewAmount)}${previewCurrency&&!['ILS','₪'].includes(previewCurrency)?` ${escapeHtml(previewCurrency)}`:''}</strong></span><span>${row.card_last4?`•• ${escapeHtml(row.card_last4)}`:'—'}</span><span><i class="stage-badge ${status[1]}">${status[0]}</i></span></div>`}).join('')}</div>`;
+  return `<section class="stage-insert-preview"><div class="stage-insert-preview-head"><span><strong>Transactions to be inserted</strong><small>Complete read-only preview after duplicate and exclusion decisions</small></span><b>${rows.length} rows</b></div>${table(rows)}</section>${pending.length?`<section class="stage-insert-preview pending"><div class="stage-insert-preview-head"><span><strong>Pending—not imported</strong><small>These provider authorizations are recorded in the import audit and can be finalized by a later statement.</small></span><b>${pending.length} rows</b></div>${table(pending)}</section>`:''}`;
 }
 
 async function analyzeImportFiles(files){
@@ -1316,7 +1475,7 @@ async function analyzeImportFiles(files){
   try{
     const response=await fetch('/api/import/analyze',{method:'POST',body:form});const payload=await response.json();
     if(!response.ok)throw new Error(payload.error||'Could not analyze files');
-    importState.batch=payload;importState.step=1;importState.reconciled.clear();initializeImportDecisions();
+    importState.batch=payload;importState.step=1;importState.reconciled.clear();importState.duplicateDecisions.clear();initializeImportDecisions();
     showToast(`${payload.files.length} files staged. No transactions were added.`,`Analysis complete`);
   }catch(error){showToast(error.message,'Analysis failed')}
   finally{importState.busy=false;fileInput.value='';renderImportStage()}
@@ -1327,10 +1486,12 @@ async function commitImportBatch(){
   importState.busy=true;renderImportStage();
   try{
     if(manualReconciliationFiles().some(file=>!importState.reconciled.has(file.filename)))throw new Error('Confirm every statement total before importing');
-    const response=await fetch('/api/import/commit',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({batch_id:importState.batch.batch_id,decisions:[...importState.decisions.values()],reconciled_files:[...importState.reconciled]})});
+    if(unresolvedDuplicateDecisions().length)throw new Error('Review every possible duplicate before importing');
+    const duplicateDecisions=[...importState.duplicateDecisions].map(([candidate_id,action])=>({candidate_id,action}));
+    const response=await fetch('/api/import/commit',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({batch_id:importState.batch.batch_id,decisions:[...importState.decisions.values()],duplicate_decisions:duplicateDecisions,reconciled_files:[...importState.reconciled]})});
     const payload=await response.json();if(!response.ok)throw new Error(payload.error||'Import failed');
     const inserted=payload.results.reduce((sum,item)=>sum+(item.inserted||0),0);const duplicates=payload.results.reduce((sum,item)=>sum+(item.duplicates||0),0);
-    importState.batch=null;importState.decisions.clear();importState.reconciled.clear();importState.step=0;setModal(false);
+    importState.batch=null;importState.decisions.clear();importState.duplicateDecisions.clear();importState.reconciled.clear();importState.step=0;setModal(false);
     showToast(`${inserted} transactions added${duplicates?` · ${duplicates} duplicates skipped`:''}. Backup created first.`,'Import complete');await loadDashboard();
   }catch(error){showToast(error.message,'Import failed')}
   finally{importState.busy=false;if(modal.classList.contains('show'))renderImportStage()}
@@ -1338,16 +1499,19 @@ async function commitImportBatch(){
 
 importStageBody.addEventListener('click',event=>{
   const browse=event.target.closest('[data-browse-import]');if(browse){fileInput.click();return}
-  const choice=event.target.closest('[data-display-choice]');if(choice){const decision=importDecision(choice.dataset.key);decision.display_name=choice.dataset.name;decision.canonical_group_id=choice.dataset.group;decision.category=choice.dataset.category||decision.category;decision.resolution='link';decision.scope='exact';renderImportStage();return}
-  const create=event.target.closest('[data-display-create]');if(create){const decision=importDecision(create.dataset.key);decision.canonical_group_id='';decision.resolution='create';decision.scope='exact';closeDisplayMenus();renderImportStage()}
 });
 importStageBody.addEventListener('input',event=>{
-  if(!event.target.matches('[data-display-input]'))return;const decision=importDecision(event.target.dataset.key);decision.display_name=event.target.value;decision.canonical_group_id='';if(decision.resolution==='link')decision.resolution='create';const menu=event.target.parentElement.querySelector('.stage-combo-menu');menu.innerHTML=displayMenuHtml(event.target.value,decision);closeDisplayMenus(menu);menu.hidden=false;
+  if(!event.target.matches('[data-display-input]'))return;const decision=importDecision(event.target.dataset.key);decision.display_name=event.target.value;decision.canonical_group_id='';decision.suggested_match=false;if(decision.resolution==='link')decision.resolution='create';openDisplayMenu(event.target,decision);
 });
-importStageBody.addEventListener('focusin',event=>{if(event.target.matches('[data-display-input]')){const decision=importDecision(event.target.dataset.key);const menu=event.target.parentElement.querySelector('.stage-combo-menu');menu.innerHTML=displayMenuHtml(event.target.value,decision);closeDisplayMenus(menu);menu.hidden=false}});
+importStageBody.addEventListener('focusin',event=>{if(event.target.matches('[data-display-input]'))openDisplayMenu(event.target,importDecision(event.target.dataset.key))});
 importStageBody.addEventListener('change',event=>{
-  if(event.target.matches('[data-decision-field]')){const decision=importDecision(event.target.dataset.key);const field=event.target.dataset.decisionField;decision[field]=event.target.value;if(field==='category'&&event.target.value!=='Needs review'&&decision.resolution==='needs_review'){decision.resolution='create';decision.scope='exact'}if(field==='resolution'){if(event.target.value==='needs_review'){decision.category='Needs review';decision.scope='batch'}else if(event.target.value==='provider'){const merchant=importState.batch.merchants.find(item=>item.merchant_normalized===decision.merchant_normalized);decision.category=merchant.provider_category;decision.scope='exact'}}renderImportStage();return}
+  if(event.target.matches('[data-duplicate-decision]')){const value=event.target.value;if(value)importState.duplicateDecisions.set(event.target.dataset.duplicateDecision,value);else importState.duplicateDecisions.delete(event.target.dataset.duplicateDecision);renderImportStage();return}
+  if(event.target.matches('[data-decision-field]')){const decision=importDecision(event.target.dataset.key);const field=event.target.dataset.decisionField;decision[field]=event.target.value;decision.suggested_match=false;if(field==='category'&&event.target.value!=='Needs review'&&decision.resolution==='needs_review'){decision.resolution='create';decision.scope='exact'}if(field==='resolution'){if(event.target.value==='needs_review'){decision.category='Needs review';decision.scope='batch'}else if(event.target.value==='provider'){const merchant=importState.batch.merchants.find(item=>item.merchant_normalized===decision.merchant_normalized);decision.category=merchant.provider_category;decision.scope='exact'}else if(event.target.value==='link'){decision.scope='exact'}}renderImportStage();return}
   if(event.target.matches('[data-reconcile-file]')){event.target.checked?importState.reconciled.add(event.target.dataset.reconcileFile):importState.reconciled.delete(event.target.dataset.reconcileFile);renderImportStage()}
+});
+displayPortal.addEventListener('click',event=>{
+  const choice=event.target.closest('[data-display-choice]');if(choice){const decision=importDecision(choice.dataset.key);decision.display_name=choice.dataset.name;decision.canonical_group_id=choice.dataset.group;decision.category=choice.dataset.categoryStatus==='unanimous'?choice.dataset.category:'Needs review';decision.resolution='link';decision.scope='exact';decision.suggested_match=false;renderImportStage();return}
+  const create=event.target.closest('[data-display-create]');if(create){const decision=importDecision(create.dataset.key);decision.display_name=create.dataset.name;decision.canonical_group_id='';decision.resolution='create';decision.scope='exact';decision.suggested_match=false;renderImportStage()}
 });
 importStageBody.addEventListener('dragover',event=>{const target=event.target.closest('.stage-drop');if(target){event.preventDefault();target.classList.add('dragging')}});
 importStageBody.addEventListener('dragleave',event=>{event.target.closest('.stage-drop')?.classList.remove('dragging')});
@@ -1355,6 +1519,8 @@ importStageBody.addEventListener('drop',event=>{const target=event.target.closes
 importStepper.addEventListener('click',event=>{const target=event.target.closest('[data-import-step]');if(!target||(!importState.batch&&Number(target.dataset.importStep)))return;importState.step=Number(target.dataset.importStep);renderImportStage()});
 importBack.addEventListener('click',()=>{if(importState.step>0){importState.step-=1;renderImportStage()}});
 importNext.addEventListener('click',()=>{if(importState.step===4)commitImportBatch();else if(importState.step<4){importState.step+=1;renderImportStage()}});
-document.addEventListener('click',event=>{if(!event.target.closest('.stage-display-wrap'))closeDisplayMenus()});
+importStageBody.addEventListener('scroll',positionDisplayPortal,{passive:true});
+window.addEventListener('resize',positionDisplayPortal,{passive:true});
+document.addEventListener('click',event=>{if(!event.target.closest('.stage-display-wrap')&&!event.target.closest('.stage-combo-portal'))closeDisplayMenus()});
 
 loadDashboard();

@@ -153,6 +153,8 @@ class ParsedStatement:
     product_name: str | None
     date_range: str | None
     transactions: list[Transaction]
+    official_total: str | None = None
+    statement_as_of_date: str | None = None
 
     @property
     def semantic_hash(self) -> str:
@@ -258,6 +260,16 @@ def parse_isracard(path: Path, sheets: list[tuple[str, list[dict[str, Any]]]]) -
     product = re.sub(r"\s*-\s*\d{4}\s*$", "", metadata).strip()
     statement_label = clean_text(rows[0].get("C"))
     statement_month = parse_statement_month(statement_label, path.name)
+    official_total = None
+    statement_as_of_date = None
+    for row in rows:
+        label = clean_text(row.get("B")) or ""
+        if "סה\"כ לחיוב החודש בכרטיס" in label:
+            official_total = amount(row.get("E"))
+        row_text = " ".join(filter(None, (clean_text(value) for value in row.values())))
+        as_of_match = re.search(r"נכונים לתאריך\s*(\d{2}/\d{2}/\d{4})", row_text)
+        if as_of_match:
+            statement_as_of_date = datetime.strptime(as_of_match.group(1), "%d/%m/%Y").date().isoformat()
     transactions: list[Transaction] = []
     section = "monthly"
     for row in rows:
@@ -297,7 +309,9 @@ def parse_isracard(path: Path, sheets: list[tuple[str, list[dict[str, Any]]]]) -
         )
         transactions.append(transaction)
     assign_occurrences(transactions)
-    return ParsedStatement("isracard", card_last4, product, statement_label, transactions)
+    return ParsedStatement("isracard", card_last4, product, statement_label, transactions,
+                           official_total=official_total,
+                           statement_as_of_date=statement_as_of_date)
 
 
 def parse_max(path: Path, sheets: list[tuple[str, list[dict[str, Any]]]]) -> ParsedStatement:
@@ -314,6 +328,25 @@ def parse_max(path: Path, sheets: list[tuple[str, list[dict[str, Any]]]]) -> Par
     else:
         card_last4, product = "multiple", metadata
     date_range = clean_text(data_sheets[0][1][2].get("A"))
+    primary_rows = next(
+        (rows for name, rows in data_sheets if name == "עסקאות במועד החיוב"),
+        data_sheets[0][1],
+    )
+    official_total = None
+    for index, row in enumerate(primary_rows):
+        if clean_text(row.get("A")) != "סך הכל":
+            continue
+        for total_row in primary_rows[index:index + 3]:
+            for value in total_row.values():
+                text = clean_text(value) or ""
+                match_total = re.search(r"-?[\d,]+(?:\.\d+)?", text)
+                if match_total:
+                    official_total = amount(match_total.group(0))
+                    break
+            if official_total is not None:
+                break
+        if official_total is not None:
+            break
     transactions: list[Transaction] = []
     for sheet_name, rows in data_sheets:
         for row in rows:
@@ -334,12 +367,16 @@ def parse_max(path: Path, sheets: list[tuple[str, list[dict[str, Any]]]]) -> Par
             billing_date = parse_date(row.get("J"))
             transaction_type = clean_text(row.get("E"))
             notes = clean_text(row.get("K"))
+            source_sheet = (
+                f"{sheet_name}:immediate"
+                if "מיידי" in (transaction_type or "") else sheet_name
+            )
             installment_number, installment_total = parse_installment(notes, transaction_type)
             payload = {key: value for key, value in row.items() if value not in (None, "")}
             transaction = Transaction(
                 provider="max",
                 card_last4=transaction_card,
-                source_sheet=sheet_name,
+                source_sheet=source_sheet,
                 transaction_date=transaction_date,
                 billing_date=billing_date,
                 merchant_raw=merchant,
@@ -361,7 +398,10 @@ def parse_max(path: Path, sheets: list[tuple[str, list[dict[str, Any]]]]) -> Par
             )
             transactions.append(transaction)
     assign_occurrences(transactions)
-    return ParsedStatement("max", card_last4, product.strip(), date_range, transactions)
+    return ParsedStatement(
+        "max", card_last4, product.strip(), date_range, transactions,
+        official_total=official_total,
+    )
 
 
 def parse_xlsx(path: Path) -> ParsedStatement:
@@ -536,6 +576,24 @@ CREATE TABLE IF NOT EXISTS import_transactions (
   was_duplicate INTEGER NOT NULL,
   PRIMARY KEY(import_id, transaction_id)
 );
+CREATE TABLE IF NOT EXISTS import_coverage (
+  import_id INTEGER NOT NULL REFERENCES imports(id) ON DELETE CASCADE,
+  card_last4 TEXT NOT NULL,
+  statement_month TEXT,
+  statement_period TEXT,
+  statement_as_of_date TEXT,
+  purchase_date_from TEXT,
+  purchase_date_to TEXT,
+  billing_date_from TEXT,
+  billing_date_to TEXT,
+  finalized_rows INTEGER NOT NULL DEFAULT 0,
+  pending_rows INTEGER NOT NULL DEFAULT 0,
+  outside_cycle_rows INTEGER NOT NULL DEFAULT 0,
+  official_total TEXT,
+  PRIMARY KEY(import_id,card_last4)
+);
+CREATE INDEX IF NOT EXISTS idx_import_coverage_card_month
+  ON import_coverage(card_last4,statement_month);
 CREATE TABLE IF NOT EXISTS income_imports (
   id INTEGER PRIMARY KEY,
   original_name TEXT NOT NULL,
@@ -676,6 +734,7 @@ class ImportDatabase:
             "CREATE INDEX IF NOT EXISTS idx_transactions_billing_month ON transactions(billing_month)"
         )
         self._backfill_reporting_fields(rekey=reporting_columns_added)
+        self._backfill_import_coverage()
         self.connection.executescript(
             """CREATE TRIGGER IF NOT EXISTS apply_merchant_mapping_after_insert
             AFTER INSERT ON transactions
@@ -688,6 +747,28 @@ class ImportDatabase:
             END;"""
         )
         self.connection.commit()
+
+    def _backfill_import_coverage(self) -> None:
+        rows = self.connection.execute(
+            """SELECT i.id,i.statement_range,t.card_last4,
+            MIN(t.transaction_date) purchase_date_from,MAX(t.transaction_date) purchase_date_to,
+            MIN(t.billing_date) billing_date_from,MAX(t.billing_date) billing_date_to,
+            COUNT(DISTINCT t.id) finalized_rows
+            FROM imports i JOIN import_transactions it ON it.import_id=i.id
+            JOIN transactions t ON t.id=it.transaction_id
+            WHERE i.status='imported' GROUP BY i.id,t.card_last4"""
+        ).fetchall()
+        for row in rows:
+            statement_month = parse_statement_month(row["statement_range"])
+            self.connection.execute(
+                """INSERT OR IGNORE INTO import_coverage(
+                import_id,card_last4,statement_month,statement_period,purchase_date_from,
+                purchase_date_to,billing_date_from,billing_date_to,finalized_rows
+                ) VALUES(?,?,?,?,?,?,?,?,?)""",
+                (row["id"], row["card_last4"], statement_month, row["statement_range"],
+                 row["purchase_date_from"], row["purchase_date_to"], row["billing_date_from"],
+                 row["billing_date_to"], row["finalized_rows"]),
+            )
 
     def _backfill_reporting_fields(self, rekey: bool = False) -> None:
         import_rows = {
@@ -750,7 +831,10 @@ class ImportDatabase:
     def close(self) -> None:
         self.connection.close()
 
-    def import_statement(self, path: Path) -> dict[str, Any]:
+    def import_statement(self, path: Path, probable_duplicate_matches: dict[str, int] | None = None,
+                         excluded_transaction_keys: set[str] | None = None) -> dict[str, Any]:
+        probable_duplicate_matches = probable_duplicate_matches or {}
+        excluded_transaction_keys = excluded_transaction_keys or set()
         byte_hash = sha256_path(path)
         source_format = path.suffix.lower()
         prior_file = self.connection.execute(
@@ -795,7 +879,54 @@ class ImportDatabase:
         import_id = cursor.lastrowid
         inserted = 0
         duplicates = 0
+        reviewed_duplicates = 0
         for transaction in statement.transactions:
+            if transaction.transaction_key in excluded_transaction_keys:
+                continue
+            voucher_exact_id = None
+            if transaction.voucher_number:
+                voucher_exact = self.connection.execute(
+                    """SELECT id FROM transactions WHERE provider=? AND card_last4=?
+                    AND voucher_number=? AND base_key=? ORDER BY id LIMIT 1""",
+                    (transaction.provider, transaction.card_last4,
+                     transaction.voucher_number, transaction.base_key),
+                ).fetchone()
+                voucher_exact_id = voucher_exact["id"] if voucher_exact else None
+            if voucher_exact_id is not None:
+                self.connection.execute(
+                    "INSERT OR IGNORE INTO import_transactions(import_id,transaction_id,was_duplicate) VALUES(?,?,1)",
+                    (import_id, voucher_exact_id),
+                )
+                duplicates += 1
+                continue
+            reviewed_match_id = probable_duplicate_matches.get(transaction.transaction_key)
+            if reviewed_match_id is not None:
+                matched = self.connection.execute(
+                    "SELECT id FROM transactions WHERE id=?", (reviewed_match_id,)
+                ).fetchone()
+                if not matched:
+                    raise ValueError(f"Reviewed duplicate transaction {reviewed_match_id} no longer exists")
+                self.connection.execute(
+                    "INSERT OR IGNORE INTO import_transactions(import_id,transaction_id,was_duplicate) VALUES(?,?,1)",
+                    (import_id, reviewed_match_id),
+                )
+                duplicates += 1
+                reviewed_duplicates += 1
+                continue
+            key_collision = self.connection.execute(
+                "SELECT id,voucher_number FROM transactions WHERE transaction_key=?",
+                (transaction.transaction_key,),
+            ).fetchone()
+            if (key_collision and transaction.voucher_number and key_collision["voucher_number"]
+                    and transaction.voucher_number != key_collision["voucher_number"]):
+                max_occurrence = self.connection.execute(
+                    "SELECT COALESCE(MAX(occurrence),0) FROM transactions WHERE base_key=?",
+                    (transaction.base_key,),
+                ).fetchone()[0]
+                transaction.occurrence = int(max_occurrence) + 1
+                transaction.transaction_key = hashlib.sha256(
+                    f"{transaction.base_key}:{transaction.occurrence}".encode()
+                ).hexdigest()
             fields = asdict(transaction)
             payload = json.dumps(fields.pop("source_payload"), ensure_ascii=False, sort_keys=True)
             columns = list(fields) + ["source_payload", "first_import_id", "created_at"]
@@ -830,6 +961,7 @@ class ImportDatabase:
             "parsed": len(statement.transactions),
             "inserted": inserted,
             "duplicates": duplicates,
+            "reviewed_duplicates": reviewed_duplicates,
             "matches_import_id": prior_semantic["id"] if prior_semantic else None,
         }
 
@@ -888,8 +1020,12 @@ class ImportDatabase:
         return {"import_id": import_id, "status": status, "kind": "income", "parsed": len(entries),
                 "inserted": inserted, "duplicates": duplicates}
 
-    def import_file(self, path: Path) -> dict[str, Any]:
-        return self.import_income(path) if is_income_xlsx(path) else self.import_statement(path)
+    def import_file(self, path: Path, probable_duplicate_matches: dict[str, int] | None = None,
+                    excluded_transaction_keys: set[str] | None = None) -> dict[str, Any]:
+        return self.import_income(path) if is_income_xlsx(path) else self.import_statement(
+            path, probable_duplicate_matches=probable_duplicate_matches,
+            excluded_transaction_keys=excluded_transaction_keys,
+        )
 
     def summary(self) -> dict[str, Any]:
         imports = self.connection.execute(

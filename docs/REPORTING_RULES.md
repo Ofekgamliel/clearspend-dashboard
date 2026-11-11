@@ -83,6 +83,11 @@ existing local database.
 - Historical patterns exclude the incomplete current month and isolated large
   purchases. Income-derived patterns require all-card scope, visible income,
   and matching covered income and spending months.
+- Routine-spending, category-routine, category-increase, and merchant-habit
+  observations exclude transactions assigned to projects or events from both
+  the current value and their historical baseline. Transaction-level checks
+  such as duplicates, fees, recurring changes, and large purchases still use
+  all spending and show the event label as context when one is assigned.
 - A spending shift needs three post-change months on the same side of the
   earlier median, with at least two individually crossing both 20% and ₪1,000.
 - Category shifts count covered zero-spending months as zero and report the
@@ -166,6 +171,9 @@ existing local database.
   remove transaction membership.
 - An event label is independent of category and must not recategorize a
   transaction.
+- Category reporting offers `All spending` and `Routine only`. `Routine only`
+  excludes exact transactions assigned to an event; it never removes their
+  category, changes overall spending, or affects income and amount-left totals.
 - A business trip requires an explicit destination. In month views it remains
   an individual event. In Latest year and All time, two or more visible
   business trips with the same normalized destination are grouped for display;

@@ -23,6 +23,7 @@ from clearspend.import_engine import (
     is_income_xlsx,
     parse_income_xlsx,
     parse_statement,
+    parse_statement_month,
 )
 from tools.profile_samples import sha256_path
 
@@ -56,16 +57,158 @@ def staged_reference_data(connection: sqlite3.Connection) -> tuple[list[str], li
     )]
     identities = [dict(row) for row in connection.execute(
         """SELECT d.canonical_group_id,d.display_name,COUNT(DISTINCT d.merchant_normalized) aliases,
-        COUNT(t.id) transactions,
-        COALESCE((SELECT m.category FROM merchant_mappings m
-          JOIN merchant_display_mappings dm ON dm.merchant_normalized=m.merchant_normalized
-          WHERE dm.canonical_group_id=d.canonical_group_id GROUP BY m.category
-          ORDER BY COUNT(*) DESC LIMIT 1),'Needs review') category
+        COUNT(t.id) transactions
         FROM merchant_display_mappings d
         LEFT JOIN transactions t ON t.merchant_normalized=d.merchant_normalized
         GROUP BY d.canonical_group_id,d.display_name ORDER BY transactions DESC,d.display_name LIMIT 500"""
     )]
+    identities_by_group = {item["canonical_group_id"]: item for item in identities}
+    for item in identities:
+        item["alias_names"] = []
+        item["categories"] = []
+        item["category"] = None
+        item["category_status"] = "unmapped"
+    for row in connection.execute(
+        """SELECT canonical_group_id,merchant_normalized
+        FROM merchant_display_mappings ORDER BY canonical_group_id,merchant_normalized"""
+    ):
+        identity = identities_by_group.get(row["canonical_group_id"])
+        if identity is not None:
+            identity["alias_names"].append(row["merchant_normalized"])
+    for row in connection.execute(
+        """SELECT d.canonical_group_id,m.category,COUNT(DISTINCT d.merchant_normalized) aliases
+        FROM merchant_display_mappings d
+        JOIN merchant_mappings m ON m.merchant_normalized=d.merchant_normalized
+        GROUP BY d.canonical_group_id,m.category
+        ORDER BY d.canonical_group_id,aliases DESC,m.category"""
+    ):
+        identity = identities_by_group.get(row["canonical_group_id"])
+        if identity is not None:
+            identity["categories"].append({"category": row["category"], "aliases": row["aliases"]})
+    for item in identities:
+        if len(item["categories"]) == 1:
+            item["category"] = item["categories"][0]["category"]
+            item["category_status"] = "unanimous"
+        elif len(item["categories"]) > 1:
+            item["category_status"] = "mixed"
     return categories, identities
+
+
+def staged_transaction_summary(item, filename: str, file_index: int) -> dict:
+    return {
+        "filename": filename,
+        "file_index": file_index,
+        "transaction_key": item.transaction_key,
+        "merchant": item.merchant_raw,
+        "merchant_normalized": item.merchant_normalized,
+        "transaction_date": item.transaction_date,
+        "billing_date": item.billing_date,
+        "billing_month": item.billing_month,
+        "amount": item.charged_amount,
+        "currency": item.charged_currency,
+        "original_amount": item.original_amount,
+        "original_currency": item.original_currency,
+        "provider": item.provider,
+        "card_last4": item.card_last4,
+        "voucher_number": item.voucher_number,
+        "installment_number": item.installment_number,
+        "installment_total": item.installment_total,
+        "notes": item.notes,
+        "source_status": "pending" if item.charged_amount is None else
+            "outside_cycle" if item.source_sheet.endswith(":immediate") else "monthly",
+    }
+
+
+def possible_duplicate_matches(connection: sqlite3.Connection, item) -> tuple[list[sqlite3.Row], str | None]:
+    """Find conservative non-exact matches. A different voucher proves two rows are distinct."""
+    if item.voucher_number:
+        rows = connection.execute(
+            """SELECT id,transaction_key,merchant_raw,transaction_date,billing_date,billing_month,
+            charged_amount,charged_currency,voucher_number FROM transactions
+            WHERE provider=? AND card_last4=? AND voucher_number=? AND transaction_key<>?
+            ORDER BY id""",
+            (item.provider, item.card_last4, item.voucher_number, item.transaction_key),
+        ).fetchall()
+        return rows, "Same card and provider reference, but other statement details changed" if rows else None
+    rows = connection.execute(
+        """SELECT id,transaction_key,merchant_raw,transaction_date,billing_date,billing_month,
+        charged_amount,charged_currency,voucher_number,installment_number FROM transactions
+        WHERE provider=? AND card_last4=? AND transaction_date IS ? AND merchant_normalized=?
+        AND charged_amount IS ? AND charged_currency IS ? AND original_amount IS ?
+        AND original_currency IS ? AND transaction_key<>? ORDER BY id""",
+        (item.provider, item.card_last4, item.transaction_date, item.merchant_normalized,
+         item.charged_amount, item.charged_currency, item.original_amount,
+         item.original_currency, item.transaction_key),
+    ).fetchall()
+    rows = [row for row in rows if not (
+        item.installment_number is not None and row["installment_number"] is not None
+        and int(item.installment_number) != int(row["installment_number"])
+    )]
+    return rows, "Same card, purchase date, merchant and amount; billing details differ" if rows else None
+
+
+def staged_statement_coverage(connection: sqlite3.Connection, statement) -> tuple[list[dict], list[dict]]:
+    groups: dict[str, list] = {}
+    for item in statement.transactions:
+        groups.setdefault(item.card_last4, []).append(item)
+    statement_month = parse_statement_month(statement.date_range)
+    coverage: list[dict] = []
+    warnings: list[dict] = []
+    has_coverage_table = bool(connection.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='import_coverage'"
+    ).fetchone())
+    for card_last4, rows in groups.items():
+        purchase_dates = [item.transaction_date for item in rows if item.transaction_date]
+        billing_dates = [item.billing_date for item in rows if item.billing_date]
+        pending = [item for item in rows if item.charged_amount is None]
+        outside_cycle = [item for item in rows if item.source_sheet.endswith(":immediate")]
+        item = {
+            "card_last4": card_last4,
+            "statement_month": statement_month,
+            "statement_period": statement.date_range,
+            "statement_as_of_date": statement.statement_as_of_date,
+            "purchase_date_from": min(purchase_dates) if purchase_dates else None,
+            "purchase_date_to": max(purchase_dates) if purchase_dates else None,
+            "billing_date_from": min(billing_dates) if billing_dates else None,
+            "billing_date_to": max(billing_dates) if billing_dates else None,
+            "finalized_rows": len(rows) - len(pending),
+            "pending_rows": len(pending),
+            "outside_cycle_rows": len(outside_cycle),
+            "official_total": statement.official_total if len(groups) == 1 else None,
+        }
+        coverage.append(item)
+        if not has_coverage_table:
+            continue
+        previous = connection.execute(
+            """SELECT c.*,i.original_name,i.imported_at FROM import_coverage c
+            JOIN imports i ON i.id=c.import_id
+            WHERE c.card_last4=? AND i.status='imported'
+            ORDER BY COALESCE(c.statement_month,'' ) DESC,i.id DESC""",
+            (card_last4,),
+        ).fetchall()
+        overlapping = [row for row in previous if item["purchase_date_from"] and item["purchase_date_to"]
+                       and row["purchase_date_from"] and row["purchase_date_to"]
+                       and item["purchase_date_from"] <= row["purchase_date_to"]
+                       and item["purchase_date_to"] >= row["purchase_date_from"]]
+        if overlapping:
+            warnings.append({
+                "type": "overlap", "card_last4": card_last4,
+                "message": f"Purchase dates overlap {len(overlapping)} earlier import(s)",
+                "imports": [row["original_name"] for row in overlapping[:3]],
+            })
+        previous_months = [row["statement_month"] for row in previous if row["statement_month"]]
+        if statement_month and previous_months:
+            latest_month = max(previous_months)
+            incoming = datetime.strptime(statement_month, "%Y-%m")
+            latest = datetime.strptime(latest_month, "%Y-%m")
+            distance = (incoming.year - latest.year) * 12 + incoming.month - latest.month
+            if distance <= 0:
+                warnings.append({"type": "older_period", "card_last4": card_last4,
+                                 "message": f"Statement period is not newer than the latest imported period ({latest_month})"})
+            elif distance > 1:
+                warnings.append({"type": "coverage_gap", "card_last4": card_last4,
+                                 "message": f"There are {distance - 1} unimported statement month(s) before this file"})
+    return coverage, warnings
 
 
 def analyze_staged_files(database: Path, uploads: list[tuple[str, Path]]) -> dict:
@@ -75,7 +218,13 @@ def analyze_staged_files(database: Path, uploads: list[tuple[str, Path]]) -> dic
         categories, identities = staged_reference_data(connection)
         files: list[dict] = []
         merchant_groups: dict[str, dict] = {}
-        for original_name, path in uploads:
+        exact_duplicates: list[dict] = []
+        possible_duplicates: list[dict] = []
+        new_transactions: list[dict] = []
+        pending_transactions: list[dict] = []
+        coverage_warnings: list[dict] = []
+        seen_batch_keys: dict[str, dict] = {}
+        for file_index, (original_name, path) in enumerate(uploads):
             byte_hash = sha256_path(path)
             if path.suffix.lower() == ".xlsx" and is_income_xlsx(path):
                 prior_file = connection.execute(
@@ -86,10 +235,23 @@ def analyze_staged_files(database: Path, uploads: list[tuple[str, Path]]) -> dic
                 existing = sum(bool(connection.execute(
                     "SELECT 1 FROM income_entries WHERE entry_key=?", (entry.entry_key,)
                 ).fetchone()) for entry in entries)
+                for entry in entries:
+                    matched = connection.execute(
+                        "SELECT id FROM income_entries WHERE entry_key=?", (entry.entry_key,)
+                    ).fetchone()
+                    if matched:
+                        exact_duplicates.append({
+                            "filename": original_name, "file_index": file_index, "kind": "income",
+                            "merchant": entry.source_name, "transaction_date": entry.month,
+                            "amount": entry.amount, "currency": "ILS", "card_last4": None,
+                            "matched_transaction_id": matched["id"],
+                            "reason": "Exact income entry already exists",
+                        })
                 files.append({
                     "filename": original_name, "kind": "income", "format": "Income XLSX",
                     "provider": "income", "card_last4": None, "statement_range": None,
-                    "parsed": len(entries), "duplicates": existing,
+                    "parsed": len(entries), "duplicates": existing, "exact_duplicates": existing,
+                    "possible_duplicates": 0,
                     "new_rows": len(entries) - existing,
                     "status": "duplicate_file" if prior_file else "ready",
                     "reconciliation": {"official_total": None,
@@ -102,37 +264,99 @@ def analyze_staged_files(database: Path, uploads: list[tuple[str, Path]]) -> dic
                 (byte_hash,),
             ).fetchone()
             statement = parse_statement(path)
+            file_coverage, file_coverage_warnings = staged_statement_coverage(connection, statement)
+            coverage_warnings.extend({**warning, "filename": original_name} for warning in file_coverage_warnings)
             prior_semantic = connection.execute(
                 "SELECT id FROM imports WHERE semantic_hash=? AND status IN ('imported','duplicate_content') ORDER BY id LIMIT 1",
                 (statement.semantic_hash,),
             ).fetchone()
-            duplicate_keys = {
-                transaction.transaction_key for transaction in statement.transactions
-                if connection.execute(
-                    "SELECT 1 FROM transactions WHERE transaction_key=?", (transaction.transaction_key,)
+            duplicate_keys: set[str] = set()
+            possible_keys: set[str] = set()
+            pending_keys: set[str] = set()
+            for item in statement.transactions:
+                summary = staged_transaction_summary(item, original_name, file_index)
+                if summary["source_status"] == "pending":
+                    pending_keys.add(item.transaction_key)
+                    pending_transactions.append({**summary, "kind": "statement",
+                                                 "reason": "Provider has not finalized this charge"})
+                    continue
+                voucher_exact = None
+                if item.voucher_number:
+                    voucher_exact = connection.execute(
+                        """SELECT id,voucher_number FROM transactions
+                        WHERE provider=? AND card_last4=? AND voucher_number=? AND base_key=?
+                        ORDER BY id LIMIT 1""",
+                        (item.provider, item.card_last4, item.voucher_number, item.base_key),
+                    ).fetchone()
+                existing_row = connection.execute(
+                    "SELECT id,voucher_number FROM transactions WHERE transaction_key=?",
+                    (item.transaction_key,),
                 ).fetchone()
-            }
+                earlier = seen_batch_keys.get(item.transaction_key)
+                key_collision_is_separate = bool(
+                    existing_row and item.voucher_number and existing_row["voucher_number"]
+                    and item.voucher_number != existing_row["voucher_number"]
+                )
+                batch_collision_is_separate = bool(
+                    earlier and item.voucher_number and earlier.get("voucher_number")
+                    and item.voucher_number != earlier["voucher_number"]
+                )
+                exact_row = voucher_exact or (None if key_collision_is_separate else existing_row)
+                exact_batch = None if batch_collision_is_separate else earlier
+                if exact_row or exact_batch:
+                    duplicate_keys.add(item.transaction_key)
+                    exact_duplicates.append({
+                        **summary,
+                        "kind": "statement",
+                        "matched_transaction_id": exact_row["id"] if exact_row else None,
+                        "reason": "Exact transaction identity already exists" if exact_row
+                        else f"Exact transaction also appears in {exact_batch['filename']}",
+                    })
+                else:
+                    matches, reason = possible_duplicate_matches(connection, item)
+                    if matches:
+                        possible_keys.add(item.transaction_key)
+                        match_ids = [row["id"] for row in matches]
+                        candidate_seed = f"{file_index}:{item.transaction_key}:{','.join(map(str, match_ids))}"
+                        possible_duplicates.append({
+                            **summary,
+                            "candidate_id": hashlib.sha256(candidate_seed.encode()).hexdigest()[:24],
+                            "kind": "statement", "reason": reason,
+                            "matched_transaction_ids": match_ids,
+                            "matched_rows": [dict(row) for row in matches],
+                        })
+                    else:
+                        new_transactions.append({**summary, "kind": "statement"})
+                seen_batch_keys.setdefault(item.transaction_key, summary)
             installment_plans = {
                 (item.provider, item.card_last4, item.merchant_normalized, item.transaction_date,
                  item.original_amount, item.installment_total)
                 for item in statement.transactions if item.installment_number is not None
             }
-            parsed_total = round(sum(float(item.charged_amount or 0) for item in statement.transactions), 2)
+            parsed_total = statement_reconciliation_total(statement)
+            official_total = float(statement.official_total) if statement.official_total is not None else None
+            difference = round(parsed_total - official_total, 2) if official_total is not None else None
+            reconciliation_status = "matched" if difference is not None and abs(difference) <= .01 else \
+                "mismatch" if difference is not None else "manual_required"
             status = "duplicate_file" if prior_file else "duplicate_content" if prior_semantic else "ready"
             files.append({
                 "filename": original_name, "kind": "statement", "format": path.suffix.upper().lstrip("."),
                 "provider": statement.provider, "card_last4": statement.card_last4,
                 "product_name": statement.product_name, "statement_range": statement.date_range,
                 "parsed": len(statement.transactions), "duplicates": len(duplicate_keys),
-                "new_rows": len(statement.transactions) - len(duplicate_keys), "status": status,
+                "exact_duplicates": len(duplicate_keys),
+                "possible_duplicates": len(possible_keys),
+                "new_rows": len(statement.transactions) - len(duplicate_keys) - len(possible_keys) - len(pending_keys), "status": status,
+                "pending_rows": len(pending_keys),
                 "installment_plans": len(installment_plans),
-                "reconciliation": {"official_total": None, "parsed_total": parsed_total,
-                                   "status": "manual_required"},
+                "coverage": file_coverage,
+                "reconciliation": {"official_total": official_total, "parsed_total": parsed_total,
+                                   "difference": difference, "status": reconciliation_status},
             })
             if status in {"duplicate_file", "duplicate_content"}:
                 continue
             for item in statement.transactions:
-                if item.transaction_key in duplicate_keys:
+                if item.transaction_key in duplicate_keys or item.transaction_key in pending_keys:
                     continue
                 group = merchant_groups.setdefault(item.merchant_normalized, {
                     "merchant_normalized": item.merchant_normalized,
@@ -175,15 +399,43 @@ def analyze_staged_files(database: Path, uploads: list[tuple[str, Path]]) -> dic
             })
         merchants.sort(key=lambda item: (not item["needs_review"], -item["transactions"], item["merchant_raw"]))
         return {"files": files, "merchants": merchants, "categories": categories,
-                "display_identities": identities}
+                "display_identities": identities, "exact_duplicates": exact_duplicates,
+                "possible_duplicates": possible_duplicates,
+                "new_transactions": new_transactions, "pending_transactions": pending_transactions,
+                "coverage_warnings": coverage_warnings}
     finally:
         connection.close()
 
 
-def commit_staged_batch(database: Path, batch: dict, decisions: list[dict]) -> dict:
+def statement_reconciliation_total(statement) -> float:
+    """Total rows that belong to the statement's scheduled monthly charge.
+
+    Isracard may include transactions charged immediately/outside the monthly
+    billing date in the same workbook. They remain importable transactions, but
+    must not change the total reconciled against the scheduled statement charge.
+    """
+    return round(sum(
+        float(item.charged_amount or 0)
+        for item in statement.transactions
+        if not item.source_sheet.endswith(":immediate")
+    ), 2)
+
+
+def commit_staged_batch(
+    database: Path,
+    batch: dict,
+    decisions: list[dict],
+    duplicate_decisions: list[dict],
+    analysis: dict,
+) -> dict:
     decision_map = {
         str(item.get("merchant_normalized", "")): item for item in decisions
         if str(item.get("merchant_normalized", ""))
+    }
+    review_required_merchants = {
+        str(item.get("merchant_normalized", ""))
+        for item in analysis.get("merchants", [])
+        if item.get("needs_review") and str(item.get("merchant_normalized", ""))
     }
     backup_dir = database.parent / "backups"
     backup_dir.mkdir(parents=True, exist_ok=True)
@@ -193,12 +445,45 @@ def commit_staged_batch(database: Path, batch: dict, decisions: list[dict]) -> d
     db = ImportDatabase(database)
     results: list[dict] = []
     try:
+        possible_by_id = {
+            item["candidate_id"]: item for item in analysis.get("possible_duplicates", [])
+        }
+        duplicate_action_map = {
+            str(item.get("candidate_id", "")): str(item.get("action", ""))
+            for item in duplicate_decisions
+        }
+        missing_duplicate_decisions = set(possible_by_id) - set(duplicate_action_map)
+        invalid_duplicate_decisions = {
+            candidate_id for candidate_id, action in duplicate_action_map.items()
+            if candidate_id not in possible_by_id or action not in {"skip", "import"}
+        }
+        if missing_duplicate_decisions:
+            raise ValueError("Every possible duplicate must be reviewed before import")
+        if invalid_duplicate_decisions:
+            raise ValueError("A possible-duplicate decision is invalid or no longer current")
+        reviewed_matches_by_file: dict[int, dict[str, int]] = {}
+        for candidate_id, action in duplicate_action_map.items():
+            if action != "skip":
+                continue
+            candidate = possible_by_id[candidate_id]
+            matched_ids = candidate.get("matched_transaction_ids", [])
+            if not matched_ids:
+                raise ValueError("A reviewed duplicate has no matching existing transaction")
+            reviewed_matches_by_file.setdefault(int(candidate["file_index"]), {})[
+                candidate["transaction_key"]
+            ] = int(matched_ids[0])
         now = datetime.now().astimezone().isoformat()
         for normalized, decision in decision_map.items():
             resolution = str(decision.get("resolution", "needs_review"))
             scope = str(decision.get("scope", "exact"))
             category = str(decision.get("category", "")).strip()
             display_name = str(decision.get("display_name", "")).strip()
+            requested_group_id = str(decision.get("canonical_group_id", "")).strip()
+            if resolution == "link" and (scope != "exact" or not requested_group_id):
+                raise ValueError(
+                    f"Linking {normalized} to an existing merchant requires a selected identity "
+                    "and the permanent exact-name scope"
+                )
             if resolution not in {"needs_review", "exclude"} and category and scope == "exact":
                 db.connection.execute(
                     """INSERT INTO merchant_mappings(merchant_normalized,category,subcategory,updated_at)
@@ -207,7 +492,7 @@ def commit_staged_batch(database: Path, batch: dict, decisions: list[dict]) -> d
                     (normalized, category, now),
                 )
             if resolution not in {"needs_review", "exclude"} and display_name and scope == "exact":
-                group_id = str(decision.get("canonical_group_id", "")).strip()
+                group_id = requested_group_id
                 if not group_id:
                     display_key = re.sub(r"\s+", " ", display_name.casefold()).strip()
                     group_id = "custom:" + hashlib.sha256(display_key.encode("utf-8")).hexdigest()[:20]
@@ -220,14 +505,38 @@ def commit_staged_batch(database: Path, batch: dict, decisions: list[dict]) -> d
                     (normalized, group_id, display_name, now),
                 )
         db.connection.commit()
-        for staged_file in batch["uploads"]:
-            result = db.import_file(staged_file["path"])
+        for file_index, staged_file in enumerate(batch["uploads"]):
+            pending_keys = {
+                item["transaction_key"] for item in analysis.get("pending_transactions", [])
+                if int(item["file_index"]) == file_index
+            }
+            result = db.import_file(
+                staged_file["path"],
+                probable_duplicate_matches=reviewed_matches_by_file.get(file_index),
+                excluded_transaction_keys=pending_keys,
+            )
             if result.get("import_id"):
                 table = "income_imports" if result.get("kind") == "income" else "imports"
                 db.connection.execute(
                     f"UPDATE {table} SET original_name=? WHERE id=?",
                     (staged_file["filename"], result["import_id"]),
                 )
+                if result.get("kind") != "income":
+                    for coverage in analysis["files"][file_index].get("coverage", []):
+                        db.connection.execute(
+                            """INSERT OR REPLACE INTO import_coverage(
+                            import_id,card_last4,statement_month,statement_period,
+                            statement_as_of_date,purchase_date_from,purchase_date_to,
+                            billing_date_from,billing_date_to,finalized_rows,pending_rows,
+                            outside_cycle_rows,official_total
+                            ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                            (result["import_id"], coverage["card_last4"], coverage["statement_month"],
+                             coverage["statement_period"], coverage["statement_as_of_date"],
+                             coverage["purchase_date_from"], coverage["purchase_date_to"],
+                             coverage["billing_date_from"], coverage["billing_date_to"],
+                             coverage["finalized_rows"], coverage["pending_rows"],
+                             coverage["outside_cycle_rows"], coverage["official_total"]),
+                        )
             excluded = 0
             if result.get("import_id") and result.get("kind") != "income":
                 new_rows = db.connection.execute(
@@ -247,7 +556,10 @@ def commit_staged_batch(database: Path, batch: dict, decisions: list[dict]) -> d
                         )
                         db.connection.execute("DELETE FROM transactions WHERE id=?", (row["id"],))
                         excluded += 1
-                    elif resolution == "needs_review" or (scope == "batch" and category):
+                    elif (
+                        resolution == "needs_review"
+                        and row["merchant_normalized"] in review_required_merchants
+                    ) or (scope == "batch" and category):
                         override_category = "Needs review" if resolution == "needs_review" else category
                         db.connection.execute(
                             """INSERT INTO transaction_category_overrides(transaction_id,category,subcategory,updated_at)
@@ -638,7 +950,10 @@ def dashboard_payload(database: Path, period: str, card: str, month: str = "") -
         connection.close()
 
 
-def filtered_where(connection: sqlite3.Connection, period: str, card: str, month: str = "") -> tuple[str, list[object], dict]:
+def filtered_where(
+    connection: sqlite3.Connection, period: str, card: str, month: str = "",
+    event_scope: str = "all",
+) -> tuple[str, list[object], dict]:
     start, end, label = period_bounds(connection, period, month)
     conditions = [f"{REPORTING_MONTH_SQL} BETWEEN ? AND ?"]
     parameters: list[object] = [(start or "0000-00")[:7], (end or "9999-99")[:7]]
@@ -646,6 +961,13 @@ def filtered_where(connection: sqlite3.Connection, period: str, card: str, month
         provider, last4 = card.split(":", 1)
         conditions.extend(["provider = ?", "card_last4 = ?"])
         parameters.extend([provider, last4])
+    if event_scope not in {"all", "routine"}:
+        raise ValueError("Invalid event scope")
+    if event_scope == "routine":
+        conditions.append(
+            "NOT EXISTS (SELECT 1 FROM event_transactions scoped_event "
+            "WHERE scoped_event.transaction_id=t.id)"
+        )
     return " AND ".join(conditions), parameters, {"key": period, "start": start, "end": end, "label": label}
 
 
@@ -656,23 +978,30 @@ def transactions_payload(
     search: str = "",
     month: str = "",
     category: str = "",
+    event_scope: str = "all",
 ) -> dict:
     connection = sqlite3.connect(database)
     connection.row_factory = sqlite3.Row
     try:
-        where, parameters, period_data = filtered_where(connection, period, card, month)
+        where, parameters, period_data = filtered_where(connection, period, card, month, event_scope)
         if search.strip():
-            where += " AND (t.merchant_raw LIKE ? OR COALESCE(o.category,t.user_category,t.provider_category,'Needs review') LIKE ?)"
+            where += """ AND (
+                t.merchant_raw LIKE ? OR t.merchant_normalized LIKE ? OR
+                COALESCE(d.display_name,'') LIKE ? OR
+                COALESCE(o.category,t.user_category,t.provider_category,'Needs review') LIKE ?
+            )"""
             term = f"%{search.strip()}%"
-            parameters.extend([term, term])
+            parameters.extend([term, term, term, term])
         if category.strip():
             where += " AND COALESCE(o.category,t.user_category,t.provider_category,'Needs review') = ?"
             parameters.append(category.strip())
         total = connection.execute(
             f"""SELECT COUNT(*) FROM transactions t
+            LEFT JOIN merchant_display_mappings d ON d.merchant_normalized=t.merchant_normalized
             LEFT JOIN transaction_category_overrides o ON o.transaction_id=t.id WHERE {where}""",
             parameters,
         ).fetchone()[0]
+        row_limit = "" if search.strip() else "LIMIT 1000"
         rows = [dict(row) for row in connection.execute(
             f"""SELECT t.id,t.merchant_raw,t.merchant_normalized,
             COALESCE(d.canonical_group_id,t.merchant_normalized) canonical_merchant_id,
@@ -698,10 +1027,12 @@ def transactions_payload(
             LEFT JOIN transaction_spending_adjustments a ON a.transaction_id=t.id
             LEFT JOIN event_transactions et ON et.transaction_id=t.id
             LEFT JOIN events e ON e.id=et.event_id
-            WHERE {where} ORDER BY COALESCE(billing_date,billing_month||'-01',transaction_date) DESC,t.id DESC LIMIT 1000""",
+            WHERE {where} ORDER BY COALESCE(billing_date,billing_month||'-01',transaction_date) DESC,t.id DESC
+            {row_limit}""",
             parameters,
         )]
-        return {"period": period_data, "selected_card": card, "total": int(total), "transactions": rows}
+        return {"period": period_data, "selected_card": card, "event_scope": event_scope,
+                "total": int(total), "transactions": rows}
     finally:
         connection.close()
 
@@ -928,11 +1259,13 @@ def save_event_settings(
         connection.close()
 
 
-def categories_payload(database: Path, period: str, card: str, month: str = "") -> dict:
+def categories_payload(
+    database: Path, period: str, card: str, month: str = "", event_scope: str = "all",
+) -> dict:
     connection = sqlite3.connect(database)
     connection.row_factory = sqlite3.Row
     try:
-        where, parameters, period_data = filtered_where(connection, period, card, month)
+        where, parameters, period_data = filtered_where(connection, period, card, month, event_scope)
         total = float(connection.execute(
             f"SELECT COALESCE(SUM({personal_charge_sql()}),0) FROM transactions t WHERE {where}",
             parameters,
@@ -950,7 +1283,43 @@ def categories_payload(database: Path, period: str, card: str, month: str = "") 
         )]
         for row in rows:
             row["share"] = round(float(row["amount"]) / total * 100, 1) if total else 0
-        return {"period": period_data, "selected_card": card, "total": round(total, 2), "categories": rows}
+        category_comparison = {"available": False, "previous_month": None}
+        if period == "month":
+            previous_month = _add_months((period_data["start"] or month)[:7], -1)
+            previous_where, previous_parameters, _ = filtered_where(
+                connection, "month", card, previous_month, event_scope
+            )
+            previous_count = int(connection.execute(
+                f"SELECT COUNT(*) FROM transactions t WHERE {previous_where}", previous_parameters,
+            ).fetchone()[0])
+            previous_rows = connection.execute(
+                f"""SELECT COALESCE(o.category,t.user_category,t.provider_category,'Needs review') category,
+                ROUND(SUM({personal_charge_sql()}),2) amount
+                FROM transactions t
+                LEFT JOIN transaction_category_overrides o ON o.transaction_id=t.id
+                WHERE {previous_where}
+                GROUP BY COALESCE(o.category,t.user_category,t.provider_category,'Needs review')""",
+                previous_parameters,
+            ).fetchall()
+            previous_amounts = {row["category"]: float(row["amount"]) for row in previous_rows}
+            category_comparison = {"available": previous_count > 0, "previous_month": previous_month}
+            for item in rows:
+                item["previous_amount"] = round(previous_amounts.get(item["category"], 0), 2)
+                if not previous_count:
+                    item["comparison"] = "unavailable"
+                    item["change_percent"] = None
+                    continue
+                previous_amount = item["previous_amount"]
+                if previous_amount <= 0:
+                    item["comparison"] = "new"
+                    item["change_percent"] = None
+                    continue
+                change_percent = round((float(item["amount"]) - previous_amount) / previous_amount * 100)
+                item["change_percent"] = change_percent
+                item["comparison"] = "up" if change_percent > 0 else "down" if change_percent < 0 else "same"
+        return {"period": period_data, "selected_card": card, "event_scope": event_scope,
+                "total": round(total, 2), "categories": rows,
+                "category_comparison": category_comparison}
     finally:
         connection.close()
 
@@ -1390,9 +1759,18 @@ def mapping_payload(database: Path) -> dict:
             GROUP BY merchant_normalized ORDER BY transactions DESC,amount DESC LIMIT 1000"""
         )]
         imports = [dict(row) for row in connection.execute(
-            """SELECT original_name,provider,card_last4,status,parsed_rows,inserted_rows,duplicate_rows,imported_at
+            """SELECT id,original_name,provider,card_last4,statement_range,status,
+            parsed_rows,inserted_rows,duplicate_rows,imported_at
             FROM imports ORDER BY id DESC LIMIT 8"""
         )]
+        for imported in imports:
+            imported["coverage"] = [dict(row) for row in connection.execute(
+                """SELECT card_last4,statement_month,statement_period,statement_as_of_date,
+                purchase_date_from,purchase_date_to,billing_date_from,billing_date_to,
+                finalized_rows,pending_rows,outside_cycle_rows,official_total
+                FROM import_coverage WHERE import_id=? ORDER BY card_last4""",
+                (imported["id"],),
+            )]
         mappings = [dict(row) for row in connection.execute(
             "SELECT merchant_normalized,category,subcategory,updated_at FROM merchant_mappings ORDER BY updated_at DESC"
         )]
@@ -1861,8 +2239,12 @@ class ClearSpendHandler(BaseHTTPRequestHandler):
             period = query.get("period", ["month"])[0]
             card = query.get("card", ["all"])[0]
             month = query.get("month", [""])[0]
+            event_scope = query.get("event_scope", ["all"])[0]
             if period not in {"month", "year", "all"}:
                 self.send_json({"error": "Invalid period"}, 400)
+                return
+            if event_scope not in {"all", "routine"}:
+                self.send_json({"error": "Invalid event scope"}, 400)
                 return
             try:
                 if parsed.path == "/api/transactions":
@@ -1873,9 +2255,12 @@ class ClearSpendHandler(BaseHTTPRequestHandler):
                         query.get("q", [""])[0],
                         month,
                         query.get("category", [""])[0],
+                        event_scope,
                     ))
                 else:
-                    self.send_json(categories_payload(self.app.database, period, card, month))
+                    self.send_json(categories_payload(
+                        self.app.database, period, card, month, event_scope
+                    ))
             except Exception as error:
                 self.send_json({"error": str(error)}, 500)
             return
@@ -2120,6 +2505,9 @@ class ClearSpendHandler(BaseHTTPRequestHandler):
                 decisions = payload.get("decisions", [])
                 if not isinstance(decisions, list):
                     raise ValueError("Decisions must be a list")
+                duplicate_decisions = payload.get("duplicate_decisions", [])
+                if not isinstance(duplicate_decisions, list):
+                    raise ValueError("Duplicate decisions must be a list")
                 reconciled_files = payload.get("reconciled_files", [])
                 if not isinstance(reconciled_files, list):
                     raise ValueError("Reconciled files must be a list")
@@ -2130,13 +2518,15 @@ class ClearSpendHandler(BaseHTTPRequestHandler):
                 required_reconciliation = {
                     item["filename"] for item in analysis["files"]
                     if item["kind"] == "statement" and item["status"] == "ready"
-                    and item["reconciliation"]["status"] == "manual_required"
+                    and item["reconciliation"]["status"] in {"manual_required", "mismatch"}
                 }
                 missing_reconciliation = required_reconciliation - {str(item) for item in reconciled_files}
                 if missing_reconciliation:
                     missing = ", ".join(sorted(missing_reconciliation))
                     raise ValueError(f"Confirm the statement total before importing: {missing}")
-                result = commit_staged_batch(self.app.database, batch, decisions)
+                result = commit_staged_batch(
+                    self.app.database, batch, decisions, duplicate_decisions, analysis
+                )
                 for item in batch["uploads"]:
                     item["path"].unlink(missing_ok=True)
                 self.app.staged_imports.pop(batch_id, None)
