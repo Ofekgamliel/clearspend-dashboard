@@ -16,51 +16,50 @@
           <span class="header-brand-mark"><span></span></span>
           <span>clear<em>spend</em></span>
         </a>
+        <span class="header-divider" aria-hidden="true"></span>
+        <section class="filterbar" aria-label="Dashboard filters">
+          <div class="segmented" id="periodTabs">
+            <button data-period="month" class="active">Month</button>
+            <button data-period="year">Latest year</button>
+            <button data-period="all">All time</button>
+          </div>
+          <div class="filter-controls">
+            <div class="month-picker" id="monthPicker">
+              <button class="date-button month-picker-button" id="monthPickerButton" type="button" aria-label="Choose month" aria-haspopup="dialog" aria-expanded="false" aria-controls="monthPickerPopover">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 2h2v2h6V2h2v2h2a2 2 0 0 1 2 2v14H3V6a2 2 0 0 1 2-2h2V2ZM5 9v9h14V9H5Z"/></svg>
+                <span id="monthPickerLabel">Latest month</span><b aria-hidden="true">⌄</b>
+              </button>
+              <div class="month-picker-popover" id="monthPickerPopover" role="dialog" aria-label="Choose a reporting month" hidden>
+                <div class="month-picker-year">
+                  <button type="button" id="monthYearPrevious" aria-label="Previous available year">‹</button>
+                  <strong id="monthPickerYear">—</strong>
+                  <button type="button" id="monthYearNext" aria-label="Next available year">›</button>
+                </div>
+                <div class="month-picker-grid" id="monthPickerGrid"></div>
+                <div class="month-picker-footer"><span><i></i> Imported data</span><button type="button" id="monthPickerLatest">Latest month</button></div>
+              </div>
+            </div>
+            <div class="card-picker" id="cardPicker">
+              <button class="select-wrap card-picker-button" id="cardPickerButton" type="button" aria-label="Choose card" aria-haspopup="listbox" aria-expanded="false" aria-controls="cardPickerPopover">
+                <span>Card</span><strong id="cardPickerLabel">All cards</strong><b aria-hidden="true">⌄</b>
+              </button>
+              <div class="card-picker-popover" id="cardPickerPopover" role="listbox" aria-label="Choose a card" hidden></div>
+            </div>
+          </div>
+        </section>
         <div class="header-actions">
           <button class="manage-button" id="manageMenuButton" type="button" aria-label="Manage data" aria-expanded="false" aria-controls="manageMenu" title="Manage data">
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h10M18 7h2M4 17h2M10 17h10M14 4v6M6 14v6"/><circle cx="14" cy="7" r="2.5"/><circle cx="8" cy="17" r="2.5"/></svg>
           </button>
+          <div class="manage-menu" id="manageMenu" hidden>
+            <button id="uploadBtn" type="button"><i>↑</i><span><strong>Import statements</strong><small>Stage, review, and import new files</small></span></button>
+            <button type="button" data-action="merchants"><i>♙</i><span><strong>Merchants</strong><small>Display names and category rules</small></span></button>
+            <button type="button" data-action="mapping"><i>?</i><span><strong>Needs review</strong><small>Unmapped merchants and transactions</small></span></button>
+            <button type="button" data-action="duplicates"><i>⇅</i><span><strong>Import history</strong><small>Duplicate handling and import audit</small></span></button>
+            <button type="button" data-action="recurring"><i>↻</i><span><strong>Recurring rules</strong><small>Add, remove, and configure recurring merchants</small></span></button>
+          </div>
         </div>
       </header>
-
-      <div class="manage-menu" id="manageMenu" hidden>
-        <button id="uploadBtn" type="button"><i>↑</i><span><strong>Import statements</strong><small>Stage, review, and import new files</small></span></button>
-        <button type="button" data-action="merchants"><i>♙</i><span><strong>Merchants</strong><small>Display names and category rules</small></span></button>
-        <button type="button" data-action="mapping"><i>?</i><span><strong>Needs review</strong><small>Unmapped merchants and transactions</small></span></button>
-        <button type="button" data-action="duplicates"><i>⇅</i><span><strong>Import history</strong><small>Duplicate handling and import audit</small></span></button>
-        <button type="button" data-action="recurring"><i>↻</i><span><strong>Recurring rules</strong><small>Add, remove, and configure recurring merchants</small></span></button>
-      </div>
-
-      <section class="filterbar" aria-label="Dashboard filters">
-        <div class="segmented" id="periodTabs">
-          <button data-period="month" class="active">Month</button>
-          <button data-period="year">Latest year</button>
-          <button data-period="all">All time</button>
-        </div>
-        <div class="filter-controls">
-          <div class="month-picker" id="monthPicker">
-            <button class="date-button month-picker-button" id="monthPickerButton" type="button" aria-label="Choose month" aria-haspopup="dialog" aria-expanded="false" aria-controls="monthPickerPopover">
-              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 2h2v2h6V2h2v2h2a2 2 0 0 1 2 2v14H3V6a2 2 0 0 1 2-2h2V2ZM5 9v9h14V9H5Z"/></svg>
-              <span id="monthPickerLabel">Latest month</span><b aria-hidden="true">⌄</b>
-            </button>
-            <div class="month-picker-popover" id="monthPickerPopover" role="dialog" aria-label="Choose a reporting month" hidden>
-              <div class="month-picker-year">
-                <button type="button" id="monthYearPrevious" aria-label="Previous available year">‹</button>
-                <strong id="monthPickerYear">—</strong>
-                <button type="button" id="monthYearNext" aria-label="Next available year">›</button>
-              </div>
-              <div class="month-picker-grid" id="monthPickerGrid"></div>
-              <div class="month-picker-footer"><span><i></i> Imported data</span><button type="button" id="monthPickerLatest">Latest month</button></div>
-            </div>
-          </div>
-          <div class="card-picker" id="cardPicker">
-            <button class="select-wrap card-picker-button" id="cardPickerButton" type="button" aria-label="Choose card" aria-haspopup="listbox" aria-expanded="false" aria-controls="cardPickerPopover">
-              <span>Card</span><strong id="cardPickerLabel">All cards</strong><b aria-hidden="true">⌄</b>
-            </button>
-            <div class="card-picker-popover" id="cardPickerPopover" role="listbox" aria-label="Choose a card" hidden></div>
-          </div>
-        </div>
-      </section>
 
       <section class="panel income-panel" id="incomePanel" aria-label="Income and spending">
         <div class="income-head">
