@@ -276,7 +276,7 @@ watch(selectedSeriesItem, (item) => {
 });
 onMounted(() => document.addEventListener('keydown', handleKeydown));
 onBeforeUnmount(() => document.removeEventListener('keydown', handleKeydown));
-defineExpose({ openActivity });
+defineExpose({ openActivity, openManagement });
 </script>
 
 <template>

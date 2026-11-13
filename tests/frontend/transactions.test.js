@@ -5,7 +5,7 @@ const {
   sortedTransactionRows,
   transactionColumns,
   transactionSortValue,
-} = require('../../dist/transactions.js');
+} = require('./legacy/transactions.js');
 
 test('publishes the existing transaction table columns in their established order', () => {
   assert.deepEqual(transactionColumns.slice(0, 3), [

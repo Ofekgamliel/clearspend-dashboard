@@ -8,7 +8,7 @@ const {
   recurringStatusLabels,
   recurringTypeOptions,
   sortedRecurringRows,
-} = require('../../dist/recurring.js');
+} = require('./legacy/recurring.js');
 
 test('publishes the established recurring type and cadence choices', () => {
   assert.deepEqual(recurringTypeOptions, [

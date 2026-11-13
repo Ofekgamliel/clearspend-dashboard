@@ -14,6 +14,8 @@ import RecurringPanel from './features/recurring/RecurringPanel.vue';
 import EventsPanel from './features/events/EventsPanel.vue';
 import ObservationsPanel from './features/observations/ObservationsPanel.vue';
 import MerchantManagement from './features/merchants/MerchantManagement.vue';
+import ImportManager from './features/imports/ImportManager.vue';
+import ImportAudit from './features/imports/ImportAudit.vue';
 import type { ObservationActivity } from './features/observations/model';
 
 const period = ref<PeriodKey>('month');
@@ -33,6 +35,17 @@ const transactionsPanel = ref<InstanceType<typeof TransactionsPanel> | null>(nul
 const recurringPanel = ref<InstanceType<typeof RecurringPanel> | null>(null);
 const eventsPanel = ref<InstanceType<typeof EventsPanel> | null>(null);
 const merchantManager = ref<InstanceType<typeof MerchantManagement> | null>(null);
+const importManager = ref<InstanceType<typeof ImportManager> | null>(null);
+const importAudit = ref<InstanceType<typeof ImportAudit> | null>(null);
+const manageMenuOpen = ref(false);
+
+function openManagement(target: 'import' | 'audit' | 'merchants' | 'recurring'): void {
+  manageMenuOpen.value = false;
+  if (target === 'import') importManager.value?.open();
+  else if (target === 'audit') importAudit.value?.open();
+  else if (target === 'merchants') merchantManager.value?.open();
+  else recurringPanel.value?.openManagement();
+}
 
 const effectiveMonth = computed(() => selectedMonth(
   month.value,
@@ -112,22 +125,20 @@ watch([period, month, card], loadFilters, { immediate: true });
   <main class="preview-shell">
     <header class="preview-header">
       <div class="preview-brand"><div class="preview-mark" aria-hidden="true"><i /></div><strong>clear<span>spend</span></strong></div>
-      <div class="preview-boundary"><b>Migration preview</b><span>Reviewed changes save locally · production remains in dist/</span></div>
-      <button type="button" class="preview-manage-button" aria-label="Manage merchants" title="Manage merchants" @click="merchantManager?.open()"><span aria-hidden="true">☷</span><strong>Manage data</strong></button>
+      <DashboardFilters
+        :period="period" :month="effectiveMonth" :card="card" :cards="dashboard?.cards ?? []" :available-months="dashboard?.available_months ?? []"
+        :loading="filtersLoading" :error="filtersError" @period-change="period = $event" @month-change="changeMonth" @card-change="card = $event" @retry="loadFilters"
+      />
+      <div class="preview-manage-wrap">
+        <button type="button" class="preview-manage-button" :aria-expanded="manageMenuOpen" aria-haspopup="menu" @click="manageMenuOpen=!manageMenuOpen"><span aria-hidden="true">☷</span><strong>Manage data</strong></button>
+        <div v-if="manageMenuOpen" class="preview-manage-menu" role="menu">
+          <button type="button" role="menuitem" @click="openManagement('import')"><b>⇧</b><span><strong>Import statements</strong><small>Stage, review and reconcile files</small></span></button>
+          <button type="button" role="menuitem" @click="openManagement('audit')"><b>≡</b><span><strong>Import history</strong><small>Coverage, inserted rows and duplicates</small></span></button>
+          <button type="button" role="menuitem" @click="openManagement('merchants')"><b>◎</b><span><strong>Merchants</strong><small>Display names and permanent categories</small></span></button>
+          <button type="button" role="menuitem" @click="openManagement('recurring')"><b>↻</b><span><strong>Recurring rules</strong><small>Membership, cadence and lifecycle</small></span></button>
+        </div>
+      </div>
     </header>
-    <DashboardFilters
-      :period="period"
-      :month="effectiveMonth"
-      :card="card"
-      :cards="dashboard?.cards ?? []"
-      :available-months="dashboard?.available_months ?? []"
-      :loading="filtersLoading"
-      :error="filtersError"
-      @period-change="period = $event"
-      @month-change="changeMonth"
-      @card-change="card = $event"
-      @retry="loadFilters"
-    />
     <IncomePanel v-if="dashboard" ref="incomePanel" :summary="dashboard.income_summary" :period="dashboard.period" :loading="filtersLoading" :hidden="incomeHidden" @privacy-change="changeIncomeVisibility" />
     <MetricsGrid v-if="dashboard" :metrics="dashboard.metrics" :loading="filtersLoading" />
     <TrendPanel v-if="dashboard" :dashboard="dashboard" :income-hidden="incomeHidden" :loading="filtersLoading" />
@@ -157,5 +168,7 @@ watch([period, month, card], loadFilters, { immediate: true });
       @financial-data-change="refreshData"
     />
     <MerchantManagement ref="merchantManager" @financial-data-change="refreshData" />
+    <ImportManager ref="importManager" @imported="refreshData" />
+    <ImportAudit ref="importAudit" />
   </main>
 </template>

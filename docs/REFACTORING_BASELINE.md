@@ -1,8 +1,10 @@
 # Refactoring baseline
 
-This document records the current ClearSpend runtime contracts before code is
-moved between modules. It is an inventory, not a proposed final architecture.
-All examples and tests associated with this baseline must use synthetic data.
+This document began as the pre-refactor runtime inventory and now records the
+contracts preserved by the completed backend extraction and Vue production
+cutover. Historical sections are labelled where they describe the retired
+vanilla client. All examples and tests associated with this baseline must use
+synthetic data.
 
 ## Runtime entry points
 
@@ -188,68 +190,69 @@ These concepts must remain independent during repository extraction.
 | Recurring cadence, lifecycle, status, history and series amounts | `recurring/rules.py` | `recurring/rules.py` |
 | Recurring database grouping and burden assembly | `recurring/queries.py` | `recurring/queries.py` |
 | Recurring profile and alias-membership writes | `recurring/service.py` | `recurring/service.py` |
-| Monthly and long-period observations | `dist/observations.js` | Backend observation domain; frontend presentation only |
+| Monthly and long-period observations | `observations/` backend package | Backend observation domain; frontend presentation only |
 | Reversible observation-review reads and writes | `observations/queries.py`, `observations/service.py` | Same |
 | Event period visibility and query assembly | `events/queries.py` | `events/queries.py` |
 | Event settings validation and selected/lifetime membership totals | `events/rules.py` | `events/rules.py` |
 | Event creation, editing and transaction membership writes | `events/service.py` | `events/service.py` |
-| Browser JSON and multipart API transport | `dist/api.js` | Typed frontend API client |
-| Browser formatting, escaping, and calendar helpers | `dist/format.js` | Frontend shared utilities |
-| Import display-identity normalization and matching | `dist/matching.js` | Frontend shared utilities |
-| Transaction table columns and pure row sorting | `dist/transactions.js` | Frontend transaction feature |
-| Event card grouping and client-side date/type validation | `dist/events.js` | Frontend events feature |
-| Recurring table constants, status presentation and sorting | `dist/recurring.js` | Frontend recurring feature |
-| Staged-import review decisions and preview assembly | `dist/import-review.js` | Frontend import feature |
-| Category donut segments, hover lookup and comparison labels | `dist/categories.js` | Frontend dashboard feature |
-| Modal state and dashboard interaction | `dist/app.js` | Vue components |
+| Browser JSON and multipart API transport | Typed client in `frontend/src/api/` | Same |
+| Browser formatting and calendar helpers | `frontend/src/shared/` | Same |
+| Import display-identity normalization and matching | `frontend/src/features/imports/` | Same |
+| Transaction table columns and sorting | `frontend/src/features/transactions/` | Same |
+| Event card grouping and date/type validation | `frontend/src/features/events/` | Same |
+| Recurring table constants, status presentation and sorting | `frontend/src/features/recurring/` | Same |
+| Staged-import review decisions and preview assembly | `frontend/src/features/imports/` | Same |
+| Category donut segments, hover lookup and comparison labels | `frontend/src/features/categories/` | Same |
+| Modal state and dashboard interaction | Vue components | Same |
 
-## Frontend shared-utility baseline
+## Retired vanilla-client baseline
 
-`dist/api.js` is now the single production transport boundary for JSON reads,
-JSON mutations, multipart uploads and API-error propagation. `dist/app.js` and
-the observation client still own feature-specific URLs, but do not call `fetch`
-directly. `dist/observation-client.js` owns the consolidated observation URL and
-the explicit backend-first/browser-fallback policy.
+The following files describe the former production client. They are retained
+only as test fixtures under `tests/frontend/legacy/` so the Vue implementation
+can continue proving compatibility with the established pure rules. They are
+not served by the application and must not be treated as production source.
 
-`dist/format.js` is the shared, framework-independent boundary for currency and
+`dist/api.js` was the vanilla transport boundary for JSON reads, JSON
+mutations, multipart uploads and API-error propagation. `dist/app.js` and the
+observation client owned feature-specific URLs, and
+`dist/observation-client.js` owned the consolidated observation URL.
+
+`dist/format.js` was the shared, framework-independent boundary for currency and
 date display, HTML escaping, month arithmetic and simple median/range helpers.
 The dashboard and observation code no longer carry separate copies of these
 helpers.
 
-`dist/matching.js` owns the import review's framework-independent display-name
+`dist/matching.js` owned the import review's framework-independent display-name
 normalization, alias scoring, ranking and strong-unambiguous-match rule. Its
 thresholds are unchanged and are now covered without requiring a browser DOM.
 
-`dist/transactions.js` owns the transaction table's stable column definition,
+`dist/transactions.js` owned the transaction table's stable column definition,
 composite sort values, numeric sorting and missing-value placement. Both the
 complete transaction table and expanded category rows consume the same helper.
 
-`dist/events.js` owns the pure event-card grouping used for repeated business
+`dist/events.js` owned the pure event-card grouping used for repeated business
 destinations, card ordering, business-trip type recognition and the existing
-client-side date-order check. Rendering and modal state remain in `dist/app.js`.
+client-side date-order check.
 
-`dist/recurring.js` owns recurring type/cadence choices, table definitions,
-status labels/classes and pure series/commitment sorting. Rendering and all
-persisted recurring-profile changes remain in `dist/app.js` and the backend.
+`dist/recurring.js` owned recurring type/cadence choices, table definitions,
+status labels/classes and pure series/commitment sorting.
 
-`dist/import-review.js` owns the staged review's step definition, reconciliation
+`dist/import-review.js` owned the staged review's step definition, reconciliation
 requirements, decision completeness checks, default merchant decision shape and
-read-only transaction preview assembly. Upload, rendering and commit state remain
-in `dist/app.js`; backend staging remains authoritative for import safety.
+read-only transaction preview assembly.
 
-`dist/categories.js` owns the category panel's pure donut boundaries, gradient
-model, pointer-angle lookup and month-over-month label selection. DOM updates,
-tooltips and category navigation remain in `dist/app.js`.
+`dist/categories.js` owned the category panel's pure donut boundaries, gradient
+model, pointer-angle lookup and month-over-month label selection.
 
-The Vue migration should replace this compatibility client with a typed client
-while preserving its tested request semantics. The old UI and Vue must not
-control the same DOM subtree.
+The Vue application has replaced this compatibility client. Its typed API and
+feature models preserve the tested request and calculation semantics; there is
+only one production UI owner.
 
-## Vue preview boundary
+## Vue production boundary
 
-`frontend/` is the isolated Vue 3 + TypeScript + Vite source tree. Its build
-writes to ignored `dist-next/`; it does not overwrite or modify production
-`dist/`. The preview dev server is local-only on `127.0.0.1:5173` and proxies
+`frontend/` is the Vue 3 + TypeScript + Vite source tree. Its production build
+writes generated assets to `dist/`, which is served by the local application.
+The optional development server is local-only on `127.0.0.1:5173` and proxies
 `/api` to the existing local ClearSpend server on `127.0.0.1:8765`.
 
 `frontend/src/api/client.ts` mirrors the production transport semantics with a
@@ -257,46 +260,41 @@ generic typed client. `frontend/src/api/contracts.ts` records backend-owned JSON
 contracts, beginning with the categories read model, and `api/categories.ts`
 owns its typed URL/query assembly.
 
-The preview now owns its first complete read-only feature: the category panel.
+The Vue application owns the category panel.
 `features/categories/CategoriesPanel.vue` loads the typed categories contract,
 supports all-spending and routine-only scopes, and presents loading, failure,
 empty, donut and previous-month-comparison states. Its pure donut/comparison
-model intentionally mirrors the tested legacy helper until the production
-category subtree is cut over and the duplicate legacy owner can be removed.
+model preserves the previously tested category behavior.
 
-This ownership applies only inside the isolated preview application. No
-production DOM subtree is Vue-owned yet, and `dist/` remains the authoritative
-deployable UI.
-
-The preview filter bar now provides the first shared read-only dashboard state:
+The Vue filter bar provides shared dashboard state:
 period, reporting month and card. It obtains available months and card identities
 from the existing typed dashboard response, preserves the current rule that
 choosing a month returns to the monthly view, and passes the selected query to
-the migrated category panel. This state is local to the preview and does not
+the migrated category panel. This state is local to the browser and does not
 persist or modify financial data.
 
-The preview also renders the complete income-and-spending region from the
+The Vue application also renders the complete income-and-spending region from the
 backend-owned `income_summary`: income, net spending, amount left, allocation
 percentages and monthly averages. The browser only bounds the percentage bar
 for display. Its eye control stores the same local privacy preference and does
 not write financial state.
 
-The four key-metric cards are also preview-owned. Their spent, refund,
+The four key-metric cards are also Vue-owned. Their spent, refund,
 transaction-count, daily-average and active-day values are displayed directly
 from the backend `metrics` contract; the frontend only formats them and builds
 the explanatory labels.
 
-The preview Spending by card panel now renders the backend card summaries and
-shares. Selecting a row changes only the shared preview card filter; it causes
+The Spending by card panel renders the backend card summaries and
+shares. Selecting a row changes only the shared card filter; it causes
 the existing read-only queries to reload and does not persist any state.
 
-The preview Spending trend is now migrated for both backend modes. Monthly
+The Spending trend is migrated for both backend modes. Monthly
 views render purchase-date category stacks, refunds and cumulative purchase
 value; longer periods render backend monthly spending and optional household
-income. The income privacy preference is shared preview state so hiding income
+income. The income privacy preference is shared browser state so hiding income
 also removes it from this chart, matching the existing behavior.
 
-The preview transaction browser now owns the read-only Recent transactions
+The transaction browser owns the read-only Recent transactions
 panel and View all modal. It consumes the dashboard's six-row summary and the
 typed `/api/transactions` contract, preserves the default transaction-date
 descending sort, supports every displayed source column, and delegates
@@ -310,7 +308,7 @@ reimbursements are also migrated: the original charge stays intact, only the
 personal-spending adjustment is written, and an existing adjustment can be
 removed independently.
 
-The preview Recurring & commitments region now consumes the typed
+The Recurring & commitments region consumes the typed
 `/api/recurring` read model. It renders backend-owned recurring and installment
 totals, spending composition, scrollable previews, sortable detail tables,
 verdict summaries and actual billing history for monthly, latest-year and
@@ -323,7 +321,7 @@ merchant to recurring tracking, and the confirmed not-recurring decision. These
 changes affect recurring analysis only; transactions and merchant identities
 remain intact.
 
-The preview Projects & events region now consumes the typed `/api/events`
+The Projects & events region consumes the typed `/api/events`
 contract. It renders period/card-filtered event cards, automatically groups
 repeated business-trip destinations in longer periods, and presents lifetime
 event totals, category breakdowns and exact transaction membership in a
@@ -335,7 +333,7 @@ settings is also migrated: name, type, business destination, dates, budget and
 status update presentation and period visibility without changing exact
 transaction membership.
 
-The preview Financial observations region consumes the typed consolidated
+The Financial observations region consumes the typed consolidated
 `/api/observations` contract. It renders backend-qualified monthly findings and
 long-period patterns, established card identities, grouped-card summaries and
 source evidence in a details modal. It never recalculates eligibility or
@@ -499,14 +497,13 @@ model with active findings and grouped cards. `observations/payloads.py`
 serializes that view using the established browser finding and group field
 names, while leaving visual color and icon ownership in the frontend. The
 read-only `/api/observations` route exposes this contract after exact
-cross-engine parity was established. Production JavaScript now consumes it as
-the primary source and retains the previous browser engine as an automatic
-compatibility fallback if the route is unavailable.
+cross-engine parity was established. The Vue production frontend consumes it
+as its authoritative source.
 
-Cross-engine comparison now has a durable synthetic harness. The tracked Node
-reference runner instruments the actual production `dist/observations.js`
-rather than maintaining a second copy of its rules, and receives only synthetic
-or locally assembled ignored inputs. `observations/parity.py` reports three
+Cross-engine comparison has a durable synthetic harness. The tracked Node
+reference runner uses the retired rule fixture in `tests/frontend/legacy/` and
+receives only synthetic or locally assembled ignored inputs.
+`observations/parity.py` reports three
 tiers independently: qualified finding identity, grouped card types and full
 presentation/evidence. This prevents wording differences from hiding a rule
 disagreement and prevents matching counts from hiding different findings.
@@ -515,8 +512,8 @@ The local all-card and per-card parity audit now matches qualified findings,
 grouped card types and complete finding payloads in all 21 tested month,
 latest-year and all-time scopes. Complete payload parity includes presentation,
 evidence, scores, review metadata and event context. That audit is the basis for
-the production frontend cutover to the read-only route; the legacy calculation
-path remains available only as a fallback. The audit also established that event membership is
+the production frontend cutover to the read-only route. The audit also
+established that event membership is
 exposed as a stable text slug, not only a numeric ID; adapters must preserve
 either representation so event spending is never folded back into routine
 observations.
@@ -524,16 +521,15 @@ observations.
 ## Known compatibility and audit targets
 
 - Preserve `127.0.0.1` as the default bind address.
-- Validate the full application on Python 3.13 before documenting it as supported;
-  multipart uploads no longer depend on the removed `cgi` module.
+- Python 3.13 runs all 337 tracked synthetic tests successfully; a complete
+  private-fixture run additionally requires installing the pinned `pypdf`
+  dependency into that interpreter's environment.
 - Preserve the staged analyze/commit workflow and pre-import backup.
 - Review the legacy direct-import route separately.
-- Standardize error mapping after use cases are extracted.
-- Audit dynamic `innerHTML` paths without claiming an unverified vulnerability.
+- Continue standardizing error mapping when new use cases are extracted.
 - Keep current SQL parameterized; no confirmed SQL-injection defect was found in
   this architectural inventory.
-- Treat `dist/` as production source until the Vue build has passed an explicit
-  cutover.
+- Treat `frontend/` as production source and `dist/` as generated output.
 
 ## Baseline test status
 
@@ -541,9 +537,9 @@ observations.
 - Tracked dependency-free frontend shared-utility suite: `tests/frontend/`
 - Private statement-derived regression tests: ignored local files under `tests/`
 - Baseline at introduction: 7 synthetic tests and 39 total local tests passing
-- Current refactoring checkpoint: 337 synthetic tests and 369 total Python tests passing, plus 43 production frontend tests
-- Current frontend shared-utility checkpoint: 43 tests passing
-- Current Vue preview checkpoint: 59 typed category/filter/income/metric/card/trend/transaction/merchant/recurring/event/observation tests passing
+- Current refactoring checkpoint: 337 synthetic tests and 369 total Python tests passing, plus 43 legacy-compatibility frontend tests
+- Current legacy shared-utility compatibility checkpoint: 43 tests passing
+- Current Vue production checkpoint: 62 typed category/filter/income/metric/card/trend/transaction/import/merchant/recurring/event/observation tests passing
 
 This inventory should be updated only when an intentional contract or ownership
 change is reviewed and accepted.

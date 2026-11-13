@@ -12,7 +12,7 @@ const {
   monthLabel,
   monthRange,
   shiftMonth,
-} = require('../../dist/format.js');
+} = require('./legacy/format.js');
 
 test('escapes every HTML-significant character', () => {
   assert.equal(escapeHtml(`<a title="Tom & Jerry's">`), '&lt;a title=&quot;Tom &amp; Jerry&#39;s&quot;&gt;');

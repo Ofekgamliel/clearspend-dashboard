@@ -31,8 +31,8 @@ def browser_observation_payload(snapshot: ObservationInputSnapshot) -> dict:
         (
             "node",
             str(RUNNER),
-            str(ROOT / "dist" / "observations.js"),
-            str(ROOT / "dist" / "format.js"),
+            str(ROOT / "tests" / "frontend" / "legacy" / "observations.js"),
+            str(ROOT / "tests" / "frontend" / "legacy" / "format.js"),
         ),
         input=json.dumps(request),
         text=True,

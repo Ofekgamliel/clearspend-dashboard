@@ -6,7 +6,7 @@ const {
   categoryComparisonModel,
   categorySegmentAt,
   donutPercentageAt,
-} = require('../../dist/categories.js');
+} = require('./legacy/categories.js');
 
 test('builds ordered donut segments and fills an unused remainder', () => {
   const result = buildCategorySegments([

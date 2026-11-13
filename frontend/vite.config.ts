@@ -12,7 +12,7 @@ export default defineConfig({
     },
   },
   build: {
-    outDir: fileURLToPath(new URL('../dist-next', import.meta.url)),
+    outDir: fileURLToPath(new URL('../dist', import.meta.url)),
     emptyOutDir: true,
   },
 });

@@ -6,7 +6,7 @@ const {
   normalizeIdentityText,
   rankDisplayIdentities,
   strongDisplayIdentitySuggestion,
-} = require('../../dist/matching.js');
+} = require('./legacy/matching.js');
 
 const identity = (displayName, transactions, aliases = []) => ({
   display_name: displayName,

@@ -16,8 +16,8 @@ income, dates, card suffixes, or other statement-derived information.
 
 ```text
 Browser
-  -> dist/index.html, dist/styles.css, dist/import-duplicates.css
-  -> dist/app.js, dist/observations.js
+  -> dist/index.html and generated dist/assets/*
+  -> Vue 3 + TypeScript application built from frontend/
   -> local /api requests
 Python server
   -> parsing, validation, dashboard queries, mappings, imports
@@ -36,13 +36,19 @@ data, imports, mapping changes, or other API-backed behavior.
 
 ## Source layout
 
-- `dist/` contains the production browser application.
-- `dist/observations.js` calculates and presents monthly findings and
-  longer-period patterns from API data; it does not write financial records.
-- `dist/import-duplicates.css` contains the staged-import review presentation.
-- `src/clearspend/server.py` serves static assets and implements the local API.
-- `src/clearspend/import_engine.py` parses statements, owns the SQLite schema,
-  imports normalized records, and applies duplicate protection.
+- `frontend/` contains the Vue 3 + TypeScript production source.
+- `dist/` contains generated production assets only. Do not edit it by hand;
+  rebuild it with `cd frontend && npm run build`.
+- `frontend/src/features/observations/` presents backend-qualified monthly
+  findings and longer-period patterns; it does not write financial records
+  except through explicit review actions.
+- `frontend/src/features/imports/` owns the staged-import review interface; the
+  backend remains authoritative for parsing, duplicate detection, validation,
+  reconciliation, backups, and commits.
+- `src/clearspend/http/` serves static assets and exposes the local API.
+- `src/clearspend/imports/` parses statements and persists normalized records.
+- `src/clearspend/staging/` owns staged analysis, duplicate decisions,
+  reconciliation, reviewed commit decisions, and pre-commit backups.
 - `tools/` contains generic local utilities permitted by `.gitignore`.
 - `data/` contains the live database and user-specific exports. It is private.
 - `analysis/`, `samples/`, private tests, and review prototypes remain local.

@@ -1,7 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
-const { ApiError, getJson, postForm, postJson } = require('../../dist/api.js');
+const { ApiError, getJson, postForm, postJson } = require('./legacy/api.js');
 
 function response(payload, { ok = true, status = 200 } = {}) {
   return {

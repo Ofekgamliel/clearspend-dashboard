@@ -4,7 +4,7 @@ const assert = require('node:assert/strict');
 const {
   buildObservationsUrl,
   loadObservationPayload,
-} = require('../../dist/observation-client.js');
+} = require('./legacy/observation-client.js');
 
 test('observation endpoint URL includes the selected scope and income visibility', () => {
   assert.equal(

@@ -112,7 +112,7 @@ Run the dependency-free frontend shared-utility tests with Node.js:
 node --test tests/frontend/*.test.js
 ```
 
-Build the isolated Vue migration preview without changing production `dist/`:
+Build the Vue production frontend:
 
 ```bash
 cd frontend
@@ -121,10 +121,10 @@ npm test
 npm run build
 ```
 
-The preview output is written to ignored `dist-next/`. The current dashboard
-continues to run from `dist/` until a reviewed production cutover. With the
-local ClearSpend server running, `npm run dev` serves the preview on
-`http://127.0.0.1:5173/`; its first read-only feature is the category panel.
+The build writes generated assets to `dist/`, which is served by the local
+ClearSpend application. With the Python server running, `npm run dev` provides
+an optional development server at `http://127.0.0.1:5173/` and proxies local
+API requests to port 8765.
 
 Profile local sample statements:
 

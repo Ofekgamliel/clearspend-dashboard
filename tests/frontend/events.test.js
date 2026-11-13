@@ -6,7 +6,7 @@ const {
   destinationKey,
   eventDateValidationMessage,
   isBusinessTrip,
-} = require('../../dist/events.js');
+} = require('./legacy/events.js');
 
 const event = (id, startDate, options = {}) => ({
   id,

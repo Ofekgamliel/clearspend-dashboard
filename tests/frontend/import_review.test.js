@@ -11,7 +11,7 @@ const {
   merchantDecision,
   requiresManualReconciliation,
   unresolvedDuplicateDecisions,
-} = require('../../dist/import-review.js');
+} = require('./legacy/import-review.js');
 
 test('publishes the existing five staged-import steps', () => {
   assert.deepEqual(importStepNames, ['Files', 'Checks', 'Merchants', 'Reconcile', 'Approve']);
