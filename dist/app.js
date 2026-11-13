@@ -1,3 +1,11 @@
+const {getJson,postJson,postForm}=window.ClearSpendApi;
+const {money,compact,escapeHtml,formatDate,formatDateTime,formatMonth}=window.ClearSpendFormat;
+const {rankDisplayIdentities,strongDisplayIdentitySuggestion}=window.ClearSpendMatching;
+const {transactionColumns,sortedTransactionRows}=window.ClearSpendTransactions;
+const {buildEventPanelItems,eventDateValidationMessage,isBusinessTrip}=window.ClearSpendEvents;
+const {recurringTypeOptions,recurringCadenceOptions,recurringStatusLabels,recurringStatusClass,recurringColumns,sortedRecurringRows}=window.ClearSpendRecurring;
+const {importStepNames,manualReconciliationFiles:requiredReconciliationFiles,requiresManualReconciliation,invalidMerchantDecisions:findInvalidMerchantDecisions,unresolvedDuplicateDecisions:findUnresolvedDuplicateDecisions,merchantDecision,importPreviewRows:buildImportPreviewRows,importPreviewIdentity:resolveImportPreviewIdentity,importPreviewStatus}=window.ClearSpendImportReview;
+const {buildCategorySegments,categoryComparisonModel,categorySegmentAt,donutPercentageAt}=window.ClearSpendCategories;
 const state={period:'month',month:'',card:'all',data:null,detailTransactions:[],mappingData:null,merchantData:null,activeMerchant:null,activeTransaction:null,activeAdjustmentTransaction:null,detailMode:'',activeCategory:'',detailSort:{key:'transaction_date',direction:'desc'},categoryScope:'all',categoryTransactions:[],categoryView:'grouped',categorySearch:'',categoryGroupSort:{key:'latest_date',direction:'desc'},expandedMerchantGroups:new Set(),categoryExpandedSort:new Map(),merchantRecurringFilter:'all',recurringCache:new Map(),recurringModalPeriod:'month',recurringTab:'series',activeRecurringSeries:'',recurringSorts:{series:{key:'display_name',direction:'asc'},commitments:{key:'remaining',direction:'desc'}},eventsData:null,activeEvent:null,activeEventGroup:null,activeEventCategory:'all'};
 const colors=['#6658e8','#41b98c','#e6a14b','#e76b77','#5b8def','#a66dd4','#42a5b3','#d17b49','#8f9b4f','#d45f9f','#62748f','#9b7b58'];
 const cardPicker=document.querySelector('#cardPicker');
@@ -23,12 +31,6 @@ let monthPickerViewYear=null;
 let monthPickerSelected='';
 let categoryScopeSequence=0;
 
-const money=value=>new Intl.NumberFormat('en-IL',{style:'currency',currency:'ILS',maximumFractionDigits:2}).format(Number(value)||0).replace('ILS','₪');
-const compact=value=>new Intl.NumberFormat('en',{notation:'compact',maximumFractionDigits:1}).format(Number(value)||0);
-const escapeHtml=value=>String(value??'').replace(/[&<>'"]/g,char=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[char]));
-const formatDate=value=>value?new Intl.DateTimeFormat('en-GB',{day:'numeric',month:'short',year:'2-digit'}).format(new Date(`${value}T12:00:00`)):'—';
-const formatDateTime=value=>value?new Intl.DateTimeFormat('en-GB',{day:'numeric',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'}).format(new Date(value.replace(' ','T'))):'—';
-const formatMonth=value=>value?new Intl.DateTimeFormat('en-GB',{month:'long',year:'numeric'}).format(new Date(`${value}-01T12:00:00`)):'Latest month';
 const reportingPeriod=item=>item.billing_date?formatDate(item.billing_date):item.billing_month?formatMonth(item.billing_month):formatDate(item.transaction_date);
 const reportingSource=value=>({provider:'Provider billing date',statement:'Statement month',estimated:'Estimated installment month',purchase_date:'Purchase date fallback'}[value]||'Reporting month');
 const displayValue=value=>value===null||value===undefined||value===''?'—':escapeHtml(value);
@@ -45,9 +47,7 @@ function showToast(message,title='Updated'){
 async function loadDashboard(announce=false){
   try{
     state.recurringCache.clear();
-    const response=await fetch(`/api/dashboard?period=${state.period}&month=${encodeURIComponent(state.month)}&card=${encodeURIComponent(state.card)}`,{cache:'no-store'});
-    const data=await response.json();
-    if(!response.ok)throw new Error(data.error||'Could not load dashboard');
+    const data=await getJson(`/api/dashboard?period=${state.period}&month=${encodeURIComponent(state.month)}&card=${encodeURIComponent(state.card)}`,'Could not load dashboard');
     renderDashboard(data);
     loadRecurringPanel();
     loadEventsPanel();
@@ -96,8 +96,7 @@ async function renderCategoryScope(){
   }
   document.querySelector('#categoryList').innerHTML='<div><span>Loading routine categories…</span></div>';
   try{
-    const response=await fetch(`/api/categories?${categoryScopeQuery()}`,{cache:'no-store'}),data=await response.json();
-    if(!response.ok)throw new Error(data.error||'Could not load routine categories');
+    const data=await getJson(`/api/categories?${categoryScopeQuery()}`,'Could not load routine categories');
     if(sequence!==categoryScopeSequence)return;
     renderCategories(data.categories,data.total,data.category_comparison);
   }catch(error){if(sequence!==categoryScopeSequence)return;document.querySelector('#categoryList').innerHTML=`<div><span>${escapeHtml(error.message)}</span></div>`}
@@ -234,24 +233,16 @@ function renderCategories(categories,total,comparison){
   const donut=document.querySelector('#categoryDonut');
   const tooltip=document.querySelector('#categoryDonutTooltip');
   document.querySelector('#donutTotal').textContent=`₪${compact(total)}`;
-  const cumulative=[];let cursor=0;
-  const segments=categories.map((category,index)=>{
-    const start=Math.min(cursor,100);cursor=Math.min(cursor+category.share,100);
-    cumulative.push(`${colors[index%colors.length]} ${start}% ${cursor}%`);
-    return {...category,start,end:cursor};
-  });
-  if(cursor<100)cumulative.push(`#ececf1 ${cursor}% 100%`);
-  donut.style.background=`conic-gradient(${cumulative.join(',')})`;
-  donut.setAttribute('aria-label',categories.map(category=>`${category.category}: ${category.share}%`).join(', '));
+  const categoryModel=buildCategorySegments(categories,colors);const segments=categoryModel.segments;
+  donut.style.background=categoryModel.gradient;
+  donut.setAttribute('aria-label',categoryModel.ariaLabel);
   donut.onmousemove=event=>{
     const rect=donut.getBoundingClientRect();
     const x=event.clientX-rect.left-rect.width/2;
     const y=event.clientY-rect.top-rect.height/2;
     const distance=Math.hypot(x,y);
     if(distance<47||distance>rect.width/2){tooltip.classList.remove('show');return}
-    const angle=(Math.atan2(y,x)*180/Math.PI+450)%360;
-    const percentage=angle/3.6;
-    const segment=segments.find(item=>percentage>=item.start&&percentage<item.end);
+    const segment=categorySegmentAt(segments,donutPercentageAt(x,y));
     if(!segment){tooltip.classList.remove('show');return}
     tooltip.textContent=`${segment.category} · ${money(segment.amount)} · ${segment.share}%`;
     tooltip.style.left=`${event.clientX-rect.left}px`;
@@ -261,19 +252,14 @@ function renderCategories(categories,total,comparison){
   donut.onmouseleave=()=>tooltip.classList.remove('show');
   const previousMonth=comparison?.previous_month?formatMonth(comparison.previous_month):'the previous month';
   const comparisonMarkup=category=>{
-    if(!comparison?.previous_month)return '';
-    const status=category.comparison||'unavailable';
-    const labels={
-      up:`↑ ${Math.abs(Number(category.change_percent))}%`,
-      down:`↓ ${Math.abs(Number(category.change_percent))}%`,
-      same:'0%',new:'New',unavailable:'—',
-    };
+    const model=categoryComparisonModel(category,comparison);if(!model)return '';
+    const status=model.status;
     const detail=status==='unavailable'
       ?`No transactions are available for ${previousMonth}`
       :status==='new'
         ?`No spending in ${previousMonth}; ${money(category.amount)} in the selected month`
         :`${money(category.previous_amount)} in ${previousMonth}; ${money(category.amount)} in the selected month`;
-    return `<i class="category-change ${status}" title="${escapeHtml(detail)}" aria-label="${escapeHtml(detail)}">${labels[status]||'—'}</i>`;
+    return `<i class="category-change ${status}" title="${escapeHtml(detail)}" aria-label="${escapeHtml(detail)}">${model.label}</i>`;
   };
   document.querySelector('#categoryList').innerHTML=categories.length?categories.map((category,index)=>`
     <button type="button" data-category="${escapeHtml(category.category)}"><i class="cat-dot" style="background:${colors[index%colors.length]}"></i><span>${escapeHtml(category.category)}</span><strong>${money(category.amount)}</strong><em>${category.share}%</em>${comparisonMarkup(category)}</button>`).join(''):'<div><span>No category data</span></div>';
@@ -405,8 +391,7 @@ async function openDetail(view,source,initialSearch='',transactionIds=[],eventSc
   try{
     const selectedIds=new Set((transactionIds||[]).map(value=>String(value)));
     const initialQuery=isTransactions&&!selectedIds.size?`&q=${encodeURIComponent(initialSearch.trim())}`:'';
-    const response=await fetch(`/api/${view}?period=${state.period}&month=${encodeURIComponent(state.month)}&card=${encodeURIComponent(state.card)}&event_scope=${detailEventScope}${initialQuery}`,{cache:'no-store'});
-    const data=await response.json();if(!response.ok)throw new Error(data.error||`Could not load ${view}`);
+    const data=await getJson(`/api/${view}?period=${state.period}&month=${encodeURIComponent(state.month)}&card=${encodeURIComponent(state.card)}&event_scope=${detailEventScope}${initialQuery}`,`Could not load ${view}`);
     if(isTransactions){
       const scopedTransactions=selectedIds.size
         ?data.transactions.filter(item=>selectedIds.has(String(item.id)))
@@ -431,9 +416,7 @@ async function openDetail(view,source,initialSearch='',transactionIds=[],eventSc
         const request=++searchRequest;
         const searchPeriod=allTimeInput.checked&&term?'all':state.period;
         try{
-          const searchResponse=await fetch(`/api/transactions?period=${searchPeriod}&month=${encodeURIComponent(state.month)}&card=${encodeURIComponent(state.card)}&event_scope=${detailEventScope}&q=${encodeURIComponent(rawTerm)}`,{cache:'no-store'});
-          const searchData=await searchResponse.json();
-          if(!searchResponse.ok)throw new Error(searchData.error||'Could not search transactions');
+          const searchData=await getJson(`/api/transactions?period=${searchPeriod}&month=${encodeURIComponent(state.month)}&card=${encodeURIComponent(state.card)}&event_scope=${detailEventScope}&q=${encodeURIComponent(rawTerm)}`,'Could not search transactions');
           if(request!==searchRequest)return;
           state.detailTransactions=searchData.transactions;
           renderFullTransactions(searchData.transactions,searchData.total,term);
@@ -477,9 +460,7 @@ function refreshEventBadges(){
 async function loadEventsPanel(){
   const grid=document.querySelector('#eventsGrid'),panel=document.querySelector('#projectsEventsPanel'),emptyLabel=document.querySelector('#eventsEmptyLabel');
   try{
-    const response=await fetch(`/api/events?period=${state.period}&month=${encodeURIComponent(state.month)}&card=${encodeURIComponent(state.card)}`,{cache:'no-store'});
-    const data=await response.json();
-    if(!response.ok)throw new Error(data.error||'Could not load events');
+    const data=await getJson(`/api/events?period=${state.period}&month=${encodeURIComponent(state.month)}&card=${encodeURIComponent(state.card)}`,'Could not load events');
     state.eventsData=data;renderEventsPanel(data);refreshEventBadges();return data;
   }catch(error){panel.classList.remove('is-empty');emptyLabel.hidden=true;grid.innerHTML=`<p class="events-empty">${escapeHtml(error.message)}</p>`}
 }
@@ -490,12 +471,7 @@ function renderEventsPanel(data){
   const combinedSpending=data.events.reduce((sum,event)=>sum+Number(event.amount||0),0);
   document.querySelector('#eventsPeriod').textContent=`${data.events.length} events · ${money(combinedSpending)}`;
   const grid=document.querySelector('#eventsGrid');
-  const items=[];state.eventGroups=new Map();const groupedIds=new Set();
-  if(state.period!=='month'){
-    const byDestination=new Map();data.events.filter(event=>event.event_type==='business_trip'&&event.destination).forEach(event=>{const key=event.destination.trim().toLocaleLowerCase('he');if(!byDestination.has(key))byDestination.set(key,[]);byDestination.get(key).push(event)});
-    [...byDestination.entries()].filter(([,events])=>events.length>1).forEach(([key,events],index)=>{const id=`business-group-${index}`;state.eventGroups.set(id,events);events.forEach(event=>groupedIds.add(event.id));items.push({kind:'group',id,destination:events[0].destination,events,start_date:events.reduce((value,event)=>value<event.start_date?value:event.start_date,events[0].start_date)})});
-  }
-  data.events.filter(event=>!groupedIds.has(event.id)).forEach(event=>items.push({kind:'event',event,start_date:event.start_date}));items.sort((left,right)=>String(right.start_date).localeCompare(String(left.start_date)));
+  const {items,groups}=buildEventPanelItems(data.events,state.period);state.eventGroups=groups;
   grid.innerHTML=items.length?items.map(item=>{if(item.kind==='group'){const events=item.events,amount=events.reduce((sum,event)=>sum+Number(event.amount||0),0),completed=events.every(event=>event.status==='completed');return `<button class="event-card business-event-card" type="button" data-event-group="${item.id}"><span class="event-card-icon">${businessBriefcaseIcon}${completed?'<i>✓</i>':''}</span><span class="event-card-copy"><strong>${escapeHtml(`נסיעות עבודה ל${item.destination}`)}</strong><small>${events.length} business trips · ${state.period==='year'?'Latest year':'All time'}</small></span><span class="event-card-amount"><strong>${money(amount)}</strong><small>PERSONAL SPENDING</small></span></button>`}const event=item.event,business=event.event_type==='business_trip';return `<button class="event-card${business?' business-event-card':''}" type="button" data-event-id="${escapeHtml(event.id)}"><span class="event-card-icon">${eventIconMarkup(event)}${event.status==='completed'?'<i>✓</i>':''}</span><span class="event-card-copy"><strong>${escapeHtml(event.name)}</strong><small>${formatDate(event.start_date)} – ${formatDate(event.end_date)}</small></span><span class="event-card-amount"><strong>${money(event.amount)}</strong><small>${state.period==='month'?'THIS MONTH':'PERSONAL SPENDING'}</small></span></button>`}).join(''):'<p class="events-empty">No reviewed event overlaps this period and card selection. Change the period or card filter to see other events.</p>';
   grid.querySelectorAll('[data-event-id]').forEach(button=>button.addEventListener('click',()=>openEventModal(button.dataset.eventId)));
   grid.querySelectorAll('[data-event-group]').forEach(button=>button.addEventListener('click',()=>openEventGroup(button.dataset.eventGroup)));
@@ -508,18 +484,17 @@ function setEventCreateModal(show){
 }
 
 function syncEventDestinationField(form){
-  const field=form.querySelector('[data-event-destination-field]'),input=form.elements.destination,business=form.elements.event_type.value==='business_trip';
+  const field=form.querySelector('[data-event-destination-field]'),input=form.elements.destination,business=isBusinessTrip(form.elements.event_type.value);
   field.hidden=!business;input.required=business;if(!business)input.value='';
 }
 
 async function createEvent(form){
   const button=form.querySelector('button[type="submit"]'),error=document.querySelector('#eventCreateError'),values=Object.fromEntries(new FormData(form));
   error.textContent='';
-  if(values.end_date<values.start_date){error.textContent='End date cannot be before the start date.';form.elements.end_date.focus();return}
+  const validationMessage=eventDateValidationMessage(values);if(validationMessage){error.textContent=validationMessage;form.elements.end_date.focus();return}
   button.disabled=true;button.textContent='Creating…';
   try{
-    const response=await fetch('/api/events',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(values)}),result=await response.json();
-    if(!response.ok)throw new Error(result.error||'Could not create event');
+    const result=await postJson('/api/events',values,'Could not create event');
     setEventCreateModal(false);await loadEventsPanel();showToast(`${result.event.name} is ready for transaction assignments`,'Event created');
   }catch(createError){error.textContent=createError.message;showToast(createError.message,'Creation failed')}
   finally{button.disabled=false;button.textContent='Create event'}
@@ -577,11 +552,10 @@ async function saveEventSettings(form){
   if(!state.activeEvent)return;
   const values=Object.fromEntries(new FormData(form));
   const button=form.querySelector('button[type="submit"]'),error=document.querySelector('#eventEditError');error.textContent='';
-  if(values.end_date<values.start_date){error.textContent='End date cannot be before the start date.';form.elements.end_date.focus();return}
+  const validationMessage=eventDateValidationMessage(values);if(validationMessage){error.textContent=validationMessage;form.elements.end_date.focus();return}
   button.disabled=true;button.textContent='Saving…';
   try{
-    const response=await fetch('/api/event-settings',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({event_id:state.activeEvent.id,...values})});
-    const result=await response.json();if(!response.ok)throw new Error(result.error||'Could not save event');
+    const result=await postJson('/api/event-settings',{event_id:state.activeEvent.id,...values},'Could not save event');
     const eventId=state.activeEvent.id,fromGroup=Boolean(state.activeEventGroup);const data=await loadEventsPanel();const updated=data?.events.find(event=>event.id===eventId);
     setEventEditModal(false);if(updated)openEventModal(eventId,fromGroup);else closeEventModal();
     showToast(`${result.event.name} was updated`,'Event saved');
@@ -593,8 +567,7 @@ async function updateTransactionEvent(select){
   const transactionId=Number(select.dataset.transactionEvent),eventId=select.value,prior=select.dataset.previous||'';
   select.disabled=true;
   try{
-    const response=await fetch('/api/transaction-event',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({transaction_id:transactionId,event_id:eventId})});
-    const result=await response.json();if(!response.ok)throw new Error(result.error||'Could not update event');
+    const result=await postJson('/api/transaction-event',{transaction_id:transactionId,event_id:eventId},'Could not update event');
     const update=item=>{if(Number(item.id)!==transactionId)return;item.event_id=result.event_id;item.event_name=result.event_name;item.event_type=result.event_type;item.event_destination=result.event_destination};
     state.detailTransactions.forEach(update);state.categoryTransactions.forEach(update);
     select.dataset.previous=eventId;select.classList.toggle('assigned',Boolean(eventId));select.classList.toggle('business-event',result.event_type==='business_trip');select.innerHTML=eventAssignmentOptions(eventId);select.value=eventId;
@@ -603,33 +576,6 @@ async function updateTransactionEvent(select){
   finally{select.disabled=false}
 }
 
-const transactionColumns=[
-  ['merchant','Merchant'],['category','Category / subcategory'],['card','Provider / card / source'],
-  ['transaction_date','Transaction date'],['billing_date','Billing date'],['billing_month','Reporting month'],['amount','Charged amount'],
-  ['original_amount','Original amount'],['transaction_type','Transaction type'],['execution_method','Execution method'],
-  ['voucher_number','Voucher'],['exchange_rate','Exchange rate'],['notes','Notes'],
-];
-const transactionNumericKeys=new Set(['amount','original_amount','exchange_rate']);
-const transactionCollator=new Intl.Collator(['he','en'],{numeric:true,sensitivity:'base'});
-const transactionTextValue=value=>String(value??'').trim();
-function transactionSortValue(item,key){
-  if(key==='merchant')return `${transactionTextValue(item.merchant_display_name)} ${transactionTextValue(item.merchant_raw)} ${transactionTextValue(item.merchant_normalized)}`;
-  if(key==='category')return `${transactionTextValue(item.category)} ${transactionTextValue(item.subcategory)}`;
-  if(key==='card')return `${transactionTextValue(item.provider)} ${transactionTextValue(item.card_last4)} ${transactionTextValue(item.source_sheet)}`;
-  return item[key];
-}
-function sortedTransactionRows(rows,sort){
-  return [...rows].sort((left,right)=>{
-    const leftValue=transactionSortValue(left,sort.key);const rightValue=transactionSortValue(right,sort.key);
-    const leftEmpty=leftValue===null||leftValue===undefined||leftValue==='';
-    const rightEmpty=rightValue===null||rightValue===undefined||rightValue==='';
-    if(leftEmpty||rightEmpty){if(leftEmpty&&rightEmpty)return 0;return leftEmpty?1:-1}
-    let comparison;
-    if(transactionNumericKeys.has(sort.key))comparison=Number(leftValue)-Number(rightValue);
-    else comparison=transactionCollator.compare(String(leftValue),String(rightValue));
-    return sort.direction==='asc'?comparison:-comparison;
-  });
-}
 function fullTransactionRow(item){
   const adjusted=Boolean(item.adjustment_type);
   const positive=Number(item.amount)>0;
@@ -786,8 +732,7 @@ async function openCategoryTransactions(category,source,eventScope=state.categor
   detailTools.innerHTML='<div class="category-transaction-tools"><label class="detail-search"><span>⌕</span><input id="transactionSearch" type="search" placeholder="Search within this category"></label><div class="category-view-toggle" role="group" aria-label="Transaction view"><button type="button" class="active" data-category-view="grouped">Grouped by merchant</button><button type="button" data-category-view="individual">Individual transactions</button></div></div>';
   detailContent.innerHTML='<p class="loading-state">Loading category transactions…</p>';setDetailModal(true);
   try{
-    const response=await fetch(`/api/transactions?period=${state.period}&month=${encodeURIComponent(state.month)}&card=${encodeURIComponent(state.card)}&category=${encodeURIComponent(category)}&event_scope=${eventScope}`,{cache:'no-store'});
-    const data=await response.json();if(!response.ok)throw new Error(data.error||'Could not load category transactions');
+    const data=await getJson(`/api/transactions?period=${state.period}&month=${encodeURIComponent(state.month)}&card=${encodeURIComponent(state.card)}&category=${encodeURIComponent(category)}&event_scope=${eventScope}`,'Could not load category transactions');
     const categoryRows=data.transactions;
     state.categoryTransactions=categoryRows;
     state.categoryView='grouped';
@@ -809,8 +754,7 @@ async function openCategoryTransactions(category,source,eventScope=state.categor
 }
 
 async function fetchMappingData(){
-  const response=await fetch('/api/mapping',{cache:'no-store'});const data=await response.json();
-  if(!response.ok)throw new Error(data.error||'Could not load mapping data');
+  const data=await getJson('/api/mapping','Could not load mapping data');
   state.mappingData=data;return data;
 }
 
@@ -838,8 +782,7 @@ async function saveMerchantMapping(form){
   const button=form.querySelector('button');button.disabled=true;button.textContent='Saving…';
   const payload={merchant_normalized:form.dataset.merchant,category:form.elements.category.value,subcategory:form.elements.subcategory.value};
   try{
-    const response=await fetch('/api/mapping',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
-    const result=await response.json();if(!response.ok)throw new Error(result.error||'Could not save mapping');
+    const result=await postJson('/api/mapping',payload,'Could not save mapping');
     showToast(`${result.transactions_updated} transactions updated`,'Mapping saved');
     await loadDashboard();await openMapping(null);
   }catch(error){showToast(error.message,'Mapping failed');button.disabled=false;button.textContent='Save'}
@@ -847,8 +790,7 @@ async function saveMerchantMapping(form){
 
 async function fetchMerchants(force=false){
   if(state.merchantData&&!force)return state.merchantData;
-  const response=await fetch('/api/merchants',{cache:'no-store'});const data=await response.json();
-  if(!response.ok)throw new Error(data.error||'Could not load merchants');
+  const data=await getJson('/api/merchants','Could not load merchants');
   state.merchantData=data;return data;
 }
 
@@ -919,7 +861,7 @@ async function saveManagedRecurringProfile(merchant,verdict){
   if(verdict==='recurring'&&!includedAliases.length){showToast('Select at least one original merchant name.','Recurring scope required');button.disabled=false;button.textContent=original;return}
   const payload={canonical_group_id:merchant.canonical_group_id,verdict,recurring_type:document.querySelector('#merchantRecurringType').value,cadence:document.querySelector('#merchantRecurringCadence').value,lifecycle_status:lifecycle,end_month:lifecycle==='ended'?endMonth:'',included_aliases:verdict==='recurring'?includedAliases:[]};
   try{
-    const response=await fetch('/api/recurring-profile/manage',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});const result=await response.json();if(!response.ok)throw new Error(result.error||'Could not update recurring decision');
+    const result=await postJson('/api/recurring-profile/manage',payload,'Could not update recurring decision');
     state.recurringCache.clear();const data=await fetchMerchants(true);const search=document.querySelector('#merchantSearch')?.value||'',category=document.querySelector('#merchantCategoryFilter')?.value||'all';renderMerchantManagement(data,search,category,state.merchantRecurringFilter);openMerchantEditor(merchant.canonical_group_id);await loadRecurringPanel(true);showToast(verdict==='recurring'?`${merchant.display_name} is now tracked as recurring.`:`${merchant.display_name} is no longer tracked as recurring.`,'Recurring decision saved');
   }catch(error){showToast(error.message,'Recurring update failed');button.disabled=false;button.textContent=original}
 }
@@ -951,7 +893,7 @@ async function applyMerchantChanges(){
   const {merchant,displayName,changedAliases}=merchantChanges();const button=document.querySelector('#merchantApplyButton');button.disabled=true;button.textContent='Applying…';
   const payload={canonical_group_id:merchant.canonical_group_id,display_name:displayName,aliases:changedAliases.map(select=>({merchant_normalized:select.dataset.merchant,category:select.value,subcategory:select.dataset.subcategory}))};
   try{
-    const response=await fetch('/api/merchants',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});const result=await response.json();if(!response.ok)throw new Error(result.error||'Could not update merchant');
+    const result=await postJson('/api/merchants',payload,'Could not update merchant');
     setMerchantEditor(false);state.merchantData=null;showToast(`${result.aliases_updated} aliases use “${result.display_name}” · ${result.transactions_updated} transactions recategorized`,'Merchant updated');await loadDashboard();await openMerchants(null);
   }catch(error){showToast(error.message,'Merchant update failed')}finally{button.disabled=false;button.textContent='Apply changes'}
 }
@@ -973,7 +915,7 @@ async function saveTransactionCorrection(){
   if(category===transaction.category&&transaction.category_source!=='transaction_override'){showToast('Choose a different category for this transaction.','No change');return}
   const button=document.querySelector('#transactionSaveButton');button.disabled=true;button.textContent='Saving…';const mode=state.detailMode;const activeCategory=state.activeCategory;
   try{
-    const response=await fetch('/api/transaction-category',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({transaction_id:transaction.id,category,subcategory:''})});const result=await response.json();if(!response.ok)throw new Error(result.error||'Could not save correction');
+    const result=await postJson('/api/transaction-category',{transaction_id:transaction.id,category,subcategory:''},'Could not save correction');
     setTransactionEditor(false);showToast(`${result.merchant_raw} moved to “${result.category}” for this transaction only.`,'Transaction corrected');await loadDashboard();
     if(mode==='category-transactions'&&activeCategory)await openCategoryTransactions(activeCategory,null);else await openDetail('transactions',null);
   }catch(error){showToast(error.message,'Correction failed')}finally{button.disabled=false;button.textContent='Save correction'}
@@ -1031,8 +973,7 @@ async function saveSpendingAdjustment(remove=false){
       payload.reimbursement_date=document.querySelector('#adjustmentDate').value;
       payload.note=document.querySelector('#adjustmentNote').value;
     }
-    const response=await fetch('/api/transaction-adjustment',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
-    const result=await response.json();if(!response.ok)throw new Error(result.error||'Could not save spending adjustment');
+    const result=await postJson('/api/transaction-adjustment',payload,'Could not save spending adjustment');
     setSpendingAdjustmentModal(false);
     showToast(remove?`${result.merchant_raw} counts at its original amount again.`:`Personal amount is now ${money(result.personal_amount)}.` ,remove?'Adjustment removed':'Reimbursement saved');
     await refreshAfterAdjustment();
@@ -1054,17 +995,12 @@ async function openImportAudit(){
 const recurringPanel=document.querySelector('#recurringPanel');
 const recurringModal=document.querySelector('#recurringModal');
 const recurringModalBody=document.querySelector('#recurringModalBody');
-const recurringTypeOptions=['Fixed recurring','Usage-based recurring','Scheduled obligation','Other recurring'];
-const recurringCadenceOptions=['Weekly','Monthly','Every 2 months','Quarterly','Every 6 months','Yearly','Custom','Irregular','Unknown'];
-const recurringStatusLabels={confirmed:'Confirmed',variable:'Variable',expected:'Expected',missing:'Missing',increased:'Increased',paid:'Paid',upcoming:'Upcoming',due:'Due',overdue:'Overdue',active:'Active',ended:'Ended',paused:'Paused',unknown:'Unknown',completed:'Completed'};
-const recurringStatusClass=value=>['missing','increased','due','overdue','unknown'].includes(value)?'amber':['ended','paused','completed'].includes(value)?'gray':'';
 const recurringCacheKey=period=>`${period}|${period==='month'?state.month:''}|${state.card}`;
 const shortMonth=value=>value?new Intl.DateTimeFormat('en-GB',{month:'short',year:'2-digit'}).format(new Date(`${value}-01T12:00:00`)):'—';
 
 async function fetchRecurring(period,force=false){
   const key=recurringCacheKey(period);if(!force&&state.recurringCache.has(key))return state.recurringCache.get(key);
-  const response=await fetch(`/api/recurring?period=${period}&month=${encodeURIComponent(state.month)}&card=${encodeURIComponent(state.card)}`,{cache:'no-store'});
-  const data=await response.json();if(!response.ok)throw new Error(data.error||'Could not load recurring spending');state.recurringCache.set(key,data);return data;
+  const data=await getJson(`/api/recurring?period=${period}&month=${encodeURIComponent(state.month)}&card=${encodeURIComponent(state.card)}`,'Could not load recurring spending');state.recurringCache.set(key,data);return data;
 }
 
 function recurringPreviewRow(item,index,tab){
@@ -1108,21 +1044,6 @@ function recurringMetrics(data,tab){
 }
 
 function recurringSelect(options,current,field,index){return `<span class="recurring-select-wrap"><select class="recurring-select recurring-select-${field.replaceAll('_','-')}" aria-label="${field==='recurring_type'?'Recurring type':'Cadence'}" data-recurring-field="${field}" data-recurring-row="${index}">${options.map(value=>`<option value="${escapeHtml(value)}"${value===current?' selected':''}>${escapeHtml(value)}</option>`).join('')}</select><i aria-hidden="true"></i></span>`}
-const recurringColumns={
-  series:[['display_name','Merchant'],['category','Category'],['recurring_type','Type'],['cadence','Cadence'],['amount','Amount'],['coverage','Expected / coverage'],['status','Status']],
-  commitments:[['display_name','Purchase'],['category','Category'],['current_installment','Progress'],['paid','Paid'],['remaining','Remaining'],['status','Status']],
-};
-const recurringNumericKeys=new Set(['amount','current_installment','paid','remaining']);
-function sortedRecurringRows(rows,sort){
-  return [...rows].sort((left,right)=>{
-    const leftValue=left[sort.key],rightValue=right[sort.key];
-    const leftEmpty=leftValue===null||leftValue===undefined||leftValue==='';
-    const rightEmpty=rightValue===null||rightValue===undefined||rightValue==='';
-    if(leftEmpty||rightEmpty){if(leftEmpty&&rightEmpty)return 0;return leftEmpty?1:-1}
-    const comparison=recurringNumericKeys.has(sort.key)?Number(leftValue)-Number(rightValue):transactionCollator.compare(String(leftValue),String(rightValue));
-    return sort.direction==='asc'?comparison:-comparison;
-  });
-}
 function recurringSortHeaders(tab,sort){
   return recurringColumns[tab].map(([key,label],index)=>{
     const active=sort.key===key,direction=active?sort.direction:'none',icon=active?(direction==='asc'?'↑':'↓'):'↕';
@@ -1192,7 +1113,7 @@ function openRecurringModal(tab='series',index=null,seriesId=''){
 async function updateRecurringProfile(item,changes){
   const payload={canonical_group_id:item.canonical_group_id,recurring_type:changes.recurring_type||item.recurring_type,cadence:changes.cadence||item.cadence,lifecycle_status:changes.lifecycle_status||item.lifecycle_status,end_month:changes.end_month!==undefined?changes.end_month:(item.end_month||'')};
   const scrollTop=recurringModalBody.scrollTop;
-  try{const response=await fetch('/api/recurring-profile',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});const result=await response.json();if(!response.ok)throw new Error(result.error||'Could not update recurring profile');state.recurringCache.clear();showToast(payload.lifecycle_status==='ended'?'Ended lifecycle saved. Later periods will no longer expect this payment.':'Recurring profile saved to the local database.','Recurring updated');await loadRecurringPanel(true);await loadRecurringModal(true);setTimeout(()=>{recurringModalBody.scrollTop=scrollTop},0)}catch(error){showToast(error.message,'Recurring update failed');await loadRecurringModal(true);setTimeout(()=>{recurringModalBody.scrollTop=scrollTop},0)}
+  try{await postJson('/api/recurring-profile',payload,'Could not update recurring profile');state.recurringCache.clear();showToast(payload.lifecycle_status==='ended'?'Ended lifecycle saved. Later periods will no longer expect this payment.':'Recurring profile saved to the local database.','Recurring updated');await loadRecurringPanel(true);await loadRecurringModal(true);setTimeout(()=>{recurringModalBody.scrollTop=scrollTop},0)}catch(error){showToast(error.message,'Recurring update failed');await loadRecurringModal(true);setTimeout(()=>{recurringModalBody.scrollTop=scrollTop},0)}
 }
 
 document.querySelector('#openRecurringModal').addEventListener('click',()=>openRecurringModal());
@@ -1242,7 +1163,6 @@ const importBack=document.querySelector('#importBack');
 const importNext=document.querySelector('#importNext');
 const importStageHelp=document.querySelector('#importStageHelp');
 const importState={step:0,batch:null,decisions:new Map(),duplicateDecisions:new Map(),reconciled:new Set(),busy:false};
-const importStepNames=['Files','Checks','Merchants','Reconcile','Approve'];
 const displayPortal=document.createElement('div');
 displayPortal.className='stage-combo-menu stage-combo-portal';
 displayPortal.setAttribute('role','listbox');
@@ -1252,34 +1172,15 @@ let activeDisplayInput=null;
 
 function importKey(value){return encodeURIComponent(value)}
 function importDecision(encodedKey){return importState.decisions.get(decodeURIComponent(encodedKey))}
-function manualReconciliationFiles(){return (importState.batch?.files||[]).filter(file=>file.kind==='statement'&&file.status==='ready'&&['manual_required','mismatch'].includes(file.reconciliation?.status))}
-function invalidMerchantDecisions(){return [...importState.decisions.values()].filter(item=>!['needs_review','exclude'].includes(item.resolution)&&(!item.category||item.category==='Needs review'||(item.resolution==='link'&&!item.canonical_group_id)))}
-function unresolvedDuplicateDecisions(){return (importState.batch?.possible_duplicates||[]).filter(item=>!['skip','import'].includes(importState.duplicateDecisions.get(item.candidate_id)))}
+function manualReconciliationFiles(){return requiredReconciliationFiles(importState.batch?.files||[])}
+function invalidMerchantDecisions(){return findInvalidMerchantDecisions(importState.decisions)}
+function unresolvedDuplicateDecisions(){return findUnresolvedDuplicateDecisions(importState.batch?.possible_duplicates||[],importState.duplicateDecisions)}
 function initializeImportDecisions(){
   importState.decisions.clear();
   for(const merchant of importState.batch?.merchants||[]){
     if(!merchant.needs_review)continue;
-    const suggestion=strongDisplayIdentitySuggestion(merchant.merchant_raw);
-    if(suggestion){
-      importState.decisions.set(merchant.merchant_normalized,{
-        merchant_normalized:merchant.merchant_normalized,
-        resolution:'link',
-        category:suggestion.category_status==='unanimous'?suggestion.category:'Needs review',
-        display_name:suggestion.display_name,
-        canonical_group_id:suggestion.canonical_group_id,
-        scope:'exact',
-        suggested_match:true
-      });
-      continue;
-    }
-    importState.decisions.set(merchant.merchant_normalized,{
-      merchant_normalized:merchant.merchant_normalized,
-      resolution:merchant.provider_category?'provider':'needs_review',
-      category:merchant.provider_category||'Needs review',
-      display_name:merchant.display_name||merchant.merchant_raw,
-      canonical_group_id:merchant.canonical_group_id||'',
-      scope:merchant.provider_category?'exact':'batch'
-    });
+    const suggestion=suggestedDisplayIdentity(merchant.merchant_raw);
+    importState.decisions.set(merchant.merchant_normalized,merchantDecision(merchant,suggestion));
   }
 }
 
@@ -1384,25 +1285,7 @@ function renderDisplayCombobox(decision,key){
   return `<div class="stage-display-wrap"><input class="stage-control stage-display-input" data-display-input data-key="${key}" value="${escapeHtml(decision.display_name)}" autocomplete="off" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-label="Search existing display names or enter a new one" ${decision.resolution==='exclude'?'disabled':''}></div>`;
 }
 
-function normalizeIdentityText(value){return String(value||'').normalize('NFKD').toLocaleLowerCase().replace(/[\u0591-\u05c7]/g,'').replace(/[^\p{L}\p{N}]+/gu,' ').replace(/\b\d+\b/g,' ').replace(/\s+/g,' ').trim()}
-function displayMatchScore(query,candidate){
-  const wanted=normalizeIdentityText(query),existing=normalizeIdentityText(candidate);if(!wanted)return 1;if(!existing)return 0;
-  if(wanted===existing)return 100;
-  if(wanted.includes(existing)||existing.includes(wanted))return 80+Math.min(existing.length,wanted.length)/Math.max(existing.length,wanted.length)*10;
-  const wantedTokens=new Set(wanted.split(' ').filter(Boolean)),existingTokens=new Set(existing.split(' ').filter(Boolean));
-  const overlap=[...wantedTokens].filter(token=>existingTokens.has(token)).length;if(!overlap)return 0;
-  return overlap/wantedTokens.size*55+overlap/existingTokens.size*25;
-}
-function strongDisplayIdentitySuggestion(query){
-  const matches=(importState.batch?.display_identities||[]).map(item=>({
-    item,
-    score:Math.max(displayMatchScore(query,item.display_name),...(item.alias_names||[]).map(alias=>displayMatchScore(query,alias)))
-  })).sort((a,b)=>b.score-a.score||b.item.transactions-a.item.transactions);
-  const best=matches[0],runnerUp=matches[1];
-  if(!best||best.score<80)return null;
-  if(runnerUp&&best.score-runnerUp.score<20)return null;
-  return best.item;
-}
+function suggestedDisplayIdentity(query){return strongDisplayIdentitySuggestion(query,importState.batch?.display_identities||[])}
 function identityCategorySummary(identity){
   if(identity.category_status==='unanimous')return `${identity.category} · all ${identity.categories[0].aliases} mapped aliases`;
   if(identity.category_status==='mixed')return `Mixed categories · ${identity.categories.map(item=>`${item.category} (${item.aliases})`).join(' · ')}`;
@@ -1412,7 +1295,7 @@ function originalImportMerchant(decision){
   return importState.batch?.merchants?.find(item=>item.merchant_normalized===decision.merchant_normalized)?.merchant_raw||decision.display_name;
 }
 function displayMenuHtml(query,decision){
-  const matches=(importState.batch?.display_identities||[]).map(item=>({item,score:Math.max(displayMatchScore(query,item.display_name),...(item.alias_names||[]).map(alias=>displayMatchScore(query,alias)))})).filter(match=>!query.trim()||match.score>0).sort((a,b)=>b.score-a.score||b.item.transactions-a.item.transactions).slice(0,8);
+  const matches=rankDisplayIdentities(query,importState.batch?.display_identities||[]).filter(match=>!query.trim()||match.score>0).slice(0,8);
   const choices=matches.map(({item,score},index)=>`<button type="button" role="option" data-display-choice data-key="${importKey(decision.merchant_normalized)}" data-name="${escapeHtml(item.display_name)}" data-group="${escapeHtml(item.canonical_group_id)}" data-category-status="${escapeHtml(item.category_status)}" data-category="${item.category_status==='unanimous'?escapeHtml(item.category):''}"><strong>${escapeHtml(item.display_name)}${query.trim()&&index===0&&score>=70?'<em>Suggested match</em>':''}</strong><small>${item.aliases} aliases · ${item.transactions} transactions</small><small class="stage-category-context ${item.category_status==='mixed'?'mixed':''}">${escapeHtml(identityCategorySummary(item))}</small></button>`).join('');
   const createName=decision.suggested_match?originalImportMerchant(decision):query.trim();
   const create=createName?`<button type="button" class="create-display" data-display-create data-key="${importKey(decision.merchant_normalized)}" data-name="${escapeHtml(createName)}">Use “${escapeHtml(createName)}” as a new display name</button>`:'';
@@ -1432,7 +1315,7 @@ function openDisplayMenu(input,decision){
 
 function renderImportReconcile(){
   const files=importState.batch?.files||[];
-  return `<div class="stage-callout amber"><strong>Reconciliation compares only the scheduled statement charge.</strong> Pending and outside-cycle transactions remain visible separately and do not distort that total.</div><div class="stage-list"><div class="stage-row head"><span>File</span><span>Parsed total</span><span>Official total</span><span>Difference</span><span>Confirmation</span></div>${files.map(file=>{const reconciliation=file.reconciliation||{},required=file.kind==='statement'&&file.status==='ready'&&['manual_required','mismatch'].includes(reconciliation.status),matched=reconciliation.status==='matched',finalized=Math.max(0,(file.parsed||0)-(file.pending_rows||0));return `<div class="stage-row"><span><strong>${escapeHtml(file.filename)}</strong><small>${escapeHtml((file.provider||file.kind).toUpperCase())}${file.card_last4?` · •• ${escapeHtml(file.card_last4)}`:''}</small></span><span><strong>${money(reconciliation.parsed_total)}</strong><small>${finalized} finalized parsed rows</small></span><span>${reconciliation.official_total==null?'Check original':`<strong>${money(reconciliation.official_total)}</strong>`}</span><span>${reconciliation.difference==null?'—':money(reconciliation.difference)}</span><span>${required?`<label class="reconcile-confirm"><input type="checkbox" data-reconcile-file="${escapeHtml(file.filename)}" ${importState.reconciled.has(file.filename)?'checked':''}> <span>${reconciliation.status==='mismatch'?'I reviewed the mismatch':'I checked the statement total'}</span></label>`:`<span class="stage-badge ${matched?'':'purple'}">${matched?'Matched':'No check needed'}</span>`}</span></div>`}).join('')}</div>`;
+  return `<div class="stage-callout amber"><strong>Reconciliation compares only the scheduled statement charge.</strong> Pending and outside-cycle transactions remain visible separately and do not distort that total.</div><div class="stage-list"><div class="stage-row head"><span>File</span><span>Parsed total</span><span>Official total</span><span>Difference</span><span>Confirmation</span></div>${files.map(file=>{const reconciliation=file.reconciliation||{},required=requiresManualReconciliation(file),matched=reconciliation.status==='matched',finalized=Math.max(0,(file.parsed||0)-(file.pending_rows||0));return `<div class="stage-row"><span><strong>${escapeHtml(file.filename)}</strong><small>${escapeHtml((file.provider||file.kind).toUpperCase())}${file.card_last4?` · •• ${escapeHtml(file.card_last4)}`:''}</small></span><span><strong>${money(reconciliation.parsed_total)}</strong><small>${finalized} finalized parsed rows</small></span><span>${reconciliation.official_total==null?'Check original':`<strong>${money(reconciliation.official_total)}</strong>`}</span><span>${reconciliation.difference==null?'—':money(reconciliation.difference)}</span><span>${required?`<label class="reconcile-confirm"><input type="checkbox" data-reconcile-file="${escapeHtml(file.filename)}" ${importState.reconciled.has(file.filename)?'checked':''}> <span>${reconciliation.status==='mismatch'?'I reviewed the mismatch':'I checked the statement total'}</span></label>`:`<span class="stage-badge ${matched?'':'purple'}">${matched?'Matched':'No check needed'}</span>`}</span></div>`}).join('')}</div>`;
 }
 
 function renderImportApprove(){
@@ -1445,21 +1328,10 @@ function renderImportApprove(){
 }
 
 function importPreviewRows(){
-  const excluded=new Set([...importState.decisions.values()].filter(item=>item.resolution==='exclude').map(item=>item.merchant_normalized));
-  const confirmed=(importState.batch?.new_transactions||[]).filter(item=>!excluded.has(item.merchant_normalized));
-  const reviewed=(importState.batch?.possible_duplicates||[]).filter(item=>importState.duplicateDecisions.get(item.candidate_id)==='import'&&!excluded.has(item.merchant_normalized)).map(item=>({...item,reviewed_new:true}));
-  return [...confirmed,...reviewed].sort((a,b)=>String(b.billing_date||b.transaction_date||'').localeCompare(String(a.billing_date||a.transaction_date||''))||String(a.merchant||'').localeCompare(String(b.merchant||'')));
+  return buildImportPreviewRows(importState.batch,importState.decisions,importState.duplicateDecisions);
 }
 function importPreviewIdentity(row){
-  const decision=importState.decisions.get(row.merchant_normalized);const merchant=(importState.batch?.merchants||[]).find(item=>item.merchant_normalized===row.merchant_normalized);
-  return {display:decision?.display_name||merchant?.display_name||row.merchant,category:decision?.category||merchant?.category||'Needs review'};
-}
-function importPreviewStatus(row){
-  if(row.reviewed_new)return ['Reviewed as new','amber'];
-  if(row.source_status==='pending')return ['Pending · not final','amber'];
-  if(row.source_status==='outside_cycle')return ['Outside billing cycle','purple'];
-  if(row.installment_number)return [`Installment ${row.installment_number}${row.installment_total?`/${row.installment_total}`:''}`,'purple'];
-  return ['Confirmed new',''];
+  return resolveImportPreviewIdentity(row,importState.decisions,importState.batch?.merchants||[]);
 }
 function renderImportTransactionPreview(){
   const rows=importPreviewRows();
@@ -1473,8 +1345,7 @@ async function analyzeImportFiles(files){
   importState.busy=true;renderImportStage();
   const form=new FormData();[...files].forEach(file=>form.append('files',file));
   try{
-    const response=await fetch('/api/import/analyze',{method:'POST',body:form});const payload=await response.json();
-    if(!response.ok)throw new Error(payload.error||'Could not analyze files');
+    const payload=await postForm('/api/import/analyze',form,'Could not analyze files');
     importState.batch=payload;importState.step=1;importState.reconciled.clear();importState.duplicateDecisions.clear();initializeImportDecisions();
     showToast(`${payload.files.length} files staged. No transactions were added.`,`Analysis complete`);
   }catch(error){showToast(error.message,'Analysis failed')}
@@ -1488,8 +1359,7 @@ async function commitImportBatch(){
     if(manualReconciliationFiles().some(file=>!importState.reconciled.has(file.filename)))throw new Error('Confirm every statement total before importing');
     if(unresolvedDuplicateDecisions().length)throw new Error('Review every possible duplicate before importing');
     const duplicateDecisions=[...importState.duplicateDecisions].map(([candidate_id,action])=>({candidate_id,action}));
-    const response=await fetch('/api/import/commit',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({batch_id:importState.batch.batch_id,decisions:[...importState.decisions.values()],duplicate_decisions:duplicateDecisions,reconciled_files:[...importState.reconciled]})});
-    const payload=await response.json();if(!response.ok)throw new Error(payload.error||'Import failed');
+    const payload=await postJson('/api/import/commit',{batch_id:importState.batch.batch_id,decisions:[...importState.decisions.values()],duplicate_decisions:duplicateDecisions,reconciled_files:[...importState.reconciled]},'Import failed');
     const inserted=payload.results.reduce((sum,item)=>sum+(item.inserted||0),0);const duplicates=payload.results.reduce((sum,item)=>sum+(item.duplicates||0),0);
     importState.batch=null;importState.decisions.clear();importState.duplicateDecisions.clear();importState.reconciled.clear();importState.step=0;setModal(false);
     showToast(`${inserted} transactions added${duplicates?` · ${duplicates} duplicates skipped`:''}. Backup created first.`,'Import complete');await loadDashboard();

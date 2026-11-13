@@ -2,15 +2,13 @@
 (()=>{
 const panel=document.querySelector('#financialObservations');
 if(!panel)return;
+const {getJson,postJson}=window.ClearSpendApi;
+const {median,shiftMonth,monthLabel,monthRange}=window.ClearSpendFormat;
 const grid=document.querySelector('#observationGrid'),count=document.querySelector('#observationCount'),scope=document.querySelector('#observationScope'),emptyLabel=document.querySelector('#observationEmptyLabel');
 const modal=document.querySelector('#observationModal');
 let loadSequence=0,currentGroups=[],currentRawFindings=[],activeGroup=null,currentObservationView=null;
 const reviewedFindingKeys=new Set();
 
-const median=values=>{const sorted=values.map(Number).filter(Number.isFinite).sort((a,b)=>a-b);if(!sorted.length)return 0;const middle=Math.floor(sorted.length/2);return sorted.length%2?sorted[middle]:(sorted[middle-1]+sorted[middle])/2};
-const shiftMonth=(value,offset)=>{const [year,month]=value.split('-').map(Number),date=new Date(year,month-1+offset,1,12);return `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,'0')}`};
-const monthLabel=value=>value?new Intl.DateTimeFormat('en-GB',{month:'short',year:'numeric'}).format(new Date(`${value}-01T12:00:00`)):'—';
-const monthRange=months=>{const values=[...new Set(months.filter(Boolean))].sort();return values.length<2?monthLabel(values[0]):`${monthLabel(values[0])} – ${monthLabel(values.at(-1))}`};
 const personalAmount=transaction=>Number(transaction.personal_amount??transaction.amount)||0;
 const chargedAmount=transaction=>Number(transaction.amount)||0;
 const identity=transaction=>`${transaction.canonical_merchant_id||transaction.merchant_normalized}\u0000${transaction.category||''}`;
@@ -22,7 +20,6 @@ const isFee=value=>feePattern.test(String(value||''));
 const isForeign=transaction=>transaction.original_amount!=null&&transaction.original_currency&&![transaction.charged_currency,'₪','ILS'].includes(transaction.original_currency);
 const currencyThreshold=currency=>String(currency||'').toUpperCase()==='JPY'?100:1;
 const currencyMoney=(value,currency)=>`${String(currency||'').trim()} ${Number(value||0).toLocaleString('en-IL',{maximumFractionDigits:2})}`.trim();
-const fetchJson=async url=>{const response=await fetch(url,{cache:'no-store'}),payload=await response.json();if(!response.ok)throw new Error(payload.error||'Could not load local data');return payload};
 const finding=(type,month,label,options)=>({type,month,label,score:Number(options.score)||0,...options});
 const sameProfile=(transaction,series)=>(series.source_aliases||[]).includes(transaction.merchant_raw)&&transaction.category===series.category;
 const daysApart=(left,right)=>Math.round(Math.abs(new Date(`${left}T12:00:00`)-new Date(`${right}T12:00:00`))/86400000);
@@ -242,7 +239,7 @@ function openObservation(item,{focusClose=true,preserveScroll=false}={}){
 }
 async function saveReview(item,remove=false){
   const option=resolutionOptions[item.type];if(!option||!item.findingKey)return;
-  const response=await fetch('/api/observation-review',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({finding_key:item.findingKey,observation_type:item.type,resolution:option.resolution,month:item.month,transaction_ids:item.transactionIds||[],recurring_series_id:item.recurringSeriesId||'',occurrence_start:item.occurrenceStart||'',occurrence_end:item.occurrenceEnd||'',merchant_label:item.label||'',remove})}),result=await response.json();if(!response.ok)throw new Error(result.error||'Could not save the observation review');
+  await postJson('/api/observation-review',{finding_key:item.findingKey,observation_type:item.type,resolution:option.resolution,month:item.month,transaction_ids:item.transactionIds||[],recurring_series_id:item.recurringSeriesId||'',occurrence_start:item.occurrenceStart||'',occurrence_end:item.occurrenceEnd||'',merchant_label:item.label||'',remove},'Could not save the observation review');
   if(remove)reviewedFindingKeys.delete(item.findingKey);else reviewedFindingKeys.add(item.findingKey);renderObservationCards();openObservation(activeGroup,{focusClose:false,preserveScroll:true});showToast(remove?'Finding restored to active observations.':'Review decision saved to the local database.',remove?'Observation restored':'Observation reviewed');
 }
 function openFindingActivity(item,type){
@@ -267,7 +264,7 @@ async function loadObservations(){
   try{
     const dashboard=state.data,available=[...(dashboard.available_months||[])].sort(),scopeStart=(dashboard.period?.start||'').slice(0,7),scopeEnd=(dashboard.period?.end||selectedMonth).slice(0,7);
     const targetMonths=period==='month'?[selectedMonth]:available.filter(value=>value>=scopeStart&&value<=scopeEnd),fetchMonths=available.filter(value=>value<=scopeEnd),recurringMonths=period==='month'?targetMonths:fetchMonths;
-    const [transactionPayloads,recurringPayloads,household,reviewPayload]=await Promise.all([Promise.all(fetchMonths.map(value=>fetchJson(`/api/transactions?period=month&month=${encodeURIComponent(value)}&card=${encodeURIComponent(card)}`))),Promise.all(recurringMonths.map(value=>fetchJson(`/api/recurring?period=month&month=${encodeURIComponent(value)}&card=${encodeURIComponent(card)}`))),card==='all'?fetchJson('/api/dashboard?period=all&card=all'):Promise.resolve(null),fetchJson('/api/observation-reviews')]);
+    const [transactionPayloads,recurringPayloads,household,reviewPayload]=await Promise.all([Promise.all(fetchMonths.map(value=>getJson(`/api/transactions?period=month&month=${encodeURIComponent(value)}&card=${encodeURIComponent(card)}`))),Promise.all(recurringMonths.map(value=>getJson(`/api/recurring?period=month&month=${encodeURIComponent(value)}&card=${encodeURIComponent(card)}`))),card==='all'?getJson('/api/dashboard?period=all&card=all'):Promise.resolve(null),getJson('/api/observation-reviews')]);
     if(sequence!==loadSequence)return;
     reviewedFindingKeys.clear();(reviewPayload.reviews||[]).forEach(item=>reviewedFindingKeys.add(item.finding_key));
     const transactionsByMonth=new Map(fetchMonths.map((value,index)=>[value,(transactionPayloads[index].transactions||[]).map(item=>({...item,_month:value}))]));
