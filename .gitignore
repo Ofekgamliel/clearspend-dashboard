@@ -15,7 +15,13 @@ backups/
 # Private analysis and review artifacts derived from real statements
 analysis/
 dist/*-review.html
-tests/
+# Existing statement-derived tests remain local. Only the explicitly synthetic
+# suite below is safe and reproducible in a fresh checkout.
+tests/*
+!tests/synthetic/
+!tests/synthetic/**
+!tests/frontend/
+!tests/frontend/**
 
 # One-off local research, review, and migration utilities
 tools/apply_*.py
@@ -34,4 +40,7 @@ tools/write_research_artifacts.py
 __pycache__/
 *.pyc
 .venv/
+node_modules/
+dist-next/
+*.tsbuildinfo
 .DS_Store

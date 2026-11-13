@@ -6,6 +6,8 @@ These rules apply to every automated or AI-assisted change in this repository.
 
 - Git, commits, pushes, privacy checks: `GIT_WORKFLOW.md`
 - Runtime boundaries, persistence, migrations: `docs/ARCHITECTURE.md`
+- Current refactoring contracts and ownership: `docs/REFACTORING_BASELINE.md`
+- Migration-runner design: `docs/DATABASE_MIGRATIONS.md`
 - Imports, duplicates, merchants, categories: `docs/IMPORT_AND_MAPPING.md`
 - Dates, installments, income, charts, totals: `docs/REPORTING_RULES.md`
 - Observation eligibility, thresholds, merging, reviews: `docs/FINANCIAL_OBSERVATIONS.md`
@@ -62,7 +64,13 @@ surface the conflict and preserve user data while resolving it.
 
 ## Verification and reporting
 
-- Run the local test suite when private fixtures are present:
+- Run the tracked synthetic suite for every applicable code change:
+
+  ```bash
+  PYTHONPATH=src:. .venv/bin/python -m unittest discover -s tests/synthetic -v
+  ```
+
+- Also run the complete local suite when private fixtures are present:
 
   ```bash
   PYTHONPATH=src:. .venv/bin/python -m unittest discover -s tests -v

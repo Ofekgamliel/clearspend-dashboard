@@ -69,13 +69,21 @@ Run every command from the repository root.
    the `github-personal` SSH alias and point to
    `Ofekgamliel/clearspend-dashboard`.
 
-5. Run the relevant tests:
+5. Run the tracked synthetic tests:
+
+   ```bash
+   PYTHONPATH=src:. .venv/bin/python -m unittest discover -s tests/synthetic -v
+   ```
+
+   Also run the complete local regression suite when its private fixtures are
+   available:
 
    ```bash
    PYTHONPATH=src:. .venv/bin/python -m unittest discover -s tests -v
    ```
 
-   These tests use private local fixtures and are intentionally not committed.
+   Only `tests/synthetic/` is committed. Statement-derived tests and fixtures
+   elsewhere under `tests/` remain private and intentionally ignored.
 
 6. Commit with a specific description:
 
