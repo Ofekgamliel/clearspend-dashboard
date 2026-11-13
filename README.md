@@ -94,11 +94,37 @@ import.
 
 ## Useful local commands
 
-Run the test suite when its private local fixtures are available:
+Run the tracked synthetic suite available in every checkout:
+
+```bash
+PYTHONPATH=src:. .venv/bin/python -m unittest discover -s tests/synthetic -v
+```
+
+Run the complete local suite when its private statement fixtures are available:
 
 ```bash
 PYTHONPATH=src:. .venv/bin/python -m unittest discover -s tests -v
 ```
+
+Run the dependency-free frontend shared-utility tests with Node.js:
+
+```bash
+node --test tests/frontend/*.test.js
+```
+
+Build the isolated Vue migration preview without changing production `dist/`:
+
+```bash
+cd frontend
+npm install
+npm test
+npm run build
+```
+
+The preview output is written to ignored `dist-next/`. The current dashboard
+continues to run from `dist/` until a reviewed production cutover. With the
+local ClearSpend server running, `npm run dev` serves the preview on
+`http://127.0.0.1:5173/`; its first read-only feature is the category panel.
 
 Profile local sample statements:
 
@@ -117,6 +143,8 @@ The export is written to the ignored `data/merchant-mappings.json` path.
 ## Documentation
 
 - [Architecture and data ownership](docs/ARCHITECTURE.md)
+- [Refactoring baseline and current contracts](docs/REFACTORING_BASELINE.md)
+- [Database migration design](docs/DATABASE_MIGRATIONS.md)
 - [Import and merchant-mapping rules](docs/IMPORT_AND_MAPPING.md)
 - [Reporting and calculation rules](docs/REPORTING_RULES.md)
 - [Financial observation rules](docs/FINANCIAL_OBSERVATIONS.md)
