@@ -355,6 +355,64 @@ recurring charges to prevent duplicate cards, and preserves the distinction
 between first observed and confirmed new. Coverage proof and response assembly
 remain outside this pure rule.
 
+The first long-period observation slice is isolated in
+`observations/historical_rules.py`. It owns shared three-month change windows,
+six-month baselines, lifecycle selection and the routine-spending shift rule,
+including event and refund exclusions. It now also owns the three-tier
+amount-left trend rule: repeated overspending, spending outgrowing income, and
+consistent amount-left movement. It also owns lasting category-routine shifts,
+including asymmetric increase/decrease eligibility, covered zero-spend months,
+event exclusions and transaction-specific merchant drivers. Backend results
+now also qualify recurring-burden shifts by normalized monthly cost and active
+service count, with combined findings and started, ended and amount-changed
+service evidence. Persistent installment burden now has a pure owner too,
+including six-month qualification, plan-identity replacement evidence and the
+separate persistent-without-replacement result. These rules remain inactive
+until all historical families and assembled-payload parity are complete.
+
+Long-period merchant habits are being isolated separately in
+`observations/historical_merchant_rules.py`. The first slice detects merchants
+that became regular through either sustained monthly spending or repeated
+purchase frequency, using purchase dates and excluding reviewed recurring
+aliases, events, installments, transfers and refunds. Later frequency and
+typical-purchase shifts now share that eligibility boundary and preserve four
+separate outcomes: buying more, buying less, typical amount increased and
+typical amount decreased. Newly regular merchants are excluded from this
+second pass so one behavior is not reported twice. Grouping and payload
+assembly remain in the legacy engine.
+
+Framework-independent observation-card grouping is now isolated in
+`observations/grouping.py`. It owns score ordering, card priority, repeated
+entity summaries, compact category groups and the all-regular versus mixed
+merchant-habit presentation model. It returns typed values without HTML; the
+legacy browser still performs active production grouping until backend finding
+assembly is complete and parity-tested.
+
+Reversible observation-review policy is centralized in
+`observations/policy.py`. It defines the only three reviewable observation
+types, their persisted resolutions, labels, activity targets and transaction
+cardinality. The existing persistence workflow consumes the same resolution
+map; factual observations remain deliberately non-reviewable.
+
+Persisted review state can now be applied by the pure grouping boundary before
+cards are assembled. A reviewed keyed finding is suppressed, remaining grouped
+findings are regrouped, and a fully reviewed group disappears. Unkeyed factual
+findings always remain visible. The browser still performs this step in
+production until the backend observation response is introduced.
+
+Observation period orchestration is isolated in `observations/scope.py`. It
+separates target months from earlier transaction history and recurring-snapshot
+coverage for Month, Latest year and All time views, while preserving the
+selected-month fallback and empty-month behavior. No database reads or HTTP
+responses depend on it yet.
+
+The read-only observation input snapshot is assembled in
+`observations/inputs.py` from existing reporting, transaction, recurring and
+review read models. It reproduces the source payload set currently fetched by
+the browser: month-indexed transaction history, recurring snapshots, all-card
+household history, partial-month state, income visibility and active review
+keys. It is not exposed through HTTP and deliberately introduces no new SQL.
+
 ## Known compatibility and audit targets
 
 - Preserve `127.0.0.1` as the default bind address.
@@ -375,7 +433,7 @@ remain outside this pure rule.
 - Tracked dependency-free frontend shared-utility suite: `tests/frontend/`
 - Private statement-derived regression tests: ignored local files under `tests/`
 - Baseline at introduction: 7 synthetic tests and 39 total local tests passing
-- Current refactoring checkpoint: 196 synthetic tests and 228 total Python tests passing, plus 40 frontend tests
+- Current refactoring checkpoint: 280 synthetic tests and 312 total Python tests passing, plus 40 frontend tests
 - Current frontend shared-utility checkpoint: 40 tests passing
 - Current Vue preview checkpoint: 31 typed category/filter/income/metric/card/trend/transaction/recurring/event tests passing
 
