@@ -8,13 +8,7 @@ from datetime import date, datetime
 from pathlib import Path
 
 from clearspend.database.connection import connect_database
-
-
-OBSERVATION_RESOLUTIONS = {
-    "POSSIBLE DUPLICATE": "not_duplicate",
-    "ADDITIONAL RECURRING CHARGE": "expected_charge",
-    "UNUSUAL TRANSACTION": "not_unusual",
-}
+from clearspend.observations.policy import OBSERVATION_RESOLUTIONS
 
 
 def save_observation_review(
