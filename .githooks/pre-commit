@@ -25,8 +25,17 @@ while IFS= read -r path; do
     [ -n "$path" ] || continue
 
     case "$path" in
-        data/*|samples/*|analysis/*|backups/*|tests/*|.openai/*|.venv/*)
+        data/*|samples/*|analysis/*|backups/*|.openai/*|.venv/*)
             fail "Private/local path is staged: $path"
+            ;;
+        tests/*)
+            case "$path" in
+                tests/synthetic/*|tests/frontend/*)
+                    ;;
+                *)
+                    fail "Private/local test path is staged: $path"
+                    ;;
+            esac
             ;;
         dist/*-review.html)
             fail "Private review mockup is staged: $path"
