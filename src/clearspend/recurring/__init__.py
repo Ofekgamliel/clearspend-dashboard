@@ -1,0 +1,1 @@
+"""Recurring-payment domain rules."""
