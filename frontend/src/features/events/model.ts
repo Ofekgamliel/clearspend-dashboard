@@ -9,7 +9,7 @@ export function destinationKey(destination: string | null): string { return Stri
 
 export function buildEventPanelItems(events: EventSummary[], period: PeriodKey): EventPanelItem[] {
   const items: EventPanelItem[] = [];
-  const groupedIds = new Set<number>();
+  const groupedIds = new Set<string>();
   if (period !== 'month') {
     const destinations = new Map<string, EventSummary[]>();
     events.filter((event) => isBusinessTrip(event.event_type) && event.destination).forEach((event) => {
@@ -26,6 +26,22 @@ export function buildEventPanelItems(events: EventSummary[], period: PeriodKey):
   }
   events.filter((event) => !groupedIds.has(event.id)).forEach((event) => items.push({ kind: 'event', event, start_date: event.start_date }));
   return items.sort((left, right) => right.start_date.localeCompare(left.start_date));
+}
+
+export function eventFormError(values: {
+  name: string;
+  event_type: string;
+  destination: string;
+  start_date: string;
+  end_date: string;
+  budget: string;
+}): string {
+  if (!values.name.trim()) return 'Event name is required';
+  if (values.event_type === 'business_trip' && !values.destination.trim()) return 'Destination is required for a business trip';
+  if (!values.start_date || !values.end_date) return 'Valid start and end dates are required';
+  if (values.end_date < values.start_date) return 'End date cannot be before start date';
+  if (values.budget && (!Number.isFinite(Number(values.budget)) || Number(values.budget) < 0)) return 'Budget cannot be negative';
+  return '';
 }
 
 export function categoryTotals(transactions: EventTransaction[]): Array<{ category: string; amount: number }> {

@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import type { InstallmentCommitment, RecurringSeries } from '../src/api/contracts.ts';
-import { recurringUrl } from '../src/api/recurring.ts';
-import { burdenShares, nextRecurringSort, recurringStatusClass, recurringStatusLabels, sortRecurring } from '../src/features/recurring/model.ts';
+import { recurringUrl, saveRecurringProfile } from '../src/api/recurring.ts';
+import { burdenShares, nextRecurringSort, recurringCadenceOptions, recurringProfilePayload, recurringStatusClass, recurringStatusLabels, recurringTypeOptions, sortRecurring } from '../src/features/recurring/model.ts';
 
 const series = (overrides: Partial<RecurringSeries>): RecurringSeries => ({
   canonical_group_id: 'synthetic', display_name: 'Synthetic service', category: 'Services',
@@ -49,4 +49,40 @@ test('sorts series and commitments without mutating API rows', () => {
 test('starts a new recurring sort ascending and toggles the active sort', () => {
   assert.deepEqual(nextRecurringSort({ key: 'remaining', direction: 'desc' }, 'display_name'), { key: 'display_name', direction: 'asc' });
   assert.deepEqual(nextRecurringSort({ key: 'display_name', direction: 'asc' }, 'display_name'), { key: 'display_name', direction: 'desc' });
+});
+
+test('publishes the reviewed recurring type and cadence choices', () => {
+  assert.deepEqual([...recurringTypeOptions], ['Fixed recurring', 'Usage-based recurring', 'Scheduled obligation', 'Other recurring']);
+  assert.deepEqual([...recurringCadenceOptions], ['Monthly', 'Every 2 months', 'Quarterly', 'Twice yearly', 'Annual']);
+});
+
+test('saves type and cadence without changing lifecycle fields', async () => {
+  let request: { url: string; options: RequestInit } | undefined;
+  globalThis.fetch = (async (url: string | URL | Request, options: RequestInit = {}) => {
+    request = { url: String(url), options };
+    return { ok: true, status: 200, json: async () => ({
+      canonical_group_id: 'synthetic', display_name: 'Synthetic service', verdict: 'recurring',
+      recurring_type: 'Usage-based recurring', cadence: 'Monthly', cadence_months: 1,
+      lifecycle_status: 'active', end_month: null, updated_at: '2030-03-01T10:00:00',
+    }) } as Response;
+  }) as typeof fetch;
+  const payload = {
+    canonical_group_id: 'synthetic', recurring_type: 'Usage-based recurring', cadence: 'Monthly',
+    lifecycle_status: 'active', end_month: '',
+  };
+  const response = await saveRecurringProfile(payload);
+  assert.equal(response.recurring_type, 'Usage-based recurring');
+  assert.equal(request?.url, '/api/recurring-profile');
+  assert.equal(request?.options.method, 'POST');
+  assert.equal(request?.options.body, JSON.stringify(payload));
+});
+
+test('stages lifecycle updates and requires an explicit ended month', () => {
+  const active = series({ lifecycle_status: 'active', end_month: null });
+  assert.deepEqual(recurringProfilePayload(active, { lifecycle_status: 'ended', end_month: '2030-04' }), {
+    canonical_group_id: 'synthetic', recurring_type: 'Fixed recurring', cadence: 'Monthly',
+    lifecycle_status: 'ended', end_month: '2030-04',
+  });
+  const ended = series({ lifecycle_status: 'ended', end_month: '2030-04' });
+  assert.equal(recurringProfilePayload(ended, { lifecycle_status: 'active' }).end_month, '');
 });

@@ -128,7 +128,7 @@ export interface TransactionRow extends RecentTransaction {
   notes: string | null;
   execution_method: string | null;
   exchange_rate: number | null;
-  event_id: number | null;
+  event_id: string | null;
   event_name: string | null;
   event_type: string | null;
   event_destination: string | null;
@@ -149,6 +149,116 @@ export interface TransactionsQuery {
   search?: string;
   category?: string;
   eventScope?: EventScope;
+}
+
+export interface TransactionEventRequest {
+  transaction_id: number;
+  event_id: string;
+}
+
+export interface TransactionEventResponse {
+  status: 'assigned' | 'unassigned';
+  transaction_id: number;
+  merchant_raw: string;
+  event_id: string | null;
+  event_name: string | null;
+  event_type: string | null;
+  event_destination: string | null;
+}
+
+export interface TransactionCategoryRequest {
+  transaction_id: number;
+  category: string;
+  subcategory: string;
+}
+
+export interface TransactionCategoryResponse {
+  status: 'saved';
+  transaction_id: number;
+  merchant_raw: string;
+  category: string;
+  subcategory: string | null;
+}
+
+export interface TransactionAdjustmentRequest {
+  transaction_id: number;
+  remove: boolean;
+  reimbursed_amount?: number;
+  reimbursement_date?: string;
+  note?: string;
+}
+
+export interface TransactionAdjustmentResponse {
+  status: 'saved' | 'removed';
+  transaction_id: number;
+  merchant_raw: string;
+  adjustment_type?: 'full_reimbursement' | 'partial_reimbursement';
+  reimbursed_amount?: number;
+  personal_amount: number;
+}
+
+export interface MerchantAlias {
+  merchant_normalized: string;
+  merchant_raw: string;
+  category: string;
+  subcategory: string | null;
+  transactions: number;
+  recurring_included: boolean;
+}
+
+export interface MerchantRecurringProfile {
+  canonical_group_id: string;
+  verdict: 'recurring' | 'not_recurring';
+  recurring_type: string | null;
+  cadence: string | null;
+  cadence_months: number | null;
+  lifecycle_status: string;
+  end_month: string | null;
+  updated_at: string;
+  included_aliases: string[];
+}
+
+export interface MerchantRecord {
+  canonical_group_id: string;
+  display_name: string;
+  transactions: number;
+  amount: number;
+  last_seen: string;
+  categories: string[];
+  aliases: MerchantAlias[];
+  recurring_profile: MerchantRecurringProfile | null;
+}
+
+export interface MerchantReferenceResponse {
+  summary: {
+    display_identities: number;
+    mapped_aliases: number;
+    transactions: number;
+    multiple_categories: number;
+    recurring: number;
+  };
+  categories: string[];
+  merchants: MerchantRecord[];
+}
+
+export interface SaveMerchantAlias {
+  merchant_normalized: string;
+  category: string;
+  subcategory: string;
+}
+
+export interface SaveMerchantRequest {
+  canonical_group_id: string;
+  display_name: string;
+  aliases: SaveMerchantAlias[];
+}
+
+export interface SaveMerchantResponse {
+  status: 'saved';
+  display_name: string;
+  aliases_updated: number;
+  category_rules_updated: number;
+  transactions_updated: number;
 }
 
 export interface RecurringHistoryPoint {
@@ -228,6 +338,49 @@ export interface RecurringQuery {
   card: string;
 }
 
+export interface SaveRecurringProfileRequest {
+  canonical_group_id: string;
+  recurring_type: string;
+  cadence: string;
+  lifecycle_status: string;
+  end_month: string;
+}
+
+export interface SaveRecurringProfileResponse {
+  canonical_group_id: string;
+  display_name: string;
+  verdict: 'recurring';
+  recurring_type: string;
+  cadence: string;
+  cadence_months: number;
+  lifecycle_status: string;
+  end_month: string | null;
+  updated_at: string;
+}
+
+export interface ManageRecurringProfileRequest {
+  canonical_group_id: string;
+  verdict: 'recurring' | 'not_recurring';
+  recurring_type: string;
+  cadence: string;
+  lifecycle_status: string;
+  end_month: string;
+  included_aliases: string[];
+}
+
+export interface ManageRecurringProfileResponse {
+  canonical_group_id: string;
+  display_name: string;
+  verdict: 'recurring' | 'not_recurring';
+  recurring_type: string | null;
+  cadence: string | null;
+  cadence_months: number | null;
+  lifecycle_status: string;
+  end_month: string | null;
+  updated_at: string;
+  included_aliases: string[];
+}
+
 export interface EventTransaction {
   id: number;
   merchant_raw: string;
@@ -241,7 +394,7 @@ export interface EventTransaction {
 }
 
 export interface EventSummary {
-  id: number;
+  id: string;
   name: string;
   event_type: string;
   destination: string | null;
@@ -261,7 +414,7 @@ export interface EventSummary {
 }
 
 export interface AvailableEvent {
-  id: number;
+  id: string;
   name: string;
   event_type: string;
   destination: string | null;
@@ -282,6 +435,44 @@ export interface EventsQuery {
   period: PeriodKey;
   month?: string;
   card: string;
+}
+
+export interface EventMutationRecord {
+  id: string;
+  name: string;
+  event_type: string;
+  destination: string | null;
+  icon: string | null;
+  start_date: string;
+  end_date: string;
+  status: string;
+  budget: number | null;
+  notes: string | null;
+}
+
+export interface CreateEventRequest {
+  name: string;
+  event_type: string;
+  destination: string;
+  start_date: string;
+  end_date: string;
+  budget: number | null;
+  status: 'planned' | 'active' | 'completed';
+}
+
+export interface CreateEventResponse {
+  status: 'created';
+  event: EventMutationRecord;
+}
+
+export interface SaveEventRequest extends Omit<CreateEventRequest, 'status'> {
+  event_id: string;
+  status: 'planned' | 'active' | 'completed' | 'cancelled';
+}
+
+export interface SaveEventResponse {
+  status: 'updated';
+  event: EventMutationRecord;
 }
 
 export interface DashboardMetrics {
@@ -317,4 +508,83 @@ export interface DashboardQuery {
   period: PeriodKey;
   month?: string;
   card: string;
+}
+
+export interface ObservationFinding {
+  type: string;
+  month: string;
+  label: string;
+  title: string;
+  description: string;
+  score: number;
+  value: string;
+  comparison?: string;
+  result?: string;
+  evidence: string[];
+  entityLabel?: string;
+  entitySublabel?: string;
+  comparisonDetail?: string;
+  comparisonLabel?: string;
+  valueLabel?: string;
+  resultLabel?: string;
+  ruleText?: string;
+  eventLabel?: string;
+  patternPeriod?: string;
+  habitKind?: string;
+  findingKey?: string;
+  transactionIds?: number[];
+  recurringSeriesId?: string;
+  occurrenceStart?: string;
+  occurrenceEnd?: string;
+  cardSummary?: string;
+  cardComparison?: { primary: string; secondary: string };
+}
+
+export interface ObservationGroup extends ObservationFinding {
+  items: ObservationFinding[];
+  merchantPreview?: string;
+  compactCategories?: Array<{ label: string; result: string }>;
+  singular?: string;
+  entities?: string;
+  primaryLabel?: string;
+}
+
+export interface ObservationsResponse {
+  period: PeriodKey;
+  selectedCard: string;
+  selectedMonth: string;
+  observedStart: string;
+  observedEnd: string;
+  historical: boolean;
+  findingCount: number;
+  typeCount: number;
+  findings: ObservationFinding[];
+  groups: ObservationGroup[];
+}
+
+export interface ObservationsQuery {
+  period: PeriodKey;
+  month?: string;
+  card: string;
+  incomeHidden: boolean;
+}
+
+export interface ObservationReviewRequest {
+  finding_key: string;
+  observation_type: string;
+  resolution: string;
+  month: string;
+  transaction_ids: number[];
+  recurring_series_id: string;
+  occurrence_start: string;
+  occurrence_end: string;
+  merchant_label: string;
+  remove: boolean;
+}
+
+export interface ObservationReviewResponse {
+  status: 'reviewed' | 'restored';
+  finding_key: string;
+  resolution?: string;
+  changed?: boolean;
 }

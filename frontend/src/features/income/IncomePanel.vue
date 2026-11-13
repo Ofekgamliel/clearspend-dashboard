@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed, ref } from 'vue';
 import type { IncomeSummary, ReportingPeriod } from '../../api/contracts';
 import { formatMoney } from '../../shared/format';
 import { averageRangeLabel, incomeAllocation, incomePeriodLabel } from './model';
@@ -12,14 +12,17 @@ const props = defineProps<{
 }>();
 const emit = defineEmits<{ privacyChange: [hidden: boolean] }>();
 const allocation = computed(() => incomeAllocation(props.summary));
+const panelElement = ref<HTMLElement | null>(null);
 
 function togglePrivacy(): void {
   emit('privacyChange', !props.hidden);
 }
+function focusPanel(): void { panelElement.value?.scrollIntoView({ behavior: 'smooth', block: 'start' }); }
+defineExpose({ focusPanel });
 </script>
 
 <template>
-  <section class="income-panel" :class="{ 'income-private': hidden }" aria-label="Income and spending" :aria-busy="loading">
+  <section ref="panelElement" class="income-panel" :class="{ 'income-private': hidden }" aria-label="Income and spending" :aria-busy="loading">
     <div class="income-head">
       <div>
         <h2>Income &amp; spending</h2>

@@ -10,6 +10,10 @@ const props = defineProps<{
   period: PeriodKey;
   month: string;
   card: string;
+  refreshKey: number;
+}>();
+const emit = defineEmits<{
+  openCategory: [payload: { category: string; routine: boolean }];
 }>();
 const response = ref<CategoriesResponse | null>(null);
 const loading = ref(true);
@@ -53,7 +57,7 @@ function comparisonTitle(category: CategoryRow): string {
 }
 
 watch(
-  [scope, () => props.period, () => props.month, () => props.card],
+  [scope, () => props.period, () => props.month, () => props.card, () => props.refreshKey],
   loadCategories,
   { immediate: true },
 );
@@ -86,14 +90,14 @@ watch(
 
       <div class="category-list" aria-label="Category spending breakdown">
         <div class="category-columns" aria-hidden="true"><span /><span>Category</span><span>Amount</span><span>Share</span><span>Vs prior</span></div>
-        <div v-for="segment in donut.segments" :key="segment.category" class="category-row">
+        <button v-for="segment in donut.segments" :key="segment.category" type="button" class="category-row" :aria-label="`View transactions in ${segment.category}`" @click="emit('openCategory', { category: segment.category, routine: scope === 'routine' })">
           <i class="category-dot" :style="{ background: segment.color }" />
           <span class="category-name">{{ segment.category }}</span>
           <strong>{{ formatMoney(segment.amount) }}</strong>
           <span class="category-share">{{ formatPercent(segment.share) }}</span>
           <span v-if="comparisonFor(segment)" class="comparison-badge" :class="comparisonFor(segment)?.status" :title="comparisonTitle(segment)">{{ comparisonFor(segment)?.label }}</span>
           <span v-else class="comparison-badge unavailable">—</span>
-        </div>
+        </button>
       </div>
       <div v-if="loading" class="refresh-indicator" role="status">Updating…</div>
     </div>

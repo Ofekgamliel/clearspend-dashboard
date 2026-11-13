@@ -1,5 +1,10 @@
-import { getJson } from './client.ts';
-import type { RecurringQuery, RecurringResponse } from './contracts.ts';
+import { getJson, postJson } from './client.ts';
+import type {
+  RecurringQuery,
+  RecurringResponse,
+  SaveRecurringProfileRequest,
+  SaveRecurringProfileResponse,
+} from './contracts.ts';
 
 export function recurringUrl(query: RecurringQuery): string {
   const parameters = new URLSearchParams({
@@ -12,4 +17,14 @@ export function recurringUrl(query: RecurringQuery): string {
 
 export function getRecurring(query: RecurringQuery): Promise<RecurringResponse> {
   return getJson<RecurringResponse>(recurringUrl(query), 'Could not load recurring spending');
+}
+
+export function saveRecurringProfile(
+  request: SaveRecurringProfileRequest,
+): Promise<SaveRecurringProfileResponse> {
+  return postJson<SaveRecurringProfileResponse, SaveRecurringProfileRequest>(
+    '/api/recurring-profile',
+    request,
+    'Could not update recurring profile',
+  );
 }

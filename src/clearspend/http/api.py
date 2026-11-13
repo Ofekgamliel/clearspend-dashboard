@@ -8,6 +8,7 @@ from clearspend.events.service import create_event, save_event_settings, save_tr
 from clearspend.merchants.queries import mapping_payload, merchants_payload
 from clearspend.merchants.service import save_mapping, save_merchant
 from clearspend.observations.queries import observation_reviews_payload
+from clearspend.observations.payloads import observations_payload
 from clearspend.observations.service import save_observation_review
 from clearspend.recurring.queries import recurring_payload
 from clearspend.recurring.service import manage_recurring_profile, save_recurring_profile
@@ -26,6 +27,7 @@ JSON_GET_PATHS = frozenset({
     "/api/merchants",
     "/api/recurring",
     "/api/events",
+    "/api/observations",
     "/api/observation-reviews",
 })
 
@@ -46,6 +48,17 @@ JSON_POST_PATHS = frozenset({
 def _first(query: Mapping[str, Sequence[str]], key: str, default: str) -> str:
     values = query.get(key)
     return values[0] if values else default
+
+
+def _boolean_query(
+    query: Mapping[str, Sequence[str]], key: str, default: bool = False,
+) -> bool:
+    value = _first(query, key, "true" if default else "false").strip().lower()
+    if value in {"1", "true", "yes", "on"}:
+        return True
+    if value in {"0", "false", "no", "off"}:
+        return False
+    raise ValueError(f"Invalid {key}")
 
 
 def dispatch_json_get(
@@ -88,6 +101,14 @@ def dispatch_json_get(
         return categories_payload(database, period, card, month, event_scope), 200
     if path == "/api/recurring":
         return recurring_payload(database, period, card, month), 200
+    if path == "/api/observations":
+        return observations_payload(
+            database,
+            period=period,
+            card=card,
+            month=month,
+            income_hidden=_boolean_query(query, "income_hidden"),
+        ), 200
     return events_payload(database, period, card, month), 200
 
 

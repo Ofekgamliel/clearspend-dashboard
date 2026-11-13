@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from clearspend.observations.queries import observation_reviews_payload
+from clearspend.observations.historical_queries import historical_installments_payload
 from clearspend.observations.scope import ObservationScope, build_observation_scope
 from clearspend.recurring.queries import recurring_payload
 from clearspend.reporting.dashboard import dashboard_payload
@@ -23,6 +24,7 @@ class ObservationInputSnapshot:
     recurring_by_month: dict[str, dict]
     household_history: dict[str, dict]
     reviewed_finding_keys: frozenset[str]
+    installments_by_month: dict[str, dict] = field(default_factory=dict)
 
 
 def load_observation_inputs(
@@ -69,6 +71,11 @@ def load_observation_inputs(
         if average_data.get("current_month_partial") else ""
     )
     reviews = observation_reviews_payload(database).get("reviews") or ()
+    installments_by_month = historical_installments_payload(
+        database,
+        scope.history_months,
+        card,
+    )
     return ObservationInputSnapshot(
         scope=scope,
         selected_card=card,
@@ -83,4 +90,5 @@ def load_observation_inputs(
             for review in reviews
             if review.get("finding_key")
         ),
+        installments_by_month=installments_by_month,
     )

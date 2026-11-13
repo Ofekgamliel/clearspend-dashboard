@@ -1,9 +1,38 @@
-import type { InstallmentCommitment, RecurringSeries } from '../../api/contracts.ts';
+import type { InstallmentCommitment, RecurringSeries, SaveRecurringProfileRequest } from '../../api/contracts.ts';
 
 export type RecurringTab = 'series' | 'commitments' | 'verdicts';
 export type RecurringRow = RecurringSeries | InstallmentCommitment;
 export type RecurringSortKey = keyof RecurringSeries | keyof InstallmentCommitment;
 export interface RecurringSort { key: RecurringSortKey; direction: 'asc' | 'desc' }
+
+export const recurringTypeOptions = [
+  'Fixed recurring',
+  'Usage-based recurring',
+  'Scheduled obligation',
+  'Other recurring',
+] as const;
+
+export const recurringCadenceOptions = [
+  'Monthly',
+  'Every 2 months',
+  'Quarterly',
+  'Twice yearly',
+  'Annual',
+] as const;
+
+export function recurringProfilePayload(
+  item: RecurringSeries,
+  changes: Partial<Pick<SaveRecurringProfileRequest, 'recurring_type' | 'cadence' | 'lifecycle_status' | 'end_month'>>,
+): SaveRecurringProfileRequest {
+  const lifecycle = changes.lifecycle_status ?? item.lifecycle_status;
+  return {
+    canonical_group_id: item.canonical_group_id,
+    recurring_type: changes.recurring_type ?? item.recurring_type,
+    cadence: changes.cadence ?? item.cadence,
+    lifecycle_status: lifecycle,
+    end_month: lifecycle === 'ended' ? (changes.end_month ?? item.end_month ?? '') : '',
+  };
+}
 
 const numericKeys = new Set<RecurringSortKey>(['amount', 'current_installment', 'paid', 'remaining']);
 const collator = new Intl.Collator(['he', 'en'], { numeric: true, sensitivity: 'base' });

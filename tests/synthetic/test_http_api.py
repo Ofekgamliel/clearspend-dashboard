@@ -104,6 +104,45 @@ class HttpApiTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "Unknown JSON API route"):
             dispatch_json_get(self.database, "/api/not-real", {})
 
+    def test_observations_route_exposes_read_only_browser_compatible_findings(self) -> None:
+        connection = connect(self.database)
+        import_id = add_import(connection)
+        for suffix in ("one", "two"):
+            add_transaction(
+                connection,
+                import_id,
+                key=f"duplicate-{suffix}",
+                merchant="Synthetic Duplicate",
+                amount=100,
+                category="Household",
+                transaction_date="2030-03-10",
+                billing_month="2030-03",
+            )
+        connection.commit()
+        connection.close()
+
+        payload, status = dispatch_json_get(
+            self.database,
+            "/api/observations",
+            {"period": ["month"], "month": ["2030-03"], "card": ["all"]},
+        )
+
+        self.assertEqual(status, 200)
+        self.assertEqual(payload["period"], "month")
+        self.assertEqual(payload["selectedMonth"], "2030-03")
+        self.assertEqual(payload["findingCount"], 1)
+        self.assertEqual(payload["findings"][0]["type"], "POSSIBLE DUPLICATE")
+        self.assertEqual(payload["groups"][0]["type"], "POSSIBLE DUPLICATE")
+
+    def test_observations_route_validates_income_privacy_query(self) -> None:
+        self.assertIn("/api/observations", JSON_GET_PATHS)
+        with self.assertRaisesRegex(ValueError, "Invalid income_hidden"):
+            dispatch_json_get(
+                self.database,
+                "/api/observations",
+                {"income_hidden": ["sometimes"]},
+            )
+
     def test_transaction_get_forwards_search_and_category_filters(self) -> None:
         connection = connect(self.database)
         import_id = add_import(connection)

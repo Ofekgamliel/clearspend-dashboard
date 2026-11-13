@@ -1,5 +1,14 @@
-import { getJson } from './client.ts';
-import type { TransactionsQuery, TransactionsResponse } from './contracts.ts';
+import { getJson, postJson } from './client.ts';
+import type {
+  TransactionEventRequest,
+  TransactionEventResponse,
+  TransactionCategoryRequest,
+  TransactionCategoryResponse,
+  TransactionAdjustmentRequest,
+  TransactionAdjustmentResponse,
+  TransactionsQuery,
+  TransactionsResponse,
+} from './contracts.ts';
 
 export function transactionsUrl(query: TransactionsQuery): string {
   const parameters = new URLSearchParams({
@@ -17,5 +26,35 @@ export function getTransactions(query: TransactionsQuery): Promise<TransactionsR
   return getJson<TransactionsResponse>(
     transactionsUrl(query),
     'Could not load transactions',
+  );
+}
+
+export function saveTransactionEvent(
+  request: TransactionEventRequest,
+): Promise<TransactionEventResponse> {
+  return postJson<TransactionEventResponse, TransactionEventRequest>(
+    '/api/transaction-event',
+    request,
+    'Could not update event assignment',
+  );
+}
+
+export function saveTransactionCategory(
+  request: TransactionCategoryRequest,
+): Promise<TransactionCategoryResponse> {
+  return postJson<TransactionCategoryResponse, TransactionCategoryRequest>(
+    '/api/transaction-category',
+    request,
+    'Could not save category correction',
+  );
+}
+
+export function saveTransactionAdjustment(
+  request: TransactionAdjustmentRequest,
+): Promise<TransactionAdjustmentResponse> {
+  return postJson<TransactionAdjustmentResponse, TransactionAdjustmentRequest>(
+    '/api/transaction-adjustment',
+    request,
+    'Could not save spending adjustment',
   );
 }

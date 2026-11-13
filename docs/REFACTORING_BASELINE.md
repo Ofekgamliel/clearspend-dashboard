@@ -37,6 +37,7 @@ failures return the same shape with `500`.
 | `GET /api/merchants` | None | `merchants_payload` | Merchant management and import reference data |
 | `GET /api/recurring` | `period`, `card`, `month` | `recurring_payload` | Recurring panel, modal and observations |
 | `GET /api/events` | `period`, `card`, `month` | `events_payload` | Projects and events |
+| `GET /api/observations` | `period`, `card`, `month`, `income_hidden` | `observations_payload` | Backend-qualified findings and grouped cards |
 | `GET /api/observation-reviews` | None | `observation_reviews_payload` | Observation suppression/resolution state |
 
 Valid `period` values are `month`, `year` and `all`. Valid `event_scope`
@@ -206,8 +207,9 @@ These concepts must remain independent during repository extraction.
 
 `dist/api.js` is now the single production transport boundary for JSON reads,
 JSON mutations, multipart uploads and API-error propagation. `dist/app.js` and
-`dist/observations.js` still own feature-specific URLs and payload assembly, but
-do not call `fetch` directly.
+the observation client still own feature-specific URLs, but do not call `fetch`
+directly. `dist/observation-client.js` owns the consolidated observation URL and
+the explicit backend-first/browser-fallback policy.
 
 `dist/format.js` is the shared, framework-independent boundary for currency and
 date display, HTML escaping, month arithmetic and simple median/range helpers.
@@ -300,53 +302,76 @@ typed `/api/transactions` contract, preserves the default transaction-date
 descending sort, supports every displayed source column, and delegates
 substring search to the backend. Browsing without a search remains capped at
 1,000 rows; a non-empty query searches the complete history inside the selected
-period and card. Category corrections, reimbursements and event assignment are
-still production-owned write workflows and are deliberately absent here.
+period and card. Event assignment and transaction-specific category correction
+are migrated as typed mutations. A category correction uses the permanent
+merchant vocabulary but writes only a transaction override, leaving the
+merchant rule and future imports unchanged. Reviewed full and partial
+reimbursements are also migrated: the original charge stays intact, only the
+personal-spending adjustment is written, and an existing adjustment can be
+removed independently.
 
 The preview Recurring & commitments region now consumes the typed
 `/api/recurring` read model. It renders backend-owned recurring and installment
 totals, spending composition, scrollable previews, sortable detail tables,
 verdict summaries and actual billing history for monthly, latest-year and
-all-time scopes. The preview deliberately excludes type, cadence, lifecycle and
-merchant-membership mutations; those reviewed write workflows remain owned by
-the production UI until they receive a separate migration checkpoint.
+all-time scopes. Type and cadence edits are migrated as typed writes from the
+recurring-series table and refresh all affected read models after saving.
+Lifecycle editing is also migrated in the selected-series inspector: selection
+is staged until an explicit save, and ended profiles require an end month. The
+dedicated recurring-rules manager now owns reviewed alias membership, adding a
+merchant to recurring tracking, and the confirmed not-recurring decision. These
+changes affect recurring analysis only; transactions and merchant identities
+remain intact.
 
 The preview Projects & events region now consumes the typed `/api/events`
 contract. It renders period/card-filtered event cards, automatically groups
 repeated business-trip destinations in longer periods, and presents lifetime
 event totals, category breakdowns and exact transaction membership in a
-read-only modal. Event creation, event settings and transaction assignment
-remain production-owned write workflows and are not exposed by the preview.
+read-only modal. Event creation is migrated with typed validation for dates,
+budget and business-trip destinations; it creates the event without assigning
+transactions automatically. Transaction assignment is owned by the transaction
+browser and refreshes this read model after a save. Editing existing event
+settings is also migrated: name, type, business destination, dates, budget and
+status update presentation and period visibility without changing exact
+transaction membership.
 
-The first observation-calculation slice now has a pure backend owner in
+The preview Financial observations region consumes the typed consolidated
+`/api/observations` contract. It renders backend-qualified monthly findings and
+long-period patterns, established card identities, grouped-card summaries and
+source evidence in a details modal. It never recalculates eligibility or
+thresholds. The three deliberately reviewable types can save or undo the same
+local reversible decisions as production; factual cards remain read-only.
+Activity-navigation delegates to the existing Vue feature owners: exact or
+merchant-matched transactions open in the transaction modal, category shifts
+open routine-spending transactions, recurring findings open the applicable
+series or commitments view, and income findings focus the income panel.
+
+The first observation-calculation slice has a pure backend owner in
 `observations/transaction_rules.py`: possible-duplicate grouping, reliable
 six-month purchase baselines, large-purchase qualification, unusual-purchase
 qualification, overlap merging and deterministic review keys. This module does
-not query SQLite, format cards or serve an API response. The legacy browser
-engine remains authoritative until the remaining observation families are
-extracted and complete assembled-payload parity is proven.
+not query SQLite, format cards or serve an API response. It participates in the
+assembled backend workflow after complete cross-engine parity was proven.
 
 The second observation-calculation slice is isolated in
 `observations/monthly_rules.py`. It owns the amount-left decline rule and the
 routine-category spending-increase rule, plus routine merchant-activity
 changes. This includes their exact three-month coverage, active-month median
-and combined threshold requirements. These pure calculations are also inactive
-at the API boundary; production observation cards continue to use the unchanged
-browser engine.
+and combined threshold requirements. These pure calculations feed the active
+read-only observation API.
 
 Reviewed recurring-payment amount qualification is isolated in
 `observations/recurring_amount_rules.py`. It owns exact stream selection,
 fixed-versus-variable comparisons, original-currency handling, fee wording and
 the deliberately unconfirmed first-observed-fee result. It does not establish
-statement coverage or activate API findings; the production browser remains
-authoritative.
+statement coverage; the assembled workflow supplies that context.
 
 Monthly recurring occurrence qualification is isolated in
 `observations/recurring_cycle_rules.py`. It learns an expected billing day from
 the latest six prior charges, checks a seven-day window across calendar-month
 boundaries, keeps exact alias/provider/card streams separate, suppresses
-duplicate-only windows and produces deterministic review keys. It is not yet
-wired into observation responses.
+duplicate-only windows and produces deterministic review keys. It feeds the
+assembled monthly observation response.
 
 Fees outside reviewed recurring profiles are isolated in
 `observations/standalone_fee_rules.py`. The rule uses canonical
@@ -365,12 +390,12 @@ including asymmetric increase/decrease eligibility, covered zero-spend months,
 event exclusions and transaction-specific merchant drivers. Backend results
 now also qualify recurring-burden shifts by normalized monthly cost and active
 service count, with combined findings and started, ended and amount-changed
-service evidence. Persistent installment burden now has a pure owner too,
+service evidence. Persistent installment burden has a pure owner too,
 including six-month qualification, plan-identity replacement evidence and the
-separate persistent-without-replacement result. These rules remain inactive
-until all historical families and assembled-payload parity are complete.
+separate persistent-without-replacement result. These rules now feed the
+assembled historical response.
 
-Long-period merchant habits are being isolated separately in
+Long-period merchant habits are isolated separately in
 `observations/historical_merchant_rules.py`. The first slice detects merchants
 that became regular through either sustained monthly spending or repeated
 purchase frequency, using purchase dates and excluding reviewed recurring
@@ -378,15 +403,14 @@ aliases, events, installments, transfers and refunds. Later frequency and
 typical-purchase shifts now share that eligibility boundary and preserve four
 separate outcomes: buying more, buying less, typical amount increased and
 typical amount decreased. Newly regular merchants are excluded from this
-second pass so one behavior is not reported twice. Grouping and payload
-assembly remain in the legacy engine.
+second pass so one behavior is not reported twice. Backend presentation and
+grouping assemble these findings for the consolidated response.
 
 Framework-independent observation-card grouping is now isolated in
 `observations/grouping.py`. It owns score ordering, card priority, repeated
 entity summaries, compact category groups and the all-regular versus mixed
-merchant-habit presentation model. It returns typed values without HTML; the
-legacy browser still performs active production grouping until backend finding
-assembly is complete and parity-tested.
+merchant-habit presentation model. It returns typed values without HTML and is
+used by the active backend workflow as well as the browser fallback.
 
 Reversible observation-review policy is centralized in
 `observations/policy.py`. It defines the only three reviewable observation
@@ -397,21 +421,105 @@ map; factual observations remain deliberately non-reviewable.
 Persisted review state can now be applied by the pure grouping boundary before
 cards are assembled. A reviewed keyed finding is suppressed, remaining grouped
 findings are regrouped, and a fully reviewed group disappears. Unkeyed factual
-findings always remain visible. The browser still performs this step in
-production until the backend observation response is introduced.
+findings always remain visible. The backend applies this step before returning
+the active observation response; the browser fallback preserves the same rule.
 
 Observation period orchestration is isolated in `observations/scope.py`. It
 separates target months from earlier transaction history and recurring-snapshot
 coverage for Month, Latest year and All time views, while preserving the
-selected-month fallback and empty-month behavior. No database reads or HTTP
-responses depend on it yet.
+selected-month fallback and empty-month behavior. The read service uses this
+scope for the production response.
 
 The read-only observation input snapshot is assembled in
 `observations/inputs.py` from existing reporting, transaction, recurring and
 review read models. It reproduces the source payload set currently fetched by
 the browser: month-indexed transaction history, recurring snapshots, all-card
 household history, partial-month state, income visibility and active review
-keys. It is not exposed through HTTP and deliberately introduces no new SQL.
+keys. It remains an internal application input and deliberately introduces no
+new SQL.
+
+Long-period rule invocation is now coordinated by the pure typed boundary in
+`observations/historical_analysis.py`. It preserves reporting-month activity
+for household, category and commitment analysis while keeping purchase-date
+activity separate for merchant habits. The coordinator returns qualified raw
+signals in established card-priority order; it does not create presentation
+text, query the database or expose an endpoint directly.
+
+`observations/historical_inputs.py` adapts the existing read-only snapshot to
+that coordinator without another database query. Reporting months remain the
+source for spending, category and commitment trends, while transaction dates
+remain the source for merchant-habit months. Recurring aliases and lifecycle
+state are normalized once at this boundary. The read service invokes this
+internal adapter/analyzer for historical requests.
+
+Historical installment analysis now receives a dedicated internal read model
+from `observations/historical_queries.py`. Its stable plan identity includes
+card, canonical merchant, original purchase date, original amount, currency and
+installment count, so two plans at one merchant are not merged accidentally.
+This query is not exposed in the public recurring response and performs no
+writes.
+
+Qualified long-period signals are mapped to the shared observation-finding and
+group models by `observations/historical_presentation.py`. This boundary owns
+labels, explanatory comparisons, evidence rows and the established top-twelve
+merchant surface limit, but never recalculates eligibility. Grouping and active
+review suppression reuse the framework-independent grouping module. It now
+provides the historical presentation layer behind the production route.
+
+Single-month rule invocation is now coordinated by the pure typed boundary in
+`observations/monthly_analysis.py`. It preserves the production precedence for
+possible duplicates, reviewed recurring charges, additional billing-cycle
+charges, routine merchant activity, large and unusual purchases, and standalone
+fees. Exact recurring alias-plus-category membership, event exclusions,
+partial-month suppression and the distinction between routine spending and all
+positive personal spending are explicit inputs. The coordinator returns raw
+signals only; it does not query SQLite, format cards, expose an endpoint or
+own transport concerns.
+
+`observations/monthly_inputs.py` adapts the existing read-only monthly snapshot
+to that coordinator without another database query. It preserves reporting
+month separately from purchase date, normalizes charged and personal amounts,
+retains original-currency evidence, and uses the target month's reviewed
+recurring profiles. Purchase-date fallback follows the browser's established
+transaction-date, billing-date, reporting-month order. The combined adapter
+and analyzer remain internal application boundaries used by the read service.
+
+Qualified single-month signals are mapped to the shared finding and card-group
+models by `observations/monthly_presentation.py`. It preserves actionable
+metadata for the three reviewable finding types, including transaction IDs,
+recurring-series identity, occurrence dates and event labels. Explanatory text,
+comparison values and evidence are derived from already-qualified signals and
+their read-only source rows; eligibility is not recalculated. Active review
+suppression and grouping reuse the framework-independent grouping boundary.
+
+Monthly and historical paths now meet in the read-only application workflow in
+`observations/read_service.py`. It chooses the typed analysis boundary from the
+snapshot period, applies review suppression consistently, and returns one view
+model with active findings and grouped cards. `observations/payloads.py`
+serializes that view using the established browser finding and group field
+names, while leaving visual color and icon ownership in the frontend. The
+read-only `/api/observations` route exposes this contract after exact
+cross-engine parity was established. Production JavaScript now consumes it as
+the primary source and retains the previous browser engine as an automatic
+compatibility fallback if the route is unavailable.
+
+Cross-engine comparison now has a durable synthetic harness. The tracked Node
+reference runner instruments the actual production `dist/observations.js`
+rather than maintaining a second copy of its rules, and receives only synthetic
+or locally assembled ignored inputs. `observations/parity.py` reports three
+tiers independently: qualified finding identity, grouped card types and full
+presentation/evidence. This prevents wording differences from hiding a rule
+disagreement and prevents matching counts from hiding different findings.
+
+The local all-card and per-card parity audit now matches qualified findings,
+grouped card types and complete finding payloads in all 21 tested month,
+latest-year and all-time scopes. Complete payload parity includes presentation,
+evidence, scores, review metadata and event context. That audit is the basis for
+the production frontend cutover to the read-only route; the legacy calculation
+path remains available only as a fallback. The audit also established that event membership is
+exposed as a stable text slug, not only a numeric ID; adapters must preserve
+either representation so event spending is never folded back into routine
+observations.
 
 ## Known compatibility and audit targets
 
@@ -433,9 +541,9 @@ keys. It is not exposed through HTTP and deliberately introduces no new SQL.
 - Tracked dependency-free frontend shared-utility suite: `tests/frontend/`
 - Private statement-derived regression tests: ignored local files under `tests/`
 - Baseline at introduction: 7 synthetic tests and 39 total local tests passing
-- Current refactoring checkpoint: 280 synthetic tests and 312 total Python tests passing, plus 40 frontend tests
-- Current frontend shared-utility checkpoint: 40 tests passing
-- Current Vue preview checkpoint: 31 typed category/filter/income/metric/card/trend/transaction/recurring/event tests passing
+- Current refactoring checkpoint: 337 synthetic tests and 369 total Python tests passing, plus 43 production frontend tests
+- Current frontend shared-utility checkpoint: 43 tests passing
+- Current Vue preview checkpoint: 59 typed category/filter/income/metric/card/trend/transaction/merchant/recurring/event/observation tests passing
 
 This inventory should be updated only when an intentional contract or ownership
 change is reviewed and accepted.

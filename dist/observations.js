@@ -1,8 +1,9 @@
-/* Financial observations are calculated in the browser from ClearSpend's local APIs. */
+/* Financial observations come from ClearSpend's local backend, with the browser engine retained as a fallback. */
 (()=>{
 const panel=document.querySelector('#financialObservations');
 if(!panel)return;
 const {getJson,postJson}=window.ClearSpendApi;
+const {loadObservationPayload}=window.ClearSpendObservationClient;
 const {median,shiftMonth,monthLabel,monthRange}=window.ClearSpendFormat;
 const grid=document.querySelector('#observationGrid'),count=document.querySelector('#observationCount'),scope=document.querySelector('#observationScope'),emptyLabel=document.querySelector('#observationEmptyLabel');
 const modal=document.querySelector('#observationModal');
@@ -258,21 +259,27 @@ document.querySelector('#observationResolutionUndo').addEventListener('click',()
 modal.addEventListener('click',event=>{if(event.target===modal){setModal(false);return}const openButton=event.target.closest('[data-observation-open]'),resolveButton=event.target.closest('[data-resolution-action]'),undoButton=event.target.closest('[data-resolution-undo]');if(!activeGroup||(!openButton&&!resolveButton&&!undoButton))return;event.preventDefault();event.stopPropagation();const button=openButton||resolveButton||undoButton,item=(activeGroup.items||[activeGroup])[Number(button.dataset.resolutionIndex||0)];if(!item)return;if(openButton)openFindingActivity(item,activeGroup.type);else saveReview(item,Boolean(undoButton)).catch(error=>showToast(error.message,undoButton?'Undo failed':'Review failed'))});
 document.addEventListener('keydown',event=>{if(event.key==='Escape'&&modal.classList.contains('show'))setModal(false)});
 
+async function loadLegacyObservations({period,selectedMonth,card,dashboard}){
+  const available=[...(dashboard.available_months||[])].sort(),scopeStart=(dashboard.period?.start||'').slice(0,7),scopeEnd=(dashboard.period?.end||selectedMonth).slice(0,7);
+  const targetMonths=period==='month'?[selectedMonth]:available.filter(value=>value>=scopeStart&&value<=scopeEnd),fetchMonths=available.filter(value=>value<=scopeEnd),recurringMonths=period==='month'?targetMonths:fetchMonths;
+  const [transactionPayloads,recurringPayloads,household,reviewPayload]=await Promise.all([Promise.all(fetchMonths.map(value=>getJson(`/api/transactions?period=month&month=${encodeURIComponent(value)}&card=${encodeURIComponent(card)}`))),Promise.all(recurringMonths.map(value=>getJson(`/api/recurring?period=month&month=${encodeURIComponent(value)}&card=${encodeURIComponent(card)}`))),card==='all'?getJson('/api/dashboard?period=all&card=all'):Promise.resolve(null),getJson('/api/observation-reviews')]);
+  reviewedFindingKeys.clear();(reviewPayload.reviews||[]).forEach(item=>reviewedFindingKeys.add(item.finding_key));
+  const transactionsByMonth=new Map(fetchMonths.map((value,index)=>[value,(transactionPayloads[index].transactions||[]).map(item=>({...item,_month:value}))]));
+  const categoryHistory=new Map([...transactionsByMonth].map(([value,transactions])=>{const routine=transactions.filter(item=>!item.event_id),grouped=new Map();routine.forEach(item=>{const amount=personalAmount(item);if(amount>0)grouped.set(item.category||'Needs review',(grouped.get(item.category||'Needs review')||0)+amount)});return [value,{total:routine.reduce((sum,item)=>sum+Math.max(0,personalAmount(item)),0),categories:[...grouped].map(([category,amount])=>({category,amount}))}]}));
+  const householdHistory=new Map((household?.trend||[]).map(value=>[value.bucket,value])),partialMonth=household?.income_summary?.averages?.current_month_partial?available.at(-1):'';
+  const context={categoryHistory,householdHistory,partialMonth,incomeVisible:card==='all'&&!incomeHidden,period,recurringMonths},allTransactions=[...transactionsByMonth.values()].flat();let findings=[];
+  if(period==='month')targetMonths.forEach(value=>findings.push(...analyzeMonth(value,transactionsByMonth.get(value)||[],allTransactions,recurringPayloads[recurringMonths.indexOf(value)],context)));else findings=analyzeHistoricalPatterns(targetMonths,transactionsByMonth,recurringPayloads,context);
+  return {findings,observedStart:targetMonths[0]||scopeStart,observedEnd:targetMonths.at(-1)||scopeEnd};
+}
+
 async function loadObservations(){
   if(!state.data)return;const sequence=++loadSequence,period=state.period,selectedMonth=state.month||(state.data.period?.start||'').slice(0,7),card=state.card;
   panel.classList.remove('is-empty');emptyLabel.hidden=true;grid.innerHTML='<div class="observation-loading">Analyzing income versus spending, category changes, transactions, recurring aliases, fees, and overlapping signals…</div>';count.textContent='CHECKING';
   try{
-    const dashboard=state.data,available=[...(dashboard.available_months||[])].sort(),scopeStart=(dashboard.period?.start||'').slice(0,7),scopeEnd=(dashboard.period?.end||selectedMonth).slice(0,7);
-    const targetMonths=period==='month'?[selectedMonth]:available.filter(value=>value>=scopeStart&&value<=scopeEnd),fetchMonths=available.filter(value=>value<=scopeEnd),recurringMonths=period==='month'?targetMonths:fetchMonths;
-    const [transactionPayloads,recurringPayloads,household,reviewPayload]=await Promise.all([Promise.all(fetchMonths.map(value=>getJson(`/api/transactions?period=month&month=${encodeURIComponent(value)}&card=${encodeURIComponent(card)}`))),Promise.all(recurringMonths.map(value=>getJson(`/api/recurring?period=month&month=${encodeURIComponent(value)}&card=${encodeURIComponent(card)}`))),card==='all'?getJson('/api/dashboard?period=all&card=all'):Promise.resolve(null),getJson('/api/observation-reviews')]);
+    const dashboard=state.data,result=await loadObservationPayload(getJson,{period,card,month:selectedMonth,incomeHidden},error=>{console.warn('Observation endpoint unavailable; using the browser fallback.',error);return loadLegacyObservations({period,selectedMonth,card,dashboard})});
     if(sequence!==loadSequence)return;
-    reviewedFindingKeys.clear();(reviewPayload.reviews||[]).forEach(item=>reviewedFindingKeys.add(item.finding_key));
-    const transactionsByMonth=new Map(fetchMonths.map((value,index)=>[value,(transactionPayloads[index].transactions||[]).map(item=>({...item,_month:value}))]));
-    const categoryHistory=new Map([...transactionsByMonth].map(([value,transactions])=>{const routine=transactions.filter(item=>!item.event_id),grouped=new Map();routine.forEach(item=>{const amount=personalAmount(item);if(amount>0)grouped.set(item.category||'Needs review',(grouped.get(item.category||'Needs review')||0)+amount)});return [value,{total:routine.reduce((sum,item)=>sum+Math.max(0,personalAmount(item)),0),categories:[...grouped].map(([category,amount])=>({category,amount}))}]}));
-    const householdHistory=new Map((household?.trend||[]).map(value=>[value.bucket,value])),partialMonth=household?.income_summary?.averages?.current_month_partial?available.at(-1):'';
-    const context={categoryHistory,householdHistory,partialMonth,incomeVisible:card==='all'&&!incomeHidden,period,recurringMonths},allTransactions=[...transactionsByMonth.values()].flat();let findings=[];
-    if(period==='month')targetMonths.forEach(value=>findings.push(...analyzeMonth(value,transactionsByMonth.get(value)||[],allTransactions,recurringPayloads[recurringMonths.indexOf(value)],context)));else findings=analyzeHistoricalPatterns(targetMonths,transactionsByMonth,recurringPayloads,context);
-    currentRawFindings=findings;const observedStart=targetMonths[0]||scopeStart,observedEnd=targetMonths.at(-1)||scopeEnd;
+    if(result.source==='backend')reviewedFindingKeys.clear();
+    const {findings=[],observedStart,observedEnd}=result.payload;currentRawFindings=findings;
     const range=`${monthLabel(observedStart)} – ${monthLabel(observedEnd)}`;document.querySelector('#observationTitle').textContent=period==='month'?'Financial observations':'Financial patterns';
     scope.textContent=period==='month'?`${monthLabel(selectedMonth)} · ${card==='all'?'all cards':'selected card'} · grouped by observation type`:`${range}${period==='all'?' · all imported history':''} · ${card==='all'?'all cards':'selected card'} · lasting shifts that began during this period`;
     currentObservationView={period,emptyHtml:period==='month'?'<div class="observation-empty">No income-versus-spending, category-change, duplicate, recurring-change, merchant-activity, fee, large-purchase, or reliable outlier signal crossed its threshold.</div>':'<div class="observation-empty">No sustained shift was strong enough to describe as a new normal. Individual expensive purchases are intentionally omitted from this view.</div>'};renderObservationCards();

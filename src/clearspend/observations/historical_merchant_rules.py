@@ -30,7 +30,7 @@ class HistoricalMerchantTransaction:
     personal_amount: float
     category: str = ""
     installment_total: int | None = None
-    event_id: int | None = None
+    event_id: int | str | None = None
 
     @property
     def purchase_month(self) -> str:
@@ -59,6 +59,10 @@ class RegularMerchantHabit:
     buying_more: bool
     still_visible: bool
     score: float
+    establishment_purchase_counts: tuple[int, ...] = ()
+    recent_months: tuple[str, ...] = ()
+    recent_purchase_counts: tuple[int, ...] = ()
+    recent_spending: tuple[float, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -243,6 +247,20 @@ def newly_regular_merchant_habits(
                 buying_more=buying_more,
                 still_visible=still_visible,
                 score=len(window_rows) * 100 + average_spending,
+                establishment_purchase_counts=tuple(
+                    len(rows_for(month)) for month in window
+                ),
+                recent_months=recent,
+                recent_purchase_counts=tuple(
+                    len(rows_for(month)) for month in recent
+                ),
+                recent_spending=tuple(
+                    sum(
+                        float(transaction.personal_amount)
+                        for transaction in rows_for(month)
+                    )
+                    for month in recent
+                ),
             ))
             break
     return tuple(findings)

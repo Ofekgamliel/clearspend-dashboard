@@ -47,7 +47,7 @@ _INACTIVE_RECURRING_STATUSES = {"ended", "paused", "completed"}
 class HistoricalTransaction:
     month: str
     personal_amount: float
-    event_id: int | None = None
+    event_id: int | str | None = None
 
 
 @dataclass(frozen=True)
@@ -71,7 +71,7 @@ class HistoricalCategoryTransaction:
     category: str | None
     merchant_label: str
     personal_amount: float
-    event_id: int | None = None
+    event_id: int | str | None = None
 
 
 @dataclass(frozen=True)
@@ -244,6 +244,8 @@ class RecurringBurdenShift:
     started: tuple[str, ...]
     ended: tuple[str, ...]
     changed: tuple[RecurringSeriesAmountChange, ...]
+    post_costs: tuple[float, ...] = ()
+    post_counts: tuple[float, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -259,6 +261,7 @@ class PersistentInstallmentBurden:
     endings: int
     replacements: bool
     score: float
+    plan_counts: tuple[int, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -870,6 +873,8 @@ def recurring_burden_shift(
             started=started,
             ended=ended,
             changed=changed,
+            post_costs=post_costs,
+            post_counts=post_counts,
         ))
 
     if not candidates:
@@ -939,6 +944,7 @@ def persistent_installment_burden(
             endings=endings,
             replacements=replacements,
             score=average_burden * duration,
+            plan_counts=tuple(len(plan_set) for plan_set in plan_sets),
         ))
 
     if not candidates:

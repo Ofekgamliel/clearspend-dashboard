@@ -20,6 +20,18 @@ export interface TransactionSort {
   direction: 'asc' | 'desc';
 }
 
+export type MerchantGroupSortKey = 'merchant' | 'transactions' | 'latest_date' | 'amount';
+export interface MerchantGroupSort { key: MerchantGroupSortKey; direction: 'asc' | 'desc' }
+export interface TransactionMerchantGroup {
+  key: string;
+  display_name: string;
+  aliases: string[];
+  transactions: TransactionRow[];
+  count: number;
+  latest_date: string;
+  amount: number;
+}
+
 export const transactionColumns: ReadonlyArray<readonly [TransactionSortKey, string]> = [
   ['merchant', 'Merchant'],
   ['category', 'Category / subcategory'],
@@ -83,4 +95,43 @@ export function reportingSourceLabel(source: string | null): string {
 export function nextSort(current: TransactionSort, key: TransactionSortKey): TransactionSort {
   if (current.key !== key) return { key, direction: 'asc' };
   return { key, direction: current.direction === 'asc' ? 'desc' : 'asc' };
+}
+
+export function groupTransactionsByMerchant(rows: TransactionRow[]): TransactionMerchantGroup[] {
+  const groups = new Map<string, TransactionMerchantGroup>();
+  for (const row of rows) {
+    const key = row.canonical_merchant_id || row.merchant_normalized;
+    let group = groups.get(key);
+    if (!group) {
+      group = { key, display_name: row.merchant_display_name || row.merchant_raw, aliases: [], transactions: [], count: 0, latest_date: '', amount: 0 };
+      groups.set(key, group);
+    }
+    if (!group.aliases.includes(row.merchant_raw)) group.aliases.push(row.merchant_raw);
+    group.transactions.push(row);
+    group.count += 1;
+    group.amount += Number(row.personal_amount ?? row.amount ?? 0);
+    if ((row.transaction_date ?? '') > group.latest_date) group.latest_date = row.transaction_date ?? '';
+  }
+  return [...groups.values()].map((group) => ({
+    ...group,
+    amount: Math.round(group.amount * 100) / 100,
+    transactions: sortTransactions(group.transactions, { key: 'transaction_date', direction: 'desc' }),
+  }));
+}
+
+export function sortMerchantGroups(groups: TransactionMerchantGroup[], sort: MerchantGroupSort): TransactionMerchantGroup[] {
+  return [...groups].sort((left, right) => {
+    let comparison = 0;
+    if (sort.key === 'merchant') comparison = collator.compare(left.display_name, right.display_name);
+    else if (sort.key === 'transactions') comparison = left.count - right.count;
+    else if (sort.key === 'amount') comparison = left.amount - right.amount;
+    else comparison = left.latest_date.localeCompare(right.latest_date);
+    return sort.direction === 'asc' ? comparison : -comparison;
+  });
+}
+
+export function nextMerchantGroupSort(current: MerchantGroupSort, key: MerchantGroupSortKey): MerchantGroupSort {
+  return current.key === key
+    ? { key, direction: current.direction === 'asc' ? 'desc' : 'asc' }
+    : { key, direction: key === 'merchant' ? 'asc' : 'desc' };
 }

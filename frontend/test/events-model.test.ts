@@ -1,10 +1,10 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import type { EventSummary } from '../src/api/contracts.ts';
-import { eventsUrl } from '../src/api/events.ts';
-import { buildEventPanelItems, categoryTotals, destinationKey, eventIcon, isBusinessTrip } from '../src/features/events/model.ts';
+import { createEvent, eventsUrl, saveEvent } from '../src/api/events.ts';
+import { buildEventPanelItems, categoryTotals, destinationKey, eventFormError, eventIcon, isBusinessTrip } from '../src/features/events/model.ts';
 
-function event(id: number, start: string, overrides: Partial<EventSummary> = {}): EventSummary {
+function event(id: string, start: string, overrides: Partial<EventSummary> = {}): EventSummary {
   return {
     id, name: `Synthetic event ${id}`, event_type: 'trip', destination: null, icon: 'plane',
     start_date: start, end_date: start, status: 'completed', budget: null, notes: null,
@@ -22,8 +22,8 @@ test('builds the events query from shared filters', () => {
 
 test('groups repeated business destinations only in longer periods', () => {
   const events = [
-    event(1, '2030-01-01', { event_type: 'business_trip', destination: 'North' }),
-    event(2, '2030-02-01', { event_type: 'business_trip', destination: ' north ' }),
+    event('1', '2030-01-01', { event_type: 'business_trip', destination: 'North' }),
+    event('2', '2030-02-01', { event_type: 'business_trip', destination: ' north ' }),
   ];
   assert.deepEqual(buildEventPanelItems(events, 'month').map((item) => item.kind), ['event', 'event']);
   const annual = buildEventPanelItems(events, 'year');
@@ -32,8 +32,8 @@ test('groups repeated business destinations only in longer periods', () => {
 });
 
 test('keeps event cards ordered newest first', () => {
-  const items = buildEventPanelItems([event(1, '2030-01-01'), event(2, '2030-04-01')], 'month');
-  assert.equal(items[0]?.kind === 'event' ? items[0].event.id : null, 2);
+  const items = buildEventPanelItems([event('1', '2030-01-01'), event('2', '2030-04-01')], 'month');
+  assert.equal(items[0]?.kind === 'event' ? items[0].event.id : null, '2');
 });
 
 test('aggregates event category amounts from exact transaction membership', () => {
@@ -48,6 +48,37 @@ test('aggregates event category amounts from exact transaction membership', () =
 test('preserves business identity and established icon fallbacks', () => {
   assert.equal(isBusinessTrip('business_trip'), true);
   assert.equal(destinationKey(' NORTH '), 'north');
-  assert.equal(eventIcon(event(1, '2030-01-01', { event_type: 'business_trip' })), 'briefcase');
-  assert.equal(eventIcon(event(2, '2030-01-01', { icon: 'sun' })), '☀');
+  assert.equal(eventIcon(event('1', '2030-01-01', { event_type: 'business_trip' })), 'briefcase');
+  assert.equal(eventIcon(event('2', '2030-01-01', { icon: 'sun' })), '☀');
+});
+
+test('validates business destination and event date order before saving', () => {
+  const base = { name: 'Synthetic trip', event_type: 'business_trip', destination: '', start_date: '2030-04-03', end_date: '2030-04-01', budget: '' };
+  assert.equal(eventFormError(base), 'Destination is required for a business trip');
+  assert.equal(eventFormError({ ...base, destination: 'North' }), 'End date cannot be before start date');
+  assert.equal(eventFormError({ ...base, destination: 'North', end_date: '2030-04-05' }), '');
+});
+
+test('creates a typed event without assigning transactions automatically', async () => {
+  let request: { url: string; options: RequestInit } | undefined;
+  globalThis.fetch = (async (url: string | URL | Request, options: RequestInit = {}) => {
+    request = { url: String(url), options };
+    return { ok: true, status: 201, json: async () => ({ status: 'created', event: { id: 'event-1', name: 'Synthetic trip' } }) } as Response;
+  }) as typeof fetch;
+  const body = { name: 'Synthetic trip', event_type: 'trip', destination: '', start_date: '2030-04-01', end_date: '2030-04-05', budget: null, status: 'planned' as const };
+  assert.equal((await createEvent(body)).status, 'created');
+  assert.equal(request?.url, '/api/events');
+  assert.equal(request?.options.body, JSON.stringify(body));
+});
+
+test('updates event presentation settings without changing membership', async () => {
+  let request: { url: string; options: RequestInit } | undefined;
+  globalThis.fetch = (async (url: string | URL | Request, options: RequestInit = {}) => {
+    request = { url: String(url), options };
+    return { ok: true, status: 200, json: async () => ({ status: 'updated', event: { id: 'event-1', name: 'Renamed trip' } }) } as Response;
+  }) as typeof fetch;
+  const body = { event_id: 'event-1', name: 'Renamed trip', event_type: 'trip', destination: '', start_date: '2030-04-01', end_date: '2030-04-05', budget: 500, status: 'completed' as const };
+  assert.equal((await saveEvent(body)).status, 'updated');
+  assert.equal(request?.url, '/api/event-settings');
+  assert.equal(request?.options.body, JSON.stringify(body));
 });

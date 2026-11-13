@@ -49,6 +49,23 @@ class ObservationFinding:
     result: str = ""
     card_summary: str | None = None
     finding_key: str = ""
+    month: str = ""
+    entity_sublabel: str = ""
+    pattern_period: str = ""
+    value_label: str = ""
+    comparison_label: str = ""
+    comparison_detail: str = ""
+    result_label: str = ""
+    rule_text: str = ""
+    evidence: tuple[str, ...] = ()
+    card_comparison_primary: str = ""
+    card_comparison_secondary: str = ""
+    primary_label: str = ""
+    transaction_ids: tuple[int, ...] = ()
+    recurring_series_id: str = ""
+    occurrence_start: str = ""
+    occurrence_end: str = ""
+    event_label: str | None = None
 
     @property
     def entity(self) -> str:
@@ -76,6 +93,8 @@ class ObservationGroup:
     primary_label: str = ""
     singular: str = "merchant"
     entities: str = "merchants"
+    card_comparison_primary: str = ""
+    card_comparison_secondary: str = ""
 
 
 def _unique_entities(items: Iterable[ObservationFinding]) -> tuple[str, ...]:
@@ -107,8 +126,11 @@ def group_observation_findings(
                 comparison=top.comparison,
                 result=top.result,
                 card_summary=top.value if top.card_summary is None else top.card_summary,
+                primary_label=top.primary_label,
                 singular=type_meta.singular,
                 entities=type_meta.entities,
+                card_comparison_primary=top.card_comparison_primary,
+                card_comparison_secondary=top.card_comparison_secondary,
             ))
             continue
 

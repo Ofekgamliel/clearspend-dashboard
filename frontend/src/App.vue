@@ -12,6 +12,9 @@ import TrendPanel from './features/trend/TrendPanel.vue';
 import TransactionsPanel from './features/transactions/TransactionsPanel.vue';
 import RecurringPanel from './features/recurring/RecurringPanel.vue';
 import EventsPanel from './features/events/EventsPanel.vue';
+import ObservationsPanel from './features/observations/ObservationsPanel.vue';
+import MerchantManagement from './features/merchants/MerchantManagement.vue';
+import type { ObservationActivity } from './features/observations/model';
 
 const period = ref<PeriodKey>('month');
 const month = ref('');
@@ -19,11 +22,17 @@ const card = ref('all');
 const dashboard = ref<DashboardResponse | null>(null);
 const filtersLoading = ref(true);
 const filtersError = ref('');
+const dataRevision = ref(0);
 function storedIncomeVisibility(): boolean {
   try { return localStorage.getItem('clearspend-income-hidden') === '1'; } catch { return false; }
 }
 const incomeHidden = ref(storedIncomeVisibility());
 let requestId = 0;
+const incomePanel = ref<InstanceType<typeof IncomePanel> | null>(null);
+const transactionsPanel = ref<InstanceType<typeof TransactionsPanel> | null>(null);
+const recurringPanel = ref<InstanceType<typeof RecurringPanel> | null>(null);
+const eventsPanel = ref<InstanceType<typeof EventsPanel> | null>(null);
+const merchantManager = ref<InstanceType<typeof MerchantManagement> | null>(null);
 
 const effectiveMonth = computed(() => selectedMonth(
   month.value,
@@ -64,6 +73,38 @@ function changeIncomeVisibility(hidden: boolean): void {
   try { localStorage.setItem('clearspend-income-hidden', hidden ? '1' : '0'); } catch { /* Keep the in-memory preference. */ }
 }
 
+function openObservationActivity(activity: ObservationActivity): void {
+  if (activity.target === 'income') {
+    incomePanel.value?.focusPanel();
+    return;
+  }
+  if (activity.target === 'recurring') {
+    recurringPanel.value?.openActivity(activity.recurringTab ?? 'series', activity.recurringSeriesId ?? '');
+    return;
+  }
+  transactionsPanel.value?.openActivity({
+    transactionIds: activity.transactionIds,
+    search: activity.search,
+    category: activity.category,
+    routine: activity.routine,
+    title: activity.label,
+  });
+}
+
+function openCategoryTransactions(payload: { category: string; routine: boolean }): void {
+  transactionsPanel.value?.openActivity({
+    category: payload.category,
+    routine: payload.routine,
+    grouped: true,
+    title: `${payload.category} transactions`,
+  });
+}
+
+function refreshData(): void {
+  dataRevision.value += 1;
+  void loadFilters();
+}
+
 watch([period, month, card], loadFilters, { immediate: true });
 </script>
 
@@ -71,7 +112,8 @@ watch([period, month, card], loadFilters, { immediate: true });
   <main class="preview-shell">
     <header class="preview-header">
       <div class="preview-brand"><div class="preview-mark" aria-hidden="true"><i /></div><strong>clear<span>spend</span></strong></div>
-      <div class="preview-boundary"><b>Migration preview</b><span>Read-only · production remains in dist/</span></div>
+      <div class="preview-boundary"><b>Migration preview</b><span>Reviewed changes save locally · production remains in dist/</span></div>
+      <button type="button" class="preview-manage-button" aria-label="Manage merchants" title="Manage merchants" @click="merchantManager?.open()"><span aria-hidden="true">☷</span><strong>Manage data</strong></button>
     </header>
     <DashboardFilters
       :period="period"
@@ -86,11 +128,11 @@ watch([period, month, card], loadFilters, { immediate: true });
       @card-change="card = $event"
       @retry="loadFilters"
     />
-    <IncomePanel v-if="dashboard" :summary="dashboard.income_summary" :period="dashboard.period" :loading="filtersLoading" :hidden="incomeHidden" @privacy-change="changeIncomeVisibility" />
+    <IncomePanel v-if="dashboard" ref="incomePanel" :summary="dashboard.income_summary" :period="dashboard.period" :loading="filtersLoading" :hidden="incomeHidden" @privacy-change="changeIncomeVisibility" />
     <MetricsGrid v-if="dashboard" :metrics="dashboard.metrics" :loading="filtersLoading" />
     <TrendPanel v-if="dashboard" :dashboard="dashboard" :income-hidden="incomeHidden" :loading="filtersLoading" />
     <section class="preview-dashboard-grid">
-      <CategoriesPanel :period="period" :month="month" :card="card" />
+      <CategoriesPanel :period="period" :month="month" :card="card" :refresh-key="dataRevision" @open-category="openCategoryTransactions" />
       <CardsPanel
         v-if="dashboard"
         :cards="dashboard.cards"
@@ -100,16 +142,20 @@ watch([period, month, card], loadFilters, { immediate: true });
         @card-change="card = $event"
       />
     </section>
-    <RecurringPanel :period="period" :month="month" :card="card" />
-    <EventsPanel :period="period" :month="month" :card="card" />
+    <ObservationsPanel :period="period" :month="month" :card="card" :income-hidden="incomeHidden" :refresh-key="dataRevision" @open-activity="openObservationActivity" />
+    <RecurringPanel ref="recurringPanel" :period="period" :month="month" :card="card" :refresh-key="dataRevision" @financial-data-change="refreshData" />
+    <EventsPanel ref="eventsPanel" :period="period" :month="month" :card="card" :refresh-key="dataRevision" />
     <TransactionsPanel
       v-if="dashboard"
+      ref="transactionsPanel"
       :recent="dashboard.recent_transactions"
       :period="period"
       :month="month"
       :card="card"
       :period-label="dashboard.period.label"
       :loading="filtersLoading"
+      @financial-data-change="refreshData"
     />
+    <MerchantManagement ref="merchantManager" @financial-data-change="refreshData" />
   </main>
 </template>
