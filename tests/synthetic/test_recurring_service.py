@@ -67,6 +67,30 @@ class RecurringServiceTests(unittest.TestCase):
         )
         self.assertIsNone(active["end_month"])
 
+    def test_removal_preserves_alias_membership_for_later_reenable(self) -> None:
+        manage_recurring_profile(
+            self.database, "synthetic-mobile", "recurring", "Fixed recurring", "Monthly",
+            "active", "", [self.aliases[0]],
+        )
+
+        removed = manage_recurring_profile(
+            self.database, "synthetic-mobile", "not_recurring",
+        )
+
+        self.assertEqual(removed["verdict"], "not_recurring")
+        self.assertEqual(removed["recurring_type"], "Fixed recurring")
+        self.assertEqual(removed["cadence"], "Monthly")
+        self.assertEqual(removed["included_aliases"], [self.aliases[0]])
+        connection = connect(self.database)
+        try:
+            membership = dict(connection.execute(
+                """SELECT merchant_normalized,included FROM recurring_profile_members
+                WHERE canonical_group_id='synthetic-mobile'"""
+            ).fetchall())
+        finally:
+            connection.close()
+        self.assertEqual(membership, {self.aliases[0]: 1, self.aliases[1]: 0})
+
     def test_unknown_alias_is_rejected_without_creating_profile(self) -> None:
         with self.assertRaisesRegex(ValueError, "does not belong"):
             manage_recurring_profile(

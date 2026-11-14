@@ -128,6 +128,17 @@ def manage_recurring_profile(
         now = datetime.now().astimezone().isoformat()
         if verdict == "not_recurring":
             if existing:
+                selected_aliases = {
+                    row["merchant_normalized"]
+                    for row in connection.execute(
+                        """SELECT merchant_normalized FROM recurring_profile_members
+                        WHERE canonical_group_id=? AND included=1""",
+                        (canonical_group_id,),
+                    ).fetchall()
+                }
+            else:
+                selected_aliases = set()
+            if existing:
                 connection.execute(
                     """UPDATE recurring_profiles SET verdict='not_recurring',display_name=?,updated_at=?
                     WHERE canonical_group_id=?""",
@@ -140,7 +151,6 @@ def manage_recurring_profile(
                     ) VALUES(?,?,'not_recurring','active',?)""",
                     (canonical_group_id, merchant["display_name"], now),
                 )
-            selected_aliases = set()
         else:
             connection.execute(
                 """INSERT INTO recurring_profiles(

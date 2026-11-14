@@ -4,21 +4,20 @@ import { getEvents } from '../../api/events';
 import { getMerchantReference } from '../../api/merchants';
 import { getTransactions, saveTransactionAdjustment, saveTransactionCategory, saveTransactionEvent } from '../../api/transactions';
 import type { AvailableEvent, PeriodKey, RecentTransaction, TransactionRow } from '../../api/contracts';
-import { formatDate, formatInteger, formatMoney, formatMonth } from '../../shared/format';
+import { formatDate, formatInteger, formatMoney, formatMonth, formatSourceAmount } from '../../shared/format';
+import { modalFocus as vModalFocus } from '../../shared/modalFocus';
 import {
   groupTransactionsByMerchant,
   nextMerchantGroupSort,
-  nextSort,
   reportingSourceLabel,
   sortMerchantGroups,
-  sortTransactions,
   transactionColumns,
   type MerchantGroupSort,
   type MerchantGroupSortKey,
   type TransactionMerchantGroup,
   type TransactionSort,
-  type TransactionSortKey,
 } from './model';
+import TransactionDetailTable from './TransactionDetailTable.vue';
 
 const props = defineProps<{
   recent: RecentTransaction[];
@@ -36,7 +35,7 @@ const rows = ref<TransactionRow[]>([]);
 const total = ref(0);
 const detailLoading = ref(false);
 const detailError = ref('');
-const sort = ref<TransactionSort>({ key: 'transaction_date', direction: 'desc' });
+const detailSort = ref<TransactionSort>({ key: 'transaction_date', direction: 'desc' });
 const activityIds = ref<number[]>([]);
 const activityCategory = ref('');
 const activityRoutine = ref(false);
@@ -68,7 +67,6 @@ let requestId = 0;
 let searchTimer: ReturnType<typeof setTimeout> | undefined;
 let noticeTimer: ReturnType<typeof setTimeout> | undefined;
 
-const sortedRows = computed(() => sortTransactions(rows.value, sort.value));
 const merchantGroups = computed(() => sortMerchantGroups(groupTransactionsByMerchant(rows.value), groupSort.value));
 const categoryEditorChoices = computed(() => [...new Set([
   ...categoryChoices.value,
@@ -80,39 +78,17 @@ const adjustmentPersonalAmount = computed(() => {
   return Math.max(0, charge - Math.max(0, Math.min(charge, reimbursed)));
 });
 const scopeLabel = computed(() => search.value.trim()
-  ? 'Complete-history search within the selected filters'
+  ? `Complete-history search · sorted by ${transactionColumns.find(([key]) => key === detailSort.value.key)?.[1] ?? 'Transaction date'} ${detailSort.value.direction === 'asc' ? 'ascending' : 'descending'}`
   : activityIds.value.length
     ? `${formatInteger(rows.value.length)} linked transactions`
-    : activityCategory.value
-      ? `${formatInteger(total.value)} transactions in ${activityCategory.value}`
-      : total.value > rows.value.length
-        ? `Showing the newest ${formatInteger(rows.value.length)} of ${formatInteger(total.value)}`
-        : `${formatInteger(total.value)} transactions`);
+    : activityCategory.value && groupedMode.value
+      ? 'Grouped by approved merchant name and category · select a merchant to expand'
+      : `Sorted by ${transactionColumns.find(([key]) => key === detailSort.value.key)?.[1] ?? 'Transaction date'} ${detailSort.value.direction === 'asc' ? 'ascending' : 'descending'} · ${total.value > rows.value.length ? 'up to 1,000 rows' : 'all matching rows'}`);
 
 function reportingLabel(row: RecentTransaction): string {
   if (row.billing_date) return formatDate(row.billing_date);
   if (row.billing_month) return formatMonth(row.billing_month);
   return row.transaction_date ? formatDate(row.transaction_date) : '—';
-}
-
-function sourceAmount(value: number | null, currency: string | null): string {
-  if (value === null) return '—';
-  const amount = new Intl.NumberFormat('en-IL', { maximumFractionDigits: 2 }).format(value);
-  return `${amount} ${currency ?? ''}`.trim();
-}
-
-function display(value: unknown): string {
-  return value === null || value === undefined || value === '' ? '—' : String(value);
-}
-
-function sortAria(key: TransactionSortKey): 'ascending' | 'descending' | 'none' {
-  if (sort.value.key !== key) return 'none';
-  return sort.value.direction === 'asc' ? 'ascending' : 'descending';
-}
-
-function sortIcon(key: TransactionSortKey): string {
-  if (sort.value.key !== key) return '↕';
-  return sort.value.direction === 'asc' ? '↑' : '↓';
 }
 
 function groupSortAria(key: MerchantGroupSortKey): 'ascending' | 'descending' | 'none' {
@@ -129,10 +105,6 @@ function toggleGroup(group: TransactionMerchantGroup): void {
   const next = new Set(expandedGroups.value);
   if (next.has(group.key)) next.delete(group.key); else next.add(group.key);
   expandedGroups.value = next;
-}
-
-function groupRows(group: TransactionMerchantGroup): TransactionRow[] {
-  return sortTransactions(group.transactions, sort.value);
 }
 
 async function loadTransactions(): Promise<void> {
@@ -338,6 +310,7 @@ function openModal(): void {
   activityRoutine.value = false;
   activityTitle.value = 'All transactions';
   groupedMode.value = false;
+  detailSort.value = { key: 'transaction_date', direction: 'desc' };
   expandedGroups.value = new Set();
   modalOpen.value = true;
   void loadTransactions();
@@ -351,6 +324,7 @@ function openActivity(options: { transactionIds?: number[]; search?: string; cat
   activityRoutine.value = Boolean(options.routine);
   activityTitle.value = options.title ?? 'Related transactions';
   groupedMode.value = Boolean(options.grouped);
+  detailSort.value = { key: 'transaction_date', direction: 'desc' };
   expandedGroups.value = new Set();
   modalOpen.value = true;
   void loadTransactions();
@@ -394,7 +368,7 @@ defineExpose({ openActivity });
 <template>
   <article class="transactions-panel" aria-labelledby="transactions-title" :aria-busy="loading">
     <header class="transactions-head">
-      <div><h2 id="transactions-title">Recent transactions</h2><p>{{ periodLabel }} · five-column summary</p></div>
+      <div><h2 id="transactions-title">Recent transactions</h2><p>Five-column summary · open all transactions for full source details</p></div>
       <button type="button" class="transactions-view-all" @click="openModal">View all transactions →</button>
     </header>
     <div class="recent-table-wrap">
@@ -402,11 +376,11 @@ defineExpose({ openActivity });
         <thead><tr><th>Merchant</th><th>Category</th><th>Card</th><th>Reporting period</th><th class="right">Amount</th></tr></thead>
         <tbody>
           <tr v-for="(item, index) in recent" :key="`${item.provider}-${item.card_last4}-${item.transaction_date}-${index}`">
-            <td><span class="recent-merchant-icon" :class="{ refund: item.amount < 0 }">{{ item.merchant_raw.trim().charAt(0).toUpperCase() || '?' }}</span><span><strong>{{ item.merchant_raw }}</strong><small>{{ item.provider.toUpperCase() }} statement</small></span></td>
-            <td><span class="transaction-category-pill" :class="{ review: item.category === 'Needs review' }">{{ item.category }}</span><small v-if="item.subcategory">{{ item.subcategory }}</small></td>
-            <td><strong>{{ item.provider.toUpperCase() }} •• {{ item.card_last4 }}</strong></td>
+            <td><span class="recent-merchant-icon" :class="{ refund: item.amount < 0 }">{{ item.merchant_raw.trim().charAt(0).toUpperCase() || '?' }}</span><span><strong dir="auto">{{ item.merchant_raw }}</strong><small>{{ item.provider.toUpperCase() }} statement</small></span></td>
+            <td><span dir="auto" class="transaction-category-pill" :class="{ review: item.category === 'Needs review' }">{{ item.category }}</span><small v-if="item.subcategory" dir="auto">{{ item.subcategory }}</small></td>
+            <td><strong><span class="recent-card-mark" :class="{ max: item.provider === 'max' }">{{ item.provider === 'max' ? 'M' : 'I' }}</span>•• {{ item.card_last4 }}</strong></td>
             <td><strong>{{ reportingLabel(item) }}</strong><small>{{ reportingSourceLabel(item.billing_month_source) }}</small></td>
-            <td class="right" :class="{ charge: item.amount >= 0, refund: item.amount < 0 }">{{ item.amount < 0 ? '+' : '−' }}{{ formatMoney(Math.abs(item.amount)) }}</td>
+            <td dir="ltr" class="right" :class="{ charge: item.amount >= 0, refund: item.amount < 0 }">{{ item.amount < 0 ? '+' : '−' }}{{ formatMoney(Math.abs(item.amount)) }}</td>
           </tr>
           <tr v-if="!recent.length"><td colspan="5" class="transactions-empty">No transactions found.</td></tr>
         </tbody>
@@ -416,7 +390,7 @@ defineExpose({ openActivity });
 
   <Teleport to="body">
     <div v-if="modalOpen" class="transactions-modal-backdrop" role="presentation" @mousedown.self="closeModal">
-      <section class="transactions-modal" role="dialog" aria-modal="true" aria-labelledby="transactions-modal-title">
+      <section v-modal-focus class="transactions-modal" role="dialog" aria-modal="true" aria-labelledby="transactions-modal-title">
         <button type="button" class="transactions-modal-close" aria-label="Close transactions" @click="closeModal">×</button>
         <header class="transactions-modal-head">
           <h2 id="transactions-modal-title">{{ activityTitle }}</h2>
@@ -424,7 +398,7 @@ defineExpose({ openActivity });
           <label class="transactions-search"><span aria-hidden="true">⌕</span><input v-model="search" type="search" placeholder="Search every merchant, display name or category…" autocomplete="off"></label>
         </header>
         <div class="transactions-modal-summary">
-          <div><strong>{{ search.trim() ? `${formatInteger(rows.length)} matches` : `${formatInteger(total)} transactions` }}</strong><span>{{ scopeLabel }}</span></div>
+          <div><strong>{{ search.trim() ? `${formatInteger(rows.length)} matches` : groupedMode ? `${formatInteger(rows.length)} transactions · ${formatInteger(merchantGroups.length)} merchants` : `${formatInteger(total)} transactions` }}</strong><span>{{ scopeLabel }}</span></div>
           <div v-if="activityCategory" class="transaction-view-toggle" role="group" aria-label="Transaction presentation">
             <button type="button" :class="{ active: groupedMode }" :aria-pressed="groupedMode" @click="groupedMode = true">By merchant</button>
             <button type="button" :class="{ active: !groupedMode }" :aria-pressed="!groupedMode" @click="groupedMode = false">Individual</button>
@@ -438,72 +412,36 @@ defineExpose({ openActivity });
               <th :aria-sort="groupSortAria('merchant')"><button type="button" @click="groupSort = nextMerchantGroupSort(groupSort, 'merchant')">Merchant <span aria-hidden="true">{{ groupSortIcon('merchant') }}</span></button></th>
               <th :aria-sort="groupSortAria('transactions')"><button type="button" @click="groupSort = nextMerchantGroupSort(groupSort, 'transactions')">Transactions <span aria-hidden="true">{{ groupSortIcon('transactions') }}</span></button></th>
               <th :aria-sort="groupSortAria('latest_date')"><button type="button" @click="groupSort = nextMerchantGroupSort(groupSort, 'latest_date')">Latest purchase <span aria-hidden="true">{{ groupSortIcon('latest_date') }}</span></button></th>
+              <th :aria-sort="groupSortAria('cards')"><button type="button" @click="groupSort = nextMerchantGroupSort(groupSort, 'cards')">Cards used <span aria-hidden="true">{{ groupSortIcon('cards') }}</span></button></th>
               <th class="right" :aria-sort="groupSortAria('amount')"><button type="button" @click="groupSort = nextMerchantGroupSort(groupSort, 'amount')">Personal spending <span aria-hidden="true">{{ groupSortIcon('amount') }}</span></button></th>
               <th class="group-expand-heading"><span class="sr-only">Expand</span></th>
             </tr></thead>
             <tbody>
               <template v-for="group in merchantGroups" :key="group.key">
-                <tr class="merchant-group-row" :class="{ expanded: expandedGroups.has(group.key) }" tabindex="0" @click="toggleGroup(group)" @keydown.enter.prevent="toggleGroup(group)" @keydown.space.prevent="toggleGroup(group)">
-                  <td><strong>{{ group.display_name }}</strong><small>{{ group.aliases.length === 1 ? group.aliases[0] : `${group.aliases.length} original names` }}</small></td>
+                <tr class="merchant-group-row" :class="{ expanded: expandedGroups.has(group.key) }" tabindex="0" :aria-expanded="expandedGroups.has(group.key)" @click="toggleGroup(group)" @keydown.enter.prevent="toggleGroup(group)" @keydown.space.prevent="toggleGroup(group)">
+                  <td><strong>{{ group.display_name }}</strong><small>{{ group.aliases.length }} original {{ group.aliases.length === 1 ? 'name' : 'names' }}</small></td>
                   <td>{{ formatInteger(group.count) }}</td>
                   <td>{{ group.latest_date ? formatDate(group.latest_date) : '—' }}</td>
+                  <td>{{ group.cards.join(' · ') }}</td>
                   <td class="right"><strong>{{ formatMoney(group.amount) }}</strong></td>
                   <td><button type="button" class="group-expand-button" :aria-expanded="expandedGroups.has(group.key)" :aria-label="`${expandedGroups.has(group.key) ? 'Collapse' : 'Expand'} ${group.display_name}`" @click.stop="toggleGroup(group)">{{ expandedGroups.has(group.key) ? '⌃' : '⌄' }}</button></td>
                 </tr>
                 <tr v-if="expandedGroups.has(group.key)" class="merchant-group-detail-row">
-                  <td colspan="5">
+                  <td colspan="6">
                     <div class="merchant-group-detail">
-                      <table>
-                        <thead><tr>
-                          <th v-for="([key, label], columnIndex) in transactionColumns" :key="key" :class="{ right: columnIndex === 6 || columnIndex === 7 }" :aria-sort="sortAria(key)"><button type="button" @click="sort = nextSort(sort, key)">{{ label }} <span aria-hidden="true">{{ sortIcon(key) }}</span></button></th>
-                          <th class="transaction-action-column"><span class="sr-only">Spending adjustment</span></th>
-                        </tr></thead>
-                        <tbody><tr v-for="item in groupRows(group)" :key="item.id">
-                          <td><strong>{{ item.merchant_raw }}</strong><small v-if="item.merchant_display_name !== item.merchant_raw">Display: {{ item.merchant_display_name }}</small><small>{{ item.merchant_normalized }}</small><i v-if="item.adjustment_type" class="transaction-reimbursement-note">{{ item.adjustment_type === 'full_reimbursement' ? 'Fully reimbursed' : `${formatMoney(item.reimbursed_amount ?? 0)} reimbursed` }}</i></td>
-                          <td><span class="transaction-category-line"><span class="transaction-category-pill editable" :class="{ review: item.category === 'Needs review' }"><span>{{ item.category }}</span><button type="button" :aria-label="`Change category for ${item.merchant_display_name || item.merchant_raw}`" title="Change category for this transaction" @click.stop="openCategoryEditor(item)">✎</button></span><select class="transaction-event-select" :class="{ assigned: item.event_id, business: item.event_type === 'business_trip' }" :value="item.event_id ?? ''" :disabled="savingEventIds.has(item.id) || Boolean(eventOptionsError)" :aria-label="`${item.event_id ? 'Change' : 'Assign'} event for ${item.merchant_display_name || item.merchant_raw}`" :title="eventOptionsError || (item.event_id ? 'Change event label' : 'Assign an existing event')" @change="assignEvent(item, $event)"><option value="">{{ item.event_id ? 'No event' : '+ Event' }}</option><option v-for="event in availableEvents" :key="event.id" :value="event.id" :disabled="event.status === 'cancelled'">{{ event.name }}{{ event.status === 'cancelled' ? ' (cancelled)' : '' }}</option></select></span><i v-if="item.category_source === 'transaction_override'" class="transaction-override-note">One-off correction</i><small>{{ display(item.subcategory) }}</small></td>
-                          <td><strong>{{ item.provider.toUpperCase() }} •• {{ item.card_last4 }}</strong><small>{{ display(item.source_sheet) }}</small></td>
-                          <td>{{ item.transaction_date ? formatDate(item.transaction_date) : '—' }}</td><td>{{ item.billing_date ? formatDate(item.billing_date) : '—' }}</td>
-                          <td><strong>{{ item.billing_month ? formatMonth(item.billing_month) : '—' }}</strong><small>{{ reportingSourceLabel(item.billing_month_source) }}<template v-if="item.installment_number"> · {{ item.installment_number }}/{{ item.installment_total ?? '?' }}</template></small></td>
-                          <td class="right"><strong>{{ sourceAmount(item.amount, item.charged_currency) }}</strong><small v-if="item.adjustment_type">Personal: {{ sourceAmount(item.personal_amount, item.charged_currency) }}</small></td><td class="right">{{ sourceAmount(item.original_amount, item.original_currency) }}</td>
-                          <td>{{ display(item.transaction_type) }}</td><td>{{ display(item.execution_method) }}</td><td>{{ display(item.voucher_number) }}</td><td>{{ display(item.exchange_rate) }}</td><td class="transaction-notes">{{ display(item.notes) }}</td>
-                          <td class="transaction-action-column"><button type="button" class="transaction-adjustment-button" :class="{ adjusted: item.adjustment_type }" :disabled="item.amount <= 0" :aria-label="item.amount <= 0 ? 'Spending adjustment unavailable for a refund' : `${item.adjustment_type ? 'Edit reimbursement for' : 'Adjust spending for'} ${item.merchant_display_name || item.merchant_raw}`" :title="item.amount <= 0 ? 'Unavailable for refunds' : item.adjustment_type ? 'Edit reimbursement' : 'Adjust spending'" @click="openAdjustmentEditor(item)">✎</button></td>
-                        </tr></tbody>
-                      </table>
+                      <p>All transaction source details included in {{ group.display_name }}.</p>
+                      <TransactionDetailTable compact :rows="group.transactions" :available-events="availableEvents" :event-options-error="eventOptionsError" :saving-event-ids="savingEventIds" @assign-event="assignEvent" @edit-category="openCategoryEditor" @edit-adjustment="openAdjustmentEditor" />
                     </div>
                   </td>
                 </tr>
               </template>
-              <tr v-if="!merchantGroups.length"><td colspan="5" class="transactions-empty">No matching transactions.</td></tr>
+              <tr v-if="!merchantGroups.length"><td colspan="6" class="transactions-empty">No matching transactions.</td></tr>
             </tbody>
           </table>
           <span v-if="detailLoading" class="transactions-refreshing" role="status">Updating…</span>
         </div>
         <div v-else class="transactions-detail-table" :aria-busy="detailLoading">
-          <table>
-            <thead><tr>
-              <th v-for="([key, label], columnIndex) in transactionColumns" :key="key" :class="{ right: columnIndex === 6 || columnIndex === 7 }" :aria-sort="sortAria(key)"><button type="button" @click="sort = nextSort(sort, key)">{{ label }} <span aria-hidden="true">{{ sortIcon(key) }}</span></button></th>
-              <th class="transaction-action-column"><span class="sr-only">Spending adjustment</span></th>
-            </tr></thead>
-            <tbody>
-              <tr v-for="item in sortedRows" :key="item.id">
-                <td><strong>{{ item.merchant_raw }}</strong><small v-if="item.merchant_display_name !== item.merchant_raw">Display: {{ item.merchant_display_name }}</small><small>{{ item.merchant_normalized }}</small><i v-if="item.adjustment_type" class="transaction-reimbursement-note">{{ item.adjustment_type === 'full_reimbursement' ? 'Fully reimbursed' : `${formatMoney(item.reimbursed_amount ?? 0)} reimbursed` }}</i></td>
-                <td><span class="transaction-category-line"><span class="transaction-category-pill editable" :class="{ review: item.category === 'Needs review' }"><span>{{ item.category }}</span><button type="button" :aria-label="`Change category for ${item.merchant_display_name || item.merchant_raw}`" title="Change category for this transaction" @click.stop="openCategoryEditor(item)">✎</button></span><select class="transaction-event-select" :class="{ assigned: item.event_id, business: item.event_type === 'business_trip' }" :value="item.event_id ?? ''" :disabled="savingEventIds.has(item.id) || Boolean(eventOptionsError)" :aria-label="`${item.event_id ? 'Change' : 'Assign'} event for ${item.merchant_display_name || item.merchant_raw}`" :title="eventOptionsError || (item.event_id ? 'Change event label' : 'Assign an existing event')" @change="assignEvent(item, $event)"><option value="">{{ item.event_id ? 'No event' : '+ Event' }}</option><option v-for="event in availableEvents" :key="event.id" :value="event.id" :disabled="event.status === 'cancelled'">{{ event.name }}{{ event.status === 'cancelled' ? ' (cancelled)' : '' }}</option></select></span><i v-if="item.category_source === 'transaction_override'" class="transaction-override-note">One-off correction</i><small>{{ display(item.subcategory) }}</small></td>
-                <td><strong>{{ item.provider.toUpperCase() }} •• {{ item.card_last4 }}</strong><small>{{ display(item.source_sheet) }}</small></td>
-                <td>{{ item.transaction_date ? formatDate(item.transaction_date) : '—' }}</td>
-                <td>{{ item.billing_date ? formatDate(item.billing_date) : '—' }}</td>
-                <td><strong>{{ item.billing_month ? formatMonth(item.billing_month) : '—' }}</strong><small>{{ reportingSourceLabel(item.billing_month_source) }}<template v-if="item.installment_number"> · {{ item.installment_number }}/{{ item.installment_total ?? '?' }}</template></small></td>
-                <td class="right"><strong>{{ sourceAmount(item.amount, item.charged_currency) }}</strong><small v-if="item.adjustment_type">Personal: {{ sourceAmount(item.personal_amount, item.charged_currency) }}</small></td>
-                <td class="right">{{ sourceAmount(item.original_amount, item.original_currency) }}</td>
-                <td>{{ display(item.transaction_type) }}</td>
-                <td>{{ display(item.execution_method) }}</td>
-                <td>{{ display(item.voucher_number) }}</td>
-                <td>{{ display(item.exchange_rate) }}</td>
-                <td class="transaction-notes">{{ display(item.notes) }}</td>
-                <td class="transaction-action-column"><button type="button" class="transaction-adjustment-button" :class="{ adjusted: item.adjustment_type }" :disabled="item.amount <= 0" :aria-label="item.amount <= 0 ? 'Spending adjustment unavailable for a refund' : `${item.adjustment_type ? 'Edit reimbursement for' : 'Adjust spending for'} ${item.merchant_display_name || item.merchant_raw}`" :title="item.amount <= 0 ? 'Unavailable for refunds' : item.adjustment_type ? 'Edit reimbursement' : 'Adjust spending'" @click="openAdjustmentEditor(item)">✎</button></td>
-              </tr>
-              <tr v-if="!sortedRows.length"><td :colspan="transactionColumns.length + 1" class="transactions-empty">No matching transactions.</td></tr>
-            </tbody>
-          </table>
+          <TransactionDetailTable v-model:sort="detailSort" :rows="rows" :available-events="availableEvents" :event-options-error="eventOptionsError" :saving-event-ids="savingEventIds" @assign-event="assignEvent" @edit-category="openCategoryEditor" @edit-adjustment="openAdjustmentEditor" />
           <span v-if="detailLoading" class="transactions-refreshing" role="status">Updating…</span>
         </div>
       </section>
@@ -511,10 +449,10 @@ defineExpose({ openActivity });
   </Teleport>
   <Teleport to="body">
     <div v-if="categoryEditorOpen && activeTransaction" class="transaction-editor-backdrop" @mousedown.self="closeCategoryEditor">
-      <section class="transaction-category-editor" role="dialog" aria-modal="true" aria-labelledby="transaction-category-editor-title">
+      <section v-modal-focus class="transaction-category-editor" role="dialog" aria-modal="true" aria-labelledby="transaction-category-editor-title">
         <button type="button" class="transaction-editor-close" aria-label="Close category correction" @click="closeCategoryEditor">×</button>
         <header><h2 id="transaction-category-editor-title">Change transaction category</h2><p>This correction applies only to this transaction.</p></header>
-        <div class="transaction-editor-snapshot"><div><span>Merchant</span><strong>{{ activeTransaction.merchant_display_name || activeTransaction.merchant_raw }}</strong><small>{{ activeTransaction.merchant_raw }}</small></div><div><span>Date</span><strong>{{ activeTransaction.transaction_date ? formatDate(activeTransaction.transaction_date) : '—' }}</strong></div><div><span>Card</span><strong>{{ activeTransaction.provider.toUpperCase() }} •• {{ activeTransaction.card_last4 }}</strong></div><div><span>Amount</span><strong>{{ sourceAmount(activeTransaction.amount, activeTransaction.charged_currency) }}</strong></div></div>
+        <div class="transaction-editor-snapshot"><div><span>Merchant</span><strong>{{ activeTransaction.merchant_display_name || activeTransaction.merchant_raw }}</strong><small>{{ activeTransaction.merchant_raw }}</small></div><div><span>Date</span><strong>{{ activeTransaction.transaction_date ? formatDate(activeTransaction.transaction_date) : '—' }}</strong></div><div><span>Card</span><strong>{{ activeTransaction.provider.toUpperCase() }} •• {{ activeTransaction.card_last4 }}</strong></div><div><span>Amount</span><strong>{{ formatSourceAmount(activeTransaction.amount, activeTransaction.charged_currency) }}</strong></div></div>
         <div class="transaction-category-choice"><div><span>Current category</span><strong>{{ activeTransaction.category }}</strong></div><b aria-hidden="true">→</b><label><span>New category</span><select v-model="selectedCategory" :disabled="categoryLoading || categorySaving"><option v-for="category in categoryEditorChoices" :key="category" :value="category">{{ category }}</option></select></label></div>
         <p class="transaction-category-explanation"><b>i</b><span>The merchant rule remains “{{ activeTransaction.merchant_category || activeTransaction.category }}” for other transactions and future imports. The original imported row is preserved.</span></p>
         <p v-if="categoryError" class="transaction-editor-error" role="alert">{{ categoryError }}</p>
@@ -524,13 +462,13 @@ defineExpose({ openActivity });
   </Teleport>
   <Teleport to="body">
     <div v-if="adjustmentEditorOpen && activeAdjustment" class="transaction-editor-backdrop" @mousedown.self="closeAdjustmentEditor">
-      <section class="transaction-adjustment-editor" role="dialog" aria-modal="true" aria-labelledby="transaction-adjustment-title">
+      <section v-modal-focus class="transaction-adjustment-editor" role="dialog" aria-modal="true" aria-labelledby="transaction-adjustment-title">
         <button type="button" class="transaction-editor-close" aria-label="Close spending adjustment" @click="closeAdjustmentEditor">×</button>
         <header><h2 id="transaction-adjustment-title">Mark as reimbursed</h2><p>Keep the original card charge while correcting personal-spending statistics.</p></header>
-        <div class="transaction-editor-snapshot"><div><span>Merchant</span><strong>{{ activeAdjustment.merchant_display_name || activeAdjustment.merchant_raw }}</strong><small>{{ activeAdjustment.merchant_raw }}</small></div><div><span>Purchase date</span><strong>{{ activeAdjustment.transaction_date ? formatDate(activeAdjustment.transaction_date) : '—' }}</strong></div><div><span>Card</span><strong>{{ activeAdjustment.provider.toUpperCase() }} •• {{ activeAdjustment.card_last4 }}</strong></div><div><span>Card charge</span><strong>{{ sourceAmount(activeAdjustment.amount, activeAdjustment.charged_currency) }}</strong></div></div>
+        <div class="transaction-editor-snapshot"><div><span>Merchant</span><strong>{{ activeAdjustment.merchant_display_name || activeAdjustment.merchant_raw }}</strong><small>{{ activeAdjustment.merchant_raw }}</small></div><div><span>Purchase date</span><strong>{{ activeAdjustment.transaction_date ? formatDate(activeAdjustment.transaction_date) : '—' }}</strong></div><div><span>Card</span><strong>{{ activeAdjustment.provider.toUpperCase() }} •• {{ activeAdjustment.card_last4 }}</strong></div><div><span>Card charge</span><strong>{{ formatSourceAmount(activeAdjustment.amount, activeAdjustment.charged_currency) }}</strong></div></div>
         <div class="transaction-adjustment-kinds"><label :class="{ active: adjustmentKind === 'full' }"><input v-model="adjustmentKind" type="radio" value="full"><span><strong>Fully reimbursed</strong><small>None of this charge counts as personal spending.</small></span></label><label :class="{ active: adjustmentKind === 'partial' }"><input v-model="adjustmentKind" type="radio" value="partial"><span><strong>Partially reimbursed</strong><small>Only the unreimbursed remainder counts as personal spending.</small></span></label></div>
         <div class="transaction-adjustment-fields"><label><span>Reimbursed amount</span><input v-model="adjustmentAmount" type="number" min="0.01" :max="activeAdjustment.amount" step="0.01" :disabled="adjustmentKind === 'full' || adjustmentSaving"></label><label><span>Reimbursement date <small>(optional)</small></span><input v-model="adjustmentDate" type="date" :disabled="adjustmentSaving"></label><label class="wide"><span>Note <small>(optional)</small></span><input v-model="adjustmentNote" maxlength="500" placeholder="For example: paid for another person" :disabled="adjustmentSaving"></label></div>
-        <p class="transaction-adjustment-explanation"><b>i</b><span>The original charge remains {{ sourceAmount(activeAdjustment.amount, activeAdjustment.charged_currency) }}. Personal amount after this adjustment: <strong>{{ formatMoney(adjustmentPersonalAmount) }}</strong>.</span></p>
+        <p class="transaction-adjustment-explanation"><b>i</b><span>The original charge remains {{ formatSourceAmount(activeAdjustment.amount, activeAdjustment.charged_currency) }}. Personal amount after this adjustment: <strong>{{ formatMoney(adjustmentPersonalAmount) }}</strong>.</span></p>
         <p v-if="adjustmentError" class="transaction-editor-error" role="alert">{{ adjustmentError }}</p>
         <footer><button v-if="activeAdjustment.adjustment_type" type="button" class="remove" :disabled="adjustmentSaving" @click="requestAdjustmentRemoval">{{ adjustmentRemoveConfirmed ? 'Confirm removal' : 'Remove adjustment' }}</button><span /><button type="button" class="secondary" :disabled="adjustmentSaving" @click="closeAdjustmentEditor">Cancel</button><button type="button" class="primary" :disabled="adjustmentSaving" @click="saveAdjustment(false)">{{ adjustmentSaving ? 'Saving…' : 'Save adjustment' }}</button></footer>
       </section>

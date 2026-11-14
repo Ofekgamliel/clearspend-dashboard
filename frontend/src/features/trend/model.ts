@@ -129,3 +129,13 @@ export function buildBillingTrend(points: TrendPoint[], showIncome: boolean): Bi
 export function axisValues(max: number): number[] {
   return [max, max * .75, max * .5, max * .25, 0];
 }
+
+export function billingAxisLabel(month: string, pointCount: number): string {
+  if (!/^\d{4}-\d{2}$/.test(month)) return month;
+  const [year, monthNumber] = month.split('-').map(Number);
+  return new Intl.DateTimeFormat('en-GB', {
+    month: 'short',
+    year: pointCount > 12 ? '2-digit' : undefined,
+    timeZone: 'UTC',
+  }).format(new Date(Date.UTC(year, monthNumber - 1, 1)));
+}

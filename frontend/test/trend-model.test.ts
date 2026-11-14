@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import type { CategoryRow, ReportingPeriod } from '../src/api/contracts.ts';
-import { axisValues, buildBillingTrend, buildMonthlyTrend } from '../src/features/trend/model.ts';
+import { axisValues, billingAxisLabel, buildBillingTrend, buildMonthlyTrend } from '../src/features/trend/model.ts';
 
 const period: ReportingPeriod = {
   key: 'month',
@@ -43,4 +43,10 @@ test('builds grouped billing bars with optional income', () => {
 
 test('provides the five established chart-axis values', () => {
   assert.deepEqual(axisValues(100), [100, 75, 50, 25, 0]);
+});
+
+test('keeps latest-year labels compact and adds years for longer history', () => {
+  assert.equal(billingAxisLabel('2026-11', 12), 'Nov');
+  assert.equal(billingAxisLabel('2026-11', 20), 'Nov 26');
+  assert.equal(billingAxisLabel('unknown', 20), 'unknown');
 });

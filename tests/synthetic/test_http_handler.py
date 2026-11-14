@@ -88,7 +88,12 @@ class HttpHandlerTests(unittest.TestCase):
         self.assertEqual(headers["content-type"], "application/json; charset=utf-8")
         self.assertEqual(
             json.loads(body),
-            {"status": "ok", "mode": "local", "database": True},
+            {
+                "status": "ok",
+                "mode": "local",
+                "database": True,
+                "api_compatibility": "clearspend-vue-api-v1",
+            },
         )
 
     def test_static_assets_and_single_page_fallback_are_preserved(self) -> None:

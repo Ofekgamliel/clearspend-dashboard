@@ -6,7 +6,11 @@ from io import BytesIO
 from pathlib import Path
 from unittest.mock import patch
 
-from clearspend.http.imports import commit_staged_import, process_import_uploads
+from clearspend.http.imports import (
+    cancel_staged_import,
+    commit_staged_import,
+    process_import_uploads,
+)
 from clearspend.http.multipart import UploadedFile
 from tests.synthetic.support import create_database
 
@@ -117,6 +121,29 @@ class HttpImportTests(unittest.TestCase):
         self.assertEqual(payload["results"], [])
         self.assertEqual(list((self.root / "staging").iterdir()), [])
         self.assertEqual(self.staged_imports, {})
+
+    def test_cancel_staged_import_removes_temporary_files_without_database_writes(self) -> None:
+        upload_path = self.root / "staged.xlsx"
+        upload_path.write_bytes(b"synthetic")
+        self.staged_imports["batch"] = {
+            "uploads": [{"filename": "staged.xlsx", "path": upload_path}]
+        }
+
+        payload, status = cancel_staged_import(
+            self.staged_imports, {"batch_id": "batch"}
+        )
+
+        self.assertEqual(status, 200)
+        self.assertEqual(payload, {"status": "discarded", "removed": True})
+        self.assertFalse(upload_path.exists())
+        self.assertNotIn("batch", self.staged_imports)
+
+    def test_cancel_missing_batch_is_idempotent(self) -> None:
+        payload, status = cancel_staged_import(
+            self.staged_imports, {"batch_id": "already-gone"}
+        )
+        self.assertEqual(status, 200)
+        self.assertEqual(payload, {"status": "discarded", "removed": False})
 
     @patch("clearspend.http.imports.commit_staged_batch")
     @patch("clearspend.http.imports.analyze_staged_files")

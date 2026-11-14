@@ -15,8 +15,10 @@ function merchant(overrides: Partial<MerchantRecord> = {}): MerchantRecord {
 
 test('filters merchant identities by alias and review state', () => {
   const review = merchant({ canonical_group_id: 'review', display_name: 'Review', aliases: [{ merchant_normalized: 'branch', merchant_raw: 'BRANCH', category: 'Needs review', subcategory: null, transactions: 1, recurring_included: false }] });
-  assert.deepEqual(filterMerchants([merchant(), review], 'branch', 'all').map((item) => item.display_name), ['Review']);
-  assert.deepEqual(filterMerchants([merchant(), review], '', 'needs_review').map((item) => item.display_name), ['Review']);
+  const recurring = merchant({ canonical_group_id: 'recurring', display_name: 'Recurring', categories: ['Subscriptions'], aliases: [{ merchant_normalized: 'monthly', merchant_raw: 'MONTHLY', category: 'Subscriptions', subcategory: null, transactions: 2, recurring_included: true }], recurring_profile: { canonical_group_id: 'recurring', verdict: 'recurring', recurring_type: 'Fixed recurring', cadence: 'Monthly', cadence_months: 1, lifecycle_status: 'active', end_month: null, updated_at: '2030-01-01', included_aliases: ['monthly'] } });
+  assert.deepEqual(filterMerchants([merchant(), review, recurring], 'branch', 'all').map((item) => item.display_name), ['Review']);
+  assert.deepEqual(filterMerchants([merchant(), review, recurring], '', 'needs_review').map((item) => item.display_name), ['Review']);
+  assert.deepEqual(filterMerchants([merchant(), review, recurring], '', 'all', 'Subscriptions', 'recurring').map((item) => item.display_name), ['Recurring']);
 });
 
 test('saves only explicitly changed alias rules after impact review', () => {

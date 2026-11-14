@@ -72,3 +72,46 @@ class RecurringQueryTests(unittest.TestCase):
         self.assertEqual(commitment["paid"], 200)
         self.assertEqual(commitment["remaining"], 200)
         self.assertEqual(payload["metrics"]["installment_plans"], 1)
+
+    def test_selected_alias_history_and_installment_totals_remain_separate(self) -> None:
+        connection = connect(self.database)
+        try:
+            import_id = add_import(connection)
+            included = "synthetic health service"
+            excluded = "synthetic health shop"
+            for alias, amount in ((included, 120), (excluded, 80)):
+                add_transaction(
+                    connection, import_id, key=f"alias-{alias}", merchant=alias.title(),
+                    amount=amount, category="Health", transaction_date="2030-02-10",
+                    billing_month="2030-02",
+                )
+                connection.execute(
+                    """INSERT INTO merchant_display_mappings(
+                    merchant_normalized,canonical_group_id,display_name,updated_at
+                    ) VALUES(?,'synthetic-health','Synthetic Health','2030-02-01')""",
+                    (alias,),
+                )
+            installment_id = add_transaction(
+                connection, import_id, key="separate-installment", merchant="Synthetic Device",
+                amount=40, category="Electronics", transaction_date="2030-02-11",
+                billing_month="2030-02",
+            )
+            connection.execute(
+                """UPDATE transactions SET original_amount='120.00',original_currency='ILS',
+                installment_number=1,installment_total=3 WHERE id=?""",
+                (installment_id,),
+            )
+            connection.commit()
+        finally:
+            connection.close()
+
+        manage_recurring_profile(
+            self.database, "synthetic-health", "recurring", "Fixed recurring", "Monthly",
+            "active", "", [included],
+        )
+
+        payload = recurring_payload(self.database, "month", "all", "2030-02")
+        self.assertEqual(payload["metrics"]["recurring_billed"], 120)
+        self.assertEqual(payload["metrics"]["installment_billed"], 40)
+        self.assertEqual(payload["series"][0]["source_aliases"], [included.title()])
+        self.assertEqual(payload["series"][0]["history"][-1]["amount"], 120)

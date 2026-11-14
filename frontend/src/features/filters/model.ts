@@ -6,6 +6,10 @@ export function normalizeAvailableMonths(months: string[]): string[] {
   return [...new Set(months.filter((month) => MONTH_PATTERN.test(month)))].sort().reverse();
 }
 
+export function availableMonthYears(months: string[]): number[] {
+  return [...new Set(normalizeAvailableMonths(months).map((month) => Number(month.slice(0, 4))))].sort((a, b) => a - b);
+}
+
 export function selectedMonth(
   requested: string,
   periodStart: string | null,

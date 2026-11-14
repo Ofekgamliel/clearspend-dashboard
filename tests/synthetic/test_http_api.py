@@ -84,7 +84,12 @@ class HttpApiTests(unittest.TestCase):
         )
 
         self.assertEqual(status, 200)
-        self.assertEqual(health, {"status": "ok", "mode": "local", "database": True})
+        self.assertEqual(health, {
+            "status": "ok",
+            "mode": "local",
+            "database": True,
+            "api_compatibility": "clearspend-vue-api-v1",
+        })
         self.assertEqual(dashboard_status, 200)
         self.assertEqual(dashboard["period"]["key"], "month")
         self.assertEqual(dashboard["selected_card"], "all")

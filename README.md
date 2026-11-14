@@ -69,6 +69,15 @@ python3 -m venv .venv
 PYTHONPATH=src:. .venv/bin/python -m clearspend.server --port 8765
 ```
 
+Open `http://localhost:8765`. Before troubleshooting dashboard data, verify
+`http://localhost:8765/api/health` returns `status: ok` and the expected API
+compatibility identifier.
+
+The Python process keeps the code from the branch where it was started. After
+switching between `main` and a refactor branch, stop it with `Ctrl-C` and start
+it again from the new branch. The frontend blocks data requests and shows a
+retryable restart message when it detects an incompatible stale server.
+
 Open [http://localhost:8765](http://localhost:8765).
 
 Use the ClearSpend application server—not `python3 -m http.server`. A static
@@ -119,12 +128,18 @@ cd frontend
 npm install
 npm test
 npm run build
+npx playwright install chromium
+npm run test:e2e
 ```
 
 The build writes generated assets to `dist/`, which is served by the local
 ClearSpend application. With the Python server running, `npm run dev` provides
 an optional development server at `http://127.0.0.1:5173/` and proxies local
 API requests to port 8765.
+
+The Playwright suite creates and replaces only its dedicated synthetic database
+in the operating system's temporary directory. It starts the real local server
+on port 8785 and never opens `data/clearspend.db`.
 
 Profile local sample statements:
 

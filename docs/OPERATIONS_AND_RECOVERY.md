@@ -14,6 +14,22 @@ PYTHONPATH=src:. .venv/bin/python -m clearspend.server --port 8765
 Open `http://localhost:8765`. Verify the API at
 `http://localhost:8765/api/health` when troubleshooting.
 
+The running Python process does not change when Git branches change. Stop and
+restart ClearSpend after switching between `main` and another branch so the
+served frontend and backend API come from the same checkout. A compatible
+health response contains `status: ok`, `database: true`, and the API
+compatibility identifier expected by the frontend. If they do not match, the
+dashboard intentionally withholds its data panels and offers a retry action.
+
+Before browser acceptance testing, check health explicitly:
+
+```bash
+curl -fsS http://127.0.0.1:8765/api/health
+```
+
+Do not continue browser acceptance testing if this request fails, reports a
+missing database, or returns a different compatibility identifier.
+
 If the port is already occupied, identify the process before stopping it:
 
 ```bash

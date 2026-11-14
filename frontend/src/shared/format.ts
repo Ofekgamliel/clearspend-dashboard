@@ -1,15 +1,28 @@
-const moneyFormatter = new Intl.NumberFormat('he-IL', {
+const moneyFormatter = new Intl.NumberFormat('en-IL', {
   style: 'currency',
   currency: 'ILS',
   maximumFractionDigits: 2,
 });
 
+const decimalFormatter = new Intl.NumberFormat('en-IL', {
+  maximumFractionDigits: 2,
+});
+
+function finiteNumber(value: number): number {
+  return Number.isFinite(Number(value)) ? Number(value) : 0;
+}
+
 export function formatMoney(value: number): string {
-  return moneyFormatter.format(Number(value) || 0);
+  return moneyFormatter.format(finiteNumber(value));
+}
+
+export function formatSourceAmount(value: number | null, currency: string | null): string {
+  if (value === null || !Number.isFinite(Number(value))) return '—';
+  return `${decimalFormatter.format(Number(value))} ${currency ?? ''}`.trim();
 }
 
 export function formatPercent(value: number): string {
-  return `${Number(value).toFixed(1).replace(/\.0$/, '')}%`;
+  return `${finiteNumber(value).toFixed(1).replace(/\.0$/, '')}%`;
 }
 
 export function formatInteger(value: number): string {

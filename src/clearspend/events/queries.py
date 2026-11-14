@@ -22,7 +22,7 @@ def events_payload(database: Path, period: str, card: str, month: str = "") -> d
         ).fetchall()
         available_events = [dict(row) for row in connection.execute(
             """SELECT id,name,event_type,destination,icon,start_date,end_date,status
-            FROM events ORDER BY start_date DESC,name"""
+            FROM events WHERE status!='cancelled' ORDER BY start_date DESC,name"""
         )]
         events = []
         for event_row in event_rows:

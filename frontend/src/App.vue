@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue';
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { getDashboard } from './api/dashboard';
+import { getRuntimeHealth, runtimeCompatibilityError } from './api/runtime.ts';
 import type { DashboardResponse, PeriodKey } from './api/contracts';
 import CategoriesPanel from './features/categories/CategoriesPanel.vue';
 import CardsPanel from './features/cards/CardsPanel.vue';
@@ -24,6 +25,9 @@ const card = ref('all');
 const dashboard = ref<DashboardResponse | null>(null);
 const filtersLoading = ref(true);
 const filtersError = ref('');
+const runtimeChecking = ref(true);
+const runtimeReady = ref(false);
+const runtimeError = ref('');
 const dataRevision = ref(0);
 function storedIncomeVisibility(): boolean {
   try { return localStorage.getItem('clearspend-income-hidden') === '1'; } catch { return false; }
@@ -38,13 +42,36 @@ const merchantManager = ref<InstanceType<typeof MerchantManagement> | null>(null
 const importManager = ref<InstanceType<typeof ImportManager> | null>(null);
 const importAudit = ref<InstanceType<typeof ImportAudit> | null>(null);
 const manageMenuOpen = ref(false);
+const appManageWrap = ref<HTMLElement | null>(null);
+const appManageButton = ref<HTMLButtonElement | null>(null);
 
-function openManagement(target: 'import' | 'audit' | 'merchants' | 'recurring'): void {
+const latestImportLabel = computed(() => {
+  const latest = dashboard.value?.latest_import;
+  if (!latest) return 'No statements imported yet';
+  return `Last import: ${latest.original_name} · ${latest.status.replaceAll('_', ' ')}`;
+});
+
+function scrollToTop(): void {
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+function openManagement(target: 'import' | 'audit' | 'merchants' | 'needs_review' | 'recurring', canonicalGroupId = ''): void {
   manageMenuOpen.value = false;
   if (target === 'import') importManager.value?.open();
   else if (target === 'audit') importAudit.value?.open();
-  else if (target === 'merchants') merchantManager.value?.open();
-  else recurringPanel.value?.openManagement();
+  else if (target === 'merchants') merchantManager.value?.open('all');
+  else if (target === 'needs_review') merchantManager.value?.open('needs_review');
+  else merchantManager.value?.open('all', { recurringFilter: 'all', selectGroup: canonicalGroupId });
+}
+
+function handleManagePointerDown(event: PointerEvent): void {
+  if (manageMenuOpen.value && !appManageWrap.value?.contains(event.target as Node)) manageMenuOpen.value = false;
+}
+
+function handleManageKeydown(event: KeyboardEvent): void {
+  if (event.key !== 'Escape' || !manageMenuOpen.value) return;
+  manageMenuOpen.value = false;
+  void nextTick(() => appManageButton.value?.focus());
 }
 
 const effectiveMonth = computed(() => selectedMonth(
@@ -73,6 +100,26 @@ async function loadFilters(): Promise<void> {
     filtersError.value = caught instanceof Error ? caught.message : 'Could not load dashboard filters';
   } finally {
     if (currentRequest === requestId) filtersLoading.value = false;
+  }
+}
+
+async function verifyRuntime(): Promise<void> {
+  runtimeChecking.value = true;
+  runtimeReady.value = false;
+  runtimeError.value = '';
+  try {
+    const health = await getRuntimeHealth();
+    const compatibilityError = runtimeCompatibilityError(health);
+    if (compatibilityError) throw new Error(compatibilityError);
+    runtimeReady.value = true;
+    await loadFilters();
+  } catch (caught) {
+    const message = caught instanceof Error ? caught.message : '';
+    runtimeError.value = /different builds|database is unavailable|server is not ready/i.test(message)
+      ? message
+      : 'Could not connect to the compatible local ClearSpend server. Start or restart it from this branch, then try again.';
+  } finally {
+    runtimeChecking.value = false;
   }
 }
 
@@ -109,7 +156,7 @@ function openCategoryTransactions(payload: { category: string; routine: boolean 
     category: payload.category,
     routine: payload.routine,
     grouped: true,
-    title: `${payload.category} transactions`,
+    title: payload.category,
   });
 }
 
@@ -118,31 +165,43 @@ function refreshData(): void {
   void loadFilters();
 }
 
-watch([period, month, card], loadFilters, { immediate: true });
+watch([period, month, card], () => { if (runtimeReady.value) void loadFilters(); });
+onMounted(() => {
+  document.addEventListener('pointerdown', handleManagePointerDown);
+  document.addEventListener('keydown', handleManageKeydown);
+  void verifyRuntime();
+});
+onBeforeUnmount(() => {
+  document.removeEventListener('pointerdown', handleManagePointerDown);
+  document.removeEventListener('keydown', handleManageKeydown);
+});
 </script>
 
 <template>
-  <main class="preview-shell">
-    <header class="preview-header">
-      <div class="preview-brand"><div class="preview-mark" aria-hidden="true"><i /></div><strong>clear<span>spend</span></strong></div>
-      <DashboardFilters
+  <main class="app-shell">
+    <header class="app-header">
+      <a class="app-brand" href="#" aria-label="ClearSpend home" @click.prevent="scrollToTop"><span class="app-brand-mark" aria-hidden="true"><i /></span><strong>clear<span>spend</span></strong></a>
+      <span class="app-header-divider" aria-hidden="true" />
+      <DashboardFilters v-if="runtimeReady"
         :period="period" :month="effectiveMonth" :card="card" :cards="dashboard?.cards ?? []" :available-months="dashboard?.available_months ?? []"
         :loading="filtersLoading" :error="filtersError" @period-change="period = $event" @month-change="changeMonth" @card-change="card = $event" @retry="loadFilters"
       />
-      <div class="preview-manage-wrap">
-        <button type="button" class="preview-manage-button" :aria-expanded="manageMenuOpen" aria-haspopup="menu" @click="manageMenuOpen=!manageMenuOpen"><span aria-hidden="true">☷</span><strong>Manage data</strong></button>
-        <div v-if="manageMenuOpen" class="preview-manage-menu" role="menu">
+      <div v-if="runtimeReady" ref="appManageWrap" class="app-manage-wrap">
+        <button ref="appManageButton" type="button" class="app-manage-button" aria-label="Manage data" title="Manage data" :aria-expanded="manageMenuOpen" aria-haspopup="menu" @click="manageMenuOpen=!manageMenuOpen"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h10M18 7h2M4 17h2M10 17h10M14 4v6M6 14v6"/><circle cx="14" cy="7" r="2.5"/><circle cx="8" cy="17" r="2.5"/></svg></button>
+        <div v-if="manageMenuOpen" class="app-manage-menu" role="menu">
           <button type="button" role="menuitem" @click="openManagement('import')"><b>⇧</b><span><strong>Import statements</strong><small>Stage, review and reconcile files</small></span></button>
           <button type="button" role="menuitem" @click="openManagement('audit')"><b>≡</b><span><strong>Import history</strong><small>Coverage, inserted rows and duplicates</small></span></button>
           <button type="button" role="menuitem" @click="openManagement('merchants')"><b>◎</b><span><strong>Merchants</strong><small>Display names and permanent categories</small></span></button>
-          <button type="button" role="menuitem" @click="openManagement('recurring')"><b>↻</b><span><strong>Recurring rules</strong><small>Membership, cadence and lifecycle</small></span></button>
         </div>
       </div>
     </header>
+    <section v-if="runtimeChecking" class="runtime-state" role="status"><strong>Connecting to ClearSpend…</strong><span>Checking the local server and database.</span></section>
+    <section v-else-if="runtimeError" class="runtime-state error-state" role="alert"><strong>ClearSpend needs to reconnect</strong><span>{{ runtimeError }}</span><button type="button" @click="verifyRuntime">Try again</button></section>
+    <template v-else>
     <IncomePanel v-if="dashboard" ref="incomePanel" :summary="dashboard.income_summary" :period="dashboard.period" :loading="filtersLoading" :hidden="incomeHidden" @privacy-change="changeIncomeVisibility" />
     <MetricsGrid v-if="dashboard" :metrics="dashboard.metrics" :loading="filtersLoading" />
-    <TrendPanel v-if="dashboard" :dashboard="dashboard" :income-hidden="incomeHidden" :loading="filtersLoading" />
-    <section class="preview-dashboard-grid">
+    <section class="dashboard-analytics">
+      <TrendPanel v-if="dashboard" :dashboard="dashboard" :income-hidden="incomeHidden" :loading="filtersLoading" />
       <CategoriesPanel :period="period" :month="month" :card="card" :refresh-key="dataRevision" @open-category="openCategoryTransactions" />
       <CardsPanel
         v-if="dashboard"
@@ -154,7 +213,7 @@ watch([period, month, card], loadFilters, { immediate: true });
       />
     </section>
     <ObservationsPanel :period="period" :month="month" :card="card" :income-hidden="incomeHidden" :refresh-key="dataRevision" @open-activity="openObservationActivity" />
-    <RecurringPanel ref="recurringPanel" :period="period" :month="month" :card="card" :refresh-key="dataRevision" @financial-data-change="refreshData" />
+    <RecurringPanel ref="recurringPanel" :period="period" :month="month" :card="card" :refresh-key="dataRevision" @financial-data-change="refreshData" @manage-recurring="openManagement('recurring', $event)" />
     <EventsPanel ref="eventsPanel" :period="period" :month="month" :card="card" :refresh-key="dataRevision" />
     <TransactionsPanel
       v-if="dashboard"
@@ -167,8 +226,10 @@ watch([period, month, card], loadFilters, { immediate: true });
       :loading="filtersLoading"
       @financial-data-change="refreshData"
     />
+    <footer class="app-footer"><span>{{ latestImportLabel }}</span><span><i aria-hidden="true" /> Local database connected</span></footer>
     <MerchantManagement ref="merchantManager" @financial-data-change="refreshData" />
     <ImportManager ref="importManager" @imported="refreshData" />
     <ImportAudit ref="importAudit" />
+    </template>
   </main>
 </template>

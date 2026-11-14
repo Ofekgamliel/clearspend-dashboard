@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { dashboardUrl } from '../src/api/dashboard.ts';
-import { cardLabel, normalizeAvailableMonths, selectedMonth } from '../src/features/filters/model.ts';
+import { availableMonthYears, cardLabel, normalizeAvailableMonths, selectedMonth } from '../src/features/filters/model.ts';
 
 test('builds the existing dashboard filter query without dropping an empty month', () => {
   assert.equal(
@@ -20,6 +20,7 @@ test('normalizes imported months and resolves the selected fallback deterministi
   assert.equal(selectedMonth('2026-09', '2026-10-01', months), '2026-09');
   assert.equal(selectedMonth('', '2026-08-01', months), '2026-08');
   assert.equal(selectedMonth('', null, months), '2026-10');
+  assert.deepEqual(availableMonthYears(['2026-08', '2025-12', 'bad', '2026-01', '2024-09']), [2024, 2025, 2026]);
 });
 
 test('uses the established compact card identity label', () => {

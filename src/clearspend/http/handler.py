@@ -14,7 +14,7 @@ from clearspend.http.api import (
     dispatch_json_get,
     dispatch_json_post,
 )
-from clearspend.http.imports import commit_staged_import, process_import_uploads
+from clearspend.http.imports import cancel_staged_import, commit_staged_import, process_import_uploads
 from clearspend.http.json_body import read_json_object
 from clearspend.http.multipart import parse_multipart_files
 
@@ -77,18 +77,21 @@ class ClearSpendHandler(BaseHTTPRequestHandler):
             except Exception as error:
                 self.send_json({"error": str(error)}, 500)
             return
-        if parsed_path == "/api/import/commit":
+        if parsed_path in {"/api/import/commit", "/api/import/cancel"}:
             try:
                 payload = read_json_object(
                     self.rfile,
                     self.headers.get("Content-Length"),
                     max_bytes=8 * 1024 * 1024,
                 )
-                result, status = commit_staged_import(
-                    self.app.database,
-                    self.app.staged_imports,
-                    payload,
-                )
+                if parsed_path == "/api/import/cancel":
+                    result, status = cancel_staged_import(self.app.staged_imports, payload)
+                else:
+                    result, status = commit_staged_import(
+                        self.app.database,
+                        self.app.staged_imports,
+                        payload,
+                    )
                 self.send_json(result, status)
             except (ValueError, json.JSONDecodeError) as error:
                 self.send_json({"error": str(error)}, 400)

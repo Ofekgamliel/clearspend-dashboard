@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import type { ObservationsResponse } from '../src/api/contracts.ts';
 import { observationsUrl, saveObservationReview } from '../src/api/observations.ts';
-import { observationActivity, observationCount, observationMetricLabels, observationReviewOption, observationReviewRequest, observationScope, observationVisual } from '../src/features/observations/model.ts';
+import { observationActivity, observationCount, observationMetricLabels, observationMonthRange, observationReviewOption, observationReviewRequest, observationScope, observationVisual } from '../src/features/observations/model.ts';
 
 const response: ObservationsResponse = {
   period: 'year', selectedCard: 'all', selectedMonth: '2026-01',
@@ -21,6 +21,11 @@ test('builds the typed observation URL with income privacy', () => {
 test('formats historical observation count and scope from backend metadata', () => {
   assert.equal(observationCount(response), '7 PATTERNS · 3 TYPES');
   assert.equal(observationScope(response), 'Jan 2026 – Nov 2026 · all cards · lasting shifts that began during this period');
+});
+
+test('uses the actual grouped finding months instead of the whole selected range', () => {
+  assert.equal(observationMonthRange([{ month: '2026-02' }, { month: '2026-08' }, { month: '2026-02' }]), 'Feb 2026 – Aug 2026');
+  assert.equal(observationMonthRange([{ month: '2026-09' }]), 'Sept 2026');
 });
 
 test('preserves established visual identity and metric-label overrides', () => {

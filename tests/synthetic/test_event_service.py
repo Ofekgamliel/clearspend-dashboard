@@ -77,6 +77,35 @@ class EventServiceTests(unittest.TestCase):
             connection.close()
         self.assertEqual(membership_count, 0)
 
+    def test_editing_event_dates_does_not_change_exact_transaction_membership(self) -> None:
+        event = self.create_synthetic_event()
+        connection = connect(self.database)
+        try:
+            import_id = add_import(connection)
+            transaction_id = add_transaction(
+                connection, import_id, key="event-member-after-date-edit",
+                merchant="Synthetic Venue", amount=80, category="Leisure",
+            )
+            connection.commit()
+        finally:
+            connection.close()
+        save_transaction_event(self.database, transaction_id, event["id"])
+
+        save_event_settings(
+            self.database, event["id"], event["name"], event["event_type"],
+            "2031-05-10", "2031-05-12", event["budget"], event["status"],
+        )
+
+        connection = sqlite3.connect(self.database)
+        try:
+            membership = connection.execute(
+                "SELECT event_id FROM event_transactions WHERE transaction_id=?",
+                (transaction_id,),
+            ).fetchone()
+        finally:
+            connection.close()
+        self.assertEqual(membership, (event["id"],))
+
     def test_cancelled_event_cannot_receive_new_assignment(self) -> None:
         event = self.create_synthetic_event()
         save_event_settings(

@@ -1,4 +1,5 @@
 import type { MerchantRecord, SaveMerchantRequest } from '../../api/contracts.ts';
+import { merchantRecurringVerdict, type RecurringVerdictFilter } from '../recurring/management.ts';
 
 export type MerchantReviewFilter = 'all' | 'needs_review' | 'mixed_categories';
 
@@ -26,11 +27,13 @@ export function merchantNeedsReview(merchant: MerchantRecord): boolean {
   return merchant.aliases.some((alias) => alias.category === 'Needs review');
 }
 
-export function filterMerchants(merchants: MerchantRecord[], search: string, filter: MerchantReviewFilter): MerchantRecord[] {
+export function filterMerchants(merchants: MerchantRecord[], search: string, filter: MerchantReviewFilter, category = 'all', recurring: RecurringVerdictFilter = 'all'): MerchantRecord[] {
   const needle = search.trim().toLocaleLowerCase();
   return merchants.filter((merchant) => {
     if (filter === 'needs_review' && !merchantNeedsReview(merchant)) return false;
     if (filter === 'mixed_categories' && merchant.categories.length < 2) return false;
+    if (category !== 'all' && !merchant.aliases.some((alias) => alias.category === category)) return false;
+    if (recurring !== 'all' && merchantRecurringVerdict(merchant) !== recurring) return false;
     if (!needle) return true;
     return [merchant.display_name, merchant.canonical_group_id, ...merchant.aliases.flatMap((alias) => [alias.merchant_raw, alias.merchant_normalized])]
       .some((value) => value.toLocaleLowerCase().includes(needle));

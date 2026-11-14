@@ -2,7 +2,8 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { getObservations, saveObservationReview } from '../../api/observations';
 import type { ObservationFinding, ObservationGroup, ObservationsResponse, PeriodKey } from '../../api/contracts';
-import { observationActivity, observationCount, observationMetricLabels, observationReviewOption, observationReviewRequest, observationScope, observationVisual, type ObservationActivity } from './model';
+import { modalFocus as vModalFocus } from '../../shared/modalFocus';
+import { observationActivity, observationCount, observationMetricLabels, observationMonthRange, observationReviewOption, observationReviewRequest, observationScope, observationVisual, type ObservationActivity } from './model';
 
 const props = defineProps<{ period: PeriodKey; month: string; card: string; incomeHidden: boolean; refreshKey: number }>();
 const emit = defineEmits<{ openActivity: [activity: ObservationActivity] }>();
@@ -11,18 +12,37 @@ const loading = ref(true);
 const error = ref('');
 const active = ref<ObservationGroup | null>(null);
 const lastReview = ref<ObservationFinding | null>(null);
+const reviewedKeys = ref(new Set<string>());
 const savingKey = ref('');
 const reviewError = ref('');
 let requestId = 0;
 
-const activeItems = computed(() => active.value?.items ?? []);
+const modalItems = computed(() => active.value?.items ?? []);
+const activeItems = computed(() => modalItems.value.filter((item) => !item.findingKey || !reviewedKeys.value.has(item.findingKey)));
 const activeLabels = computed(() => active.value ? observationMetricLabels(active.value) : ['Observed value', 'Compared with', 'Result']);
-const isGrouped = computed(() => activeItems.value.length > 1);
+const isGrouped = computed(() => modalItems.value.length > 1);
 const uniqueEntities = computed(() => new Set(activeItems.value.map((item) => item.entityLabel ?? item.label)).size);
+const hasPatternPeriod = computed(() => active.value?.type === 'CATEGORY ROUTINE SHIFTED');
+const hasHabitKind = computed(() => active.value?.type === 'MERCHANT HABIT SHIFTED');
+const groupEntityLabel = computed(() => {
+  const value = active.value?.singular ?? 'merchant';
+  return value.charAt(0).toUpperCase() + value.slice(1);
+});
+const groupEntityCountLabel = computed(() => {
+  const value = active.value?.entities ?? 'merchants';
+  return value.charAt(0).toUpperCase() + value.slice(1);
+});
+const groupedPeriodLabel = computed(() => observationMonthRange(activeItems.value.length ? activeItems.value : modalItems.value));
+const modalTitle = computed(() => {
+  if (!active.value || !isGrouped.value || activeItems.value.length === modalItems.value.length) return active.value?.title ?? '';
+  if (!activeItems.value.length) return 'All findings reviewed';
+  if (activeItems.value.length === 1) return activeItems.value[0]?.title ?? active.value.title;
+  return `${activeItems.value.length} active findings`;
+});
 
-async function load(preserveUndo = false): Promise<void> {
+async function load(preserveUndo = false, preserveModal = false): Promise<void> {
   const current = ++requestId;
-  active.value = null;
+  if (!preserveModal) active.value = null;
   if (!preserveUndo) lastReview.value = null;
   loading.value = true;
   error.value = '';
@@ -49,9 +69,14 @@ async function review(item: ObservationFinding, remove = false): Promise<void> {
   reviewError.value = '';
   try {
     await saveObservationReview(body);
+    const updated = new Set(reviewedKeys.value);
+    if (remove) updated.delete(item.findingKey ?? '');
+    else updated.add(item.findingKey ?? '');
+    reviewedKeys.value = updated;
     lastReview.value = remove ? null : item;
-    close();
-    await load(true);
+    const preserveModal = isGrouped.value;
+    if (!preserveModal) close();
+    await load(true, preserveModal);
   } catch (caught) {
     reviewError.value = caught instanceof Error ? caught.message : 'Could not save the observation review';
   } finally {
@@ -67,8 +92,8 @@ onBeforeUnmount(() => document.removeEventListener('keydown', handleKeydown));
 <template>
   <article class="observations-panel-preview" :class="{ compact: response && !response.findingCount }" aria-labelledby="observations-preview-title" :aria-busy="loading">
     <header class="observations-head-preview">
-      <div><h2 id="observations-preview-title">{{ response?.historical ? 'Financial patterns' : 'Financial observations' }}</h2><p v-if="response">{{ observationScope(response) }}</p><p v-else>Checking the selected period against your local history…</p></div>
-      <strong v-if="response">{{ observationCount(response) }}</strong>
+      <div><div class="observations-title-line-preview"><h2 id="observations-preview-title">{{ response?.historical ? 'Financial patterns' : 'Financial observations' }}</h2><span v-if="response && !response.findingCount">{{ response.historical ? 'No lasting patterns' : 'No observations' }}</span></div><p v-if="response?.findingCount">{{ observationScope(response) }}</p><p v-else-if="!response">Checking the selected period against your local history…</p></div>
+      <strong v-if="response?.findingCount">{{ observationCount(response) }}</strong>
     </header>
     <div v-if="error && !response" class="observations-state-preview error-state"><span>{{ error }}</span><button type="button" @click="load()">Try again</button></div>
     <div v-else-if="response?.groups.length" class="observations-grid-preview">
@@ -81,29 +106,40 @@ onBeforeUnmount(() => document.removeEventListener('keydown', handleKeydown));
         <footer v-if="group.cardSummary"><strong>{{ group.cardSummary }}</strong></footer>
       </button>
     </div>
-    <div v-else-if="response" class="observations-empty-preview">{{ response.historical ? 'No sustained shift was strong enough to describe as a new normal.' : 'No financial observation crossed its threshold.' }}</div>
-    <div v-else class="observations-state-preview">Analyzing local financial activity…</div>
+    <div v-else-if="!response" class="observations-state-preview">Analyzing local financial activity…</div>
     <span v-if="loading && response" class="observations-updating-preview">Updating…</span>
   </article>
 
-  <Teleport to="body"><div v-if="active" class="observation-modal-backdrop-preview" @mousedown.self="close"><section class="observation-modal-preview" role="dialog" aria-modal="true" aria-labelledby="observation-preview-modal-title">
+  <Teleport to="body"><div v-if="active" class="observation-modal-backdrop-preview" @mousedown.self="close"><section v-modal-focus class="observation-modal-preview" role="dialog" aria-modal="true" aria-labelledby="observation-preview-modal-title">
     <button type="button" class="observation-modal-close-preview" aria-label="Close observation details" @click="close">×</button>
-    <header :style="{ '--observation-color': observationVisual(active.type).color }"><span><i>{{ observationVisual(active.type).icon }}</i>{{ active.type }}</span><h2 id="observation-preview-modal-title">{{ active.title }}</h2><p>{{ active.description }}</p></header>
+    <header :style="{ '--observation-color': observationVisual(active.type).color }"><span><i aria-hidden="true" />{{ active.type }}</span><h2 id="observation-preview-modal-title">{{ modalTitle }}</h2><p>{{ active.description }}</p></header>
     <div class="observation-modal-body-preview">
       <div class="observation-metrics-preview">
         <div><span>{{ isGrouped ? 'Findings' : activeLabels[0] }}</span><strong>{{ isGrouped ? activeItems.length : active.value }}</strong></div>
-        <div><span>{{ isGrouped ? (active.entities ?? 'Merchants') : activeLabels[1] }}</span><strong>{{ isGrouped ? uniqueEntities : (active.comparison ?? 'Selected-period history') }}</strong></div>
-        <div><span>{{ isGrouped ? 'Period' : activeLabels[2] }}</span><strong>{{ isGrouped ? `${response?.observedStart} – ${response?.observedEnd}` : (active.result ?? 'Review') }}</strong></div>
+        <div><span>{{ isGrouped ? groupEntityCountLabel : activeLabels[1] }}</span><strong>{{ isGrouped ? uniqueEntities : (active.comparison ?? 'Selected-period history') }}</strong></div>
+        <div><span>{{ isGrouped && (hasPatternPeriod || hasHabitKind) ? 'Start dates' : isGrouped ? 'Period' : activeLabels[2] }}</span><strong>{{ isGrouped ? groupedPeriodLabel : (active.result ?? 'Review') }}</strong></div>
       </div>
       <section v-if="active.ruleText" class="observation-rule-preview"><strong>Why this appeared</strong><p>{{ active.ruleText }}</p></section>
-      <section class="observation-findings-preview"><div><h3>{{ isGrouped ? 'Related findings' : 'Calculation & source evidence' }}</h3><span v-if="isGrouped">{{ activeItems.length }} findings</span></div>
-        <details v-for="item in activeItems" :key="`${item.type}:${item.findingKey ?? item.month}:${item.label}`" :open="!isGrouped">
-          <summary><span><strong dir="auto">{{ evidenceLabel(item) }}</strong><small>{{ item.entitySublabel ?? item.month }}</small></span><b>{{ item.value }}</b><b>{{ item.comparison ?? 'Selected-period history' }}</b><b>{{ item.result ?? 'Review' }}</b></summary>
-          <div><p v-if="item.eventLabel" class="observation-event-preview">Event · {{ item.eventLabel }}</p><p v-if="item.comparisonDetail"><span>Comparison method</span>{{ item.comparisonDetail }}</p><ul><li v-for="(evidence,index) in item.evidence" :key="index"><span>Source {{ index + 1 }}</span><strong dir="auto">{{ evidence }}</strong></li><li v-if="!item.evidence.length"><span>Source</span><strong>No additional source rows</strong></li></ul><div class="observation-actions-preview"><button v-if="observationReviewOption(item.type) && item.findingKey" type="button" class="observation-review-button-preview" :disabled="savingKey === item.findingKey" @click="review(item)">{{ savingKey === item.findingKey ? 'Saving…' : observationReviewOption(item.type)?.action }}</button><button type="button" class="observation-activity-button-preview" @click="openActivity(item)">{{ observationActivity(item).label }}</button></div></div>
-        </details>
+      <section class="observation-findings-preview"><div><h3>{{ isGrouped ? 'Related findings' : active.type === 'POSSIBLE DUPLICATE' ? 'Matching transactions' : 'Calculation & source evidence' }}</h3><span v-if="isGrouped">{{ activeItems.length }} active · {{ modalItems.length - activeItems.length }} reviewed</span></div>
+        <div v-if="!isGrouped" class="observation-single-detail-preview">
+          <span v-if="activeItems[0]?.eventLabel" class="observation-event-preview">Event · {{ activeItems[0].eventLabel }}</span>
+          <div v-if="activeItems[0]?.comparisonDetail" class="observation-method-preview"><span>How the comparison was calculated</span><strong>{{ activeItems[0].comparisonDetail }}</strong></div>
+          <details class="observation-source-preview"><summary>Source evidence ({{ activeItems[0]?.evidence.length ?? 0 }})</summary><div><p v-for="(evidence,index) in activeItems[0]?.evidence ?? []" :key="index"><span>Source {{ index + 1 }}</span><strong dir="auto">{{ evidence }}</strong></p><p v-if="!activeItems[0]?.evidence.length"><span>Source</span><strong>No additional source rows</strong></p></div></details>
+        </div>
+        <div v-else class="observation-findings-table-preview" :class="{ 'with-period': hasPatternPeriod, 'with-habit': hasHabitKind, scrollable: modalItems.length > 5 }" role="table">
+          <div class="observation-findings-header-preview"><span>{{ groupEntityLabel }}</span><span v-if="hasPatternPeriod">Pattern period</span><span v-if="hasHabitKind">Pattern</span><span>{{ activeLabels[0] }}</span><span>{{ activeLabels[1] }}</span><span>{{ activeLabels[2] }}</span><span /></div>
+          <template v-for="item in modalItems" :key="`${item.type}:${item.findingKey ?? item.month}:${item.label}`">
+            <div v-if="item.findingKey && reviewedKeys.has(item.findingKey)" class="observation-resolved-row-preview"><span><strong dir="auto">{{ evidenceLabel(item) }}</strong><small>{{ observationReviewOption(item.type)?.resolved }}</small></span><button type="button" :disabled="savingKey === item.findingKey" @click="review(item,true)">Undo</button></div>
+            <details v-else class="observation-finding-row-preview">
+              <summary><span><strong dir="auto">{{ evidenceLabel(item) }}</strong><small>{{ item.entitySublabel ?? item.month }}</small></span><b v-if="hasPatternPeriod">{{ item.patternPeriod ?? item.month }}</b><b v-if="hasHabitKind">{{ item.habitKind ?? 'Merchant activity changed' }}</b><b>{{ item.value }}</b><b>{{ item.comparison ?? 'Selected-period history' }}</b><b>{{ item.result ?? 'Review' }}</b><i>›</i></summary>
+              <div><span v-if="item.eventLabel" class="observation-event-preview">Event · {{ item.eventLabel }}</span><div class="observation-method-preview"><span>Comparison method</span><strong>{{ item.comparisonDetail ?? 'See the rule and source evidence for this finding.' }}</strong></div><details class="observation-source-preview"><summary>Source evidence ({{ item.evidence.length }})</summary><div><p v-for="(evidence,index) in item.evidence" :key="index"><span>Source {{ index + 1 }}</span><strong dir="auto">{{ evidence }}</strong></p><p v-if="!item.evidence.length"><span>Source</span><strong>No additional source rows</strong></p></div></details><div class="observation-actions-preview"><button v-if="observationReviewOption(item.type) && item.findingKey" type="button" class="observation-review-button-preview" :disabled="savingKey === item.findingKey" @click="review(item)">{{ savingKey === item.findingKey ? 'Saving…' : observationReviewOption(item.type)?.action }}</button><button type="button" class="observation-activity-button-preview" @click="openActivity(item)">{{ observationActivity(item).label }}</button></div></div>
+            </details>
+          </template>
+        </div>
       </section>
       <p v-if="reviewError && active" class="observation-review-error-preview">{{ reviewError }}</p>
     </div>
+    <footer v-if="!isGrouped && activeItems[0]" class="observation-modal-footer-preview"><button v-if="observationReviewOption(activeItems[0].type) && activeItems[0].findingKey" type="button" class="observation-review-button-preview" :disabled="savingKey === activeItems[0].findingKey" @click="review(activeItems[0])">{{ savingKey === activeItems[0].findingKey ? 'Saving…' : observationReviewOption(activeItems[0].type)?.action }}</button><button type="button" class="observation-activity-button-preview primary" @click="openActivity(activeItems[0])">{{ observationActivity(activeItems[0]).label }}</button></footer>
   </section></div></Teleport>
   <Teleport to="body"><div v-if="lastReview" class="observation-undo-preview" role="status"><span><strong>{{ observationReviewOption(lastReview.type)?.resolved }}</strong><small dir="auto">{{ lastReview.label }}</small></span><button type="button" :disabled="Boolean(savingKey)" @click="review(lastReview,true)">Undo</button><button type="button" aria-label="Dismiss review confirmation" @click="lastReview = null">×</button></div><div v-else-if="reviewError && !active" class="observation-undo-preview error" role="alert"><span><strong>Review could not be updated</strong><small>{{ reviewError }}</small></span><button type="button" aria-label="Dismiss error" @click="reviewError = ''">×</button></div></Teleport>
 </template>

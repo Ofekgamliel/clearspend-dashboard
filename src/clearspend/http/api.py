@@ -18,6 +18,9 @@ from clearspend.transactions.queries import transactions_payload
 from clearspend.transactions.service import save_transaction_adjustment, save_transaction_category
 
 
+API_COMPATIBILITY = "clearspend-vue-api-v1"
+
+
 JSON_GET_PATHS = frozenset({
     "/api/health",
     "/api/dashboard",
@@ -70,7 +73,12 @@ def dispatch_json_get(
     if path not in JSON_GET_PATHS:
         raise ValueError("Unknown JSON API route")
     if path == "/api/health":
-        return {"status": "ok", "mode": "local", "database": database.exists()}, 200
+        return {
+            "status": "ok",
+            "mode": "local",
+            "database": database.exists(),
+            "api_compatibility": API_COMPATIBILITY,
+        }, 200
     if path == "/api/mapping":
         return mapping_payload(database), 200
     if path == "/api/merchants":

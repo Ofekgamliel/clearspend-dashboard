@@ -110,13 +110,16 @@ def analyze_staged_statement_file(
         voucher_exact = None
         if item.voucher_number:
             voucher_exact = connection.execute(
-                """SELECT id,voucher_number FROM transactions
+                """SELECT id,voucher_number,merchant_raw,provider,card_last4,
+                transaction_date,billing_date,billing_month FROM transactions
                 WHERE provider=? AND card_last4=? AND voucher_number=? AND base_key=?
                 ORDER BY id LIMIT 1""",
                 (item.provider, item.card_last4, item.voucher_number, item.base_key),
             ).fetchone()
         existing_row = connection.execute(
-            "SELECT id,voucher_number FROM transactions WHERE transaction_key=?",
+            """SELECT id,voucher_number,merchant_raw,provider,card_last4,
+            transaction_date,billing_date,billing_month FROM transactions
+            WHERE transaction_key=?""",
             (item.transaction_key,),
         ).fetchone()
         earlier = seen_batch_keys.get(item.transaction_key)
@@ -136,6 +139,7 @@ def analyze_staged_statement_file(
                 **summary,
                 "kind": "statement",
                 "matched_transaction_id": exact_row["id"] if exact_row else None,
+                "matched_rows": [dict(exact_row)] if exact_row else [],
                 "reason": "Exact transaction identity already exists" if exact_row
                 else f"Exact transaction also appears in {exact_batch['filename']}",
             })

@@ -41,7 +41,7 @@ defineExpose({ focusPanel });
       </button>
     </div>
 
-    <div class="income-metrics income-sensitive">
+    <div v-if="!hidden" class="income-metrics">
       <div><span>Income</span><strong>{{ summary.has_income ? formatMoney(summary.income) : 'No income data' }}</strong></div>
       <div><span>Net spending</span><strong>{{ formatMoney(summary.spending) }}</strong></div>
       <div class="income-remaining" :class="{ over: summary.has_income && summary.remaining < 0 }">
@@ -51,15 +51,29 @@ defineExpose({ focusPanel });
       </div>
     </div>
 
-    <div class="income-allocation income-sensitive" aria-label="Income allocation">
+    <div v-if="!hidden" class="income-allocation" aria-label="Income allocation">
       <span class="income-spent-segment" :class="{ over: allocation.over, unavailable: allocation.unavailable }" :style="{ width: `${allocation.spentWidth}%` }"><b>{{ allocation.spentLabel }}</b></span>
       <span class="income-left-segment" :style="{ width: `${allocation.leftWidth}%` }"><b>{{ allocation.leftLabel }}</b></span>
     </div>
 
-    <div class="income-averages income-sensitive">
+    <div v-if="!hidden" class="income-averages">
       <div class="income-average-title"><strong>Monthly averages</strong><small>{{ averageRangeLabel(summary) }}</small></div>
       <div><span>Average spending</span><strong>{{ summary.averages.spending_months ? formatMoney(summary.averages.spending) : '—' }}</strong><small>{{ summary.averages.spending_months ? `${summary.averages.spending_months} spending months · all cards` : 'No spending months' }}</small></div>
       <div class="average-left" :class="{ negative: summary.averages.amount_left_months && summary.averages.amount_left < 0 }"><span>Average amount left</span><strong>{{ summary.averages.amount_left_months ? formatMoney(summary.averages.amount_left) : '—' }}</strong><small>{{ summary.averages.amount_left_months ? `${summary.averages.amount_left_months} months with income` : 'No months with income' }}</small></div>
+    </div>
+
+    <div v-else class="income-hidden-state" role="status" aria-label="Income and spending values are hidden">
+      <div class="income-metrics" aria-hidden="true">
+        <div><span>Income</span><strong>••••••</strong></div>
+        <div><span>Net spending</span><strong>••••••</strong></div>
+        <div><span>Amount left</span><strong>••••••</strong><small>Values hidden</small></div>
+      </div>
+      <div class="income-allocation income-hidden-allocation" aria-hidden="true"><span /><span /></div>
+      <div class="income-averages" aria-hidden="true">
+        <div class="income-average-title"><strong>Monthly averages</strong><small>Values hidden</small></div>
+        <div><span>Average spending</span><strong>••••••</strong><small>Hidden</small></div>
+        <div><span>Average amount left</span><strong>••••••</strong><small>Hidden</small></div>
+      </div>
     </div>
   </section>
 </template>

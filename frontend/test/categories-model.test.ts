@@ -4,6 +4,7 @@ import type { CategoryRow } from '../src/api/contracts.ts';
 import {
   buildCategorySegments,
   categoryComparisonModel,
+  categorySegmentAtPoint,
 } from '../src/features/categories/model.ts';
 
 function category(overrides: Partial<CategoryRow>): CategoryRow {
@@ -34,6 +35,17 @@ test('builds the preview donut from backend-owned shares', () => {
   ]);
   assert.match(model.gradient, /#ececf1 85% 100%/);
   assert.equal(model.ariaLabel, 'One: 60%, Two: 25%');
+});
+
+test('resolves donut pointer positions while ignoring its empty centre', () => {
+  const model = buildCategorySegments([
+    category({ category: 'One', share: 60 }),
+    category({ category: 'Two', share: 40 }),
+  ]);
+  assert.equal(categorySegmentAtPoint(50, 2, 100, model.segments)?.category, 'One');
+  assert.equal(categorySegmentAtPoint(2, 50, 100, model.segments)?.category, 'Two');
+  assert.equal(categorySegmentAtPoint(50, 50, 100, model.segments), null);
+  assert.equal(categorySegmentAtPoint(110, 50, 100, model.segments), null);
 });
 
 test('preserves the established previous-month comparison labels', () => {

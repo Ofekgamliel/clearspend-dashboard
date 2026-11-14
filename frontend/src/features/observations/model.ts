@@ -120,3 +120,10 @@ export function observationScope(response: ObservationsResponse): string {
   const range = `${formatShortMonth(response.observedStart)} – ${formatShortMonth(response.observedEnd)}`;
   return `${range}${response.period === 'all' ? ' · all imported history' : ''} · ${card} · lasting shifts that began during this period`;
 }
+
+export function observationMonthRange(items: Pick<ObservationFinding, 'month'>[]): string {
+  const months = [...new Set(items.map((item) => item.month).filter(Boolean))].sort();
+  if (!months.length) return 'Selected period';
+  if (months.length === 1) return formatShortMonth(months[0]);
+  return `${formatShortMonth(months[0])} – ${formatShortMonth(months.at(-1) ?? months[0])}`;
+}

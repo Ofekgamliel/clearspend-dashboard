@@ -146,3 +146,19 @@ def commit_staged_import(
         item["path"].unlink(missing_ok=True)
     staged_imports.pop(batch_id, None)
     return result, 200
+
+
+def cancel_staged_import(
+    staged_imports: StagedImportStore,
+    payload: dict,
+) -> tuple[dict, int]:
+    """Discard one staged session and remove its temporary statement copies."""
+    batch_id = str(payload.get("batch_id", ""))
+    if not batch_id:
+        raise ValueError("A staged batch id is required")
+    batch = staged_imports.pop(batch_id, None)
+    if not batch:
+        return {"status": "discarded", "removed": False}, 200
+    for item in batch.get("uploads", []):
+        item["path"].unlink(missing_ok=True)
+    return {"status": "discarded", "removed": True}, 200

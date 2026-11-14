@@ -90,6 +90,13 @@ export interface DashboardResponse extends DashboardFiltersResponse {
   trend_mode: 'purchase_activity' | 'billing_summary';
   purchase_activity_summary: PurchaseActivitySummary | null;
   recent_transactions: RecentTransaction[];
+  latest_import: DashboardLatestImport | null;
+}
+
+export interface DashboardLatestImport {
+  original_name: string;
+  imported_at: string;
+  status: string;
 }
 
 export interface RecentTransaction {
@@ -273,7 +280,7 @@ export interface StagedTransaction {
   transaction_date: string | null; billing_date?: string | null; billing_month?: string | null; amount: number | null; currency?: string | null;
   original_amount?: number | null; original_currency?: string | null; card_last4?: string | null; source_status?: string;
   installment_number?: number | null; installment_total?: number | null; reason?: string; matched_transaction_id?: number;
-  matched_transaction_ids?: number[]; matched_rows?: Array<{ id: number; billing_month?: string | null }>; reviewed_new?: boolean;
+  matched_transaction_ids?: number[]; matched_rows?: Array<{ id: number; merchant_raw?: string; provider?: string; card_last4?: string; transaction_date?: string | null; billing_date?: string | null; billing_month?: string | null }>; reviewed_new?: boolean;
 }
 export interface StagedMerchant {
   merchant_normalized: string; merchant_raw: string; display_name: string; canonical_group_id: string | null; category: string;
@@ -299,6 +306,7 @@ export interface CommitImportRequest {
   reconciled_files: string[];
 }
 export interface CommitImportResponse { status: 'committed'; backup: string; results: Array<{ inserted?: number; duplicates?: number; filename: string; status: string }> }
+export interface CancelImportResponse { status: 'discarded'; removed: boolean }
 export interface ImportAuditRecord { id:number; original_name:string; provider:string; card_last4:string|null; statement_range:string|null; status:string; parsed_rows:number; inserted_rows:number; duplicate_rows:number; imported_at:string; coverage:Array<StagedCoverage & { pending_rows:number; outside_cycle_rows:number; statement_month?:string|null }> }
 export interface MappingReferenceResponse { summary:{ merchants:number; needs_review:number; categorized:number }; review_merchants:Array<{merchant_raw:string;merchant_normalized:string;transactions:number;amount:number}>; recent_imports:ImportAuditRecord[]; mappings:Array<{merchant_normalized:string;category:string;subcategory:string|null;updated_at:string}>; category_suggestions:string[] }
 

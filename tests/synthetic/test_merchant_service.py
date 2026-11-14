@@ -120,6 +120,44 @@ class MerchantServiceTests(unittest.TestCase):
             [(alpha, "Household"), (beta, "Old B")],
         )
 
+    def test_save_merchant_keeps_transaction_specific_category_override(self) -> None:
+        connection = connect(self.database)
+        import_id = add_import(connection)
+        alias = "Synthetic Alpha".casefold()
+        transaction_id = add_transaction(
+            connection, import_id, key="merchant-override", merchant="Synthetic Alpha",
+            amount=10, category="Old merchant category",
+        )
+        connection.execute(
+            """INSERT INTO merchant_display_mappings(
+            merchant_normalized,canonical_group_id,display_name,updated_at
+            ) VALUES(?,?,?,?)""",
+            (alias, "synthetic-group", "Old Brand", "2030-01-01T00:00:00"),
+        )
+        connection.execute(
+            """INSERT INTO transaction_category_overrides(
+            transaction_id,category,subcategory,updated_at
+            ) VALUES(?,?,?,?)""",
+            (transaction_id, "One-off category", None, "2030-01-01T00:00:00"),
+        )
+        connection.commit()
+        connection.close()
+
+        save_merchant(
+            self.database, "synthetic-group", "New Brand",
+            [{"merchant_normalized": alias, "category": "New merchant category", "subcategory": ""}],
+        )
+
+        connection = connect(self.database)
+        result = connection.execute(
+            """SELECT t.user_category,o.category override_category
+            FROM transactions t LEFT JOIN transaction_category_overrides o ON o.transaction_id=t.id
+            WHERE t.id=?""", (transaction_id,),
+        ).fetchone()
+        connection.close()
+        self.assertEqual(result["user_category"], "New merchant category")
+        self.assertEqual(result["override_category"], "One-off category")
+
     def test_save_merchant_validation_failure_rolls_back_identity_changes(self) -> None:
         connection = connect(self.database)
         import_id = add_import(connection)

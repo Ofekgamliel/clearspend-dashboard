@@ -5,7 +5,7 @@ import unittest
 from pathlib import Path
 
 from clearspend.events.queries import events_payload
-from clearspend.events.service import create_event, save_transaction_event
+from clearspend.events.service import create_event, save_event_settings, save_transaction_event
 from tests.synthetic.support import add_import, add_transaction, connect, create_database
 
 
@@ -70,3 +70,23 @@ class EventQueryTests(unittest.TestCase):
         payload = events_payload(self.database, "month", "synthetic:9999", "2030-01")
         self.assertEqual(payload["events"], [])
         self.assertEqual(len(payload["available_events"]), 1)
+
+    def test_cancelled_event_is_not_offered_as_an_assignment_choice(self) -> None:
+        active = create_event(
+            self.database, "Active synthetic event", "other", "2030-01-10", "2030-01-10",
+            "", "active",
+        )["event"]
+        cancelled = create_event(
+            self.database, "Cancelled synthetic event", "other", "2030-01-11", "2030-01-11",
+            "", "planned",
+        )["event"]
+        save_event_settings(
+            self.database, cancelled["id"], cancelled["name"], cancelled["event_type"],
+            cancelled["start_date"], cancelled["end_date"], cancelled["budget"], "cancelled",
+        )
+
+        payload = events_payload(self.database, "all", "all")
+
+        self.assertEqual(
+            [event["id"] for event in payload["available_events"]], [active["id"]]
+        )

@@ -161,11 +161,20 @@ test('groups category transactions by display identity and personal amount', () 
     row({ id: 3, canonical_merchant_id: 'market', merchant_display_name: 'Market', transaction_date: '2030-03-03', amount: 40, personal_amount: 40 }),
   ];
   const groups = groupTransactionsByMerchant(rows);
-  const coffee = groups.find((item) => item.key === 'coffee');
+  const coffee = groups.find((item) => item.key === 'coffee::Food');
   assert.equal(coffee?.count, 2);
   assert.equal(coffee?.amount, 30);
   assert.equal(coffee?.latest_date, '2030-03-05');
   assert.deepEqual(coffee?.aliases, ['COFFEE A', 'COFFEE B']);
+  assert.deepEqual(coffee?.cards, ['PROVIDER ••1234']);
+});
+
+test('keeps different categories separate inside one display identity', () => {
+  const groups = groupTransactionsByMerchant([
+    row({ id: 1, canonical_merchant_id: 'shared', category: 'Food' }),
+    row({ id: 2, canonical_merchant_id: 'shared', category: 'Travel' }),
+  ]);
+  assert.deepEqual(groups.map((item) => item.key).sort(), ['shared::Food', 'shared::Travel']);
 });
 
 test('sorts collapsed merchant groups without mutating them', () => {

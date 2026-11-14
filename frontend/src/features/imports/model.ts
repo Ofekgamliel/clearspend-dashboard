@@ -12,8 +12,11 @@ export function displayMatchScore(query: string, candidate: string): number {
   return overlap ? overlap / a.size * 55 + overlap / b.size * 25 : 0;
 }
 export function rankedIdentities(query: string, identities: DisplayIdentityReference[]): DisplayIdentityReference[] {
-  return identities.map((item) => ({ item, score: Math.max(displayMatchScore(query, item.display_name), ...item.alias_names.map((alias) => displayMatchScore(query, alias))) }))
-    .filter((entry) => !query.trim() || entry.score > 0).sort((a, b) => b.score - a.score || b.item.transactions - a.item.transactions).map((entry) => entry.item);
+  return rankedIdentityMatches(query, identities).map((entry) => entry.identity);
+}
+export function rankedIdentityMatches(query: string, identities: DisplayIdentityReference[]): Array<{ identity: DisplayIdentityReference; score: number }> {
+  return identities.map((identity) => ({ identity, score: Math.max(displayMatchScore(query, identity.display_name), ...identity.alias_names.map((alias) => displayMatchScore(query, alias))) }))
+    .filter((entry) => !query.trim() || entry.score > 0).sort((a, b) => b.score - a.score || b.identity.transactions - a.identity.transactions);
 }
 export function strongIdentity(query: string, identities: DisplayIdentityReference[]): DisplayIdentityReference | null {
   const ranked = identities.map((item) => ({ item, score: Math.max(displayMatchScore(query, item.display_name), ...item.alias_names.map((alias) => displayMatchScore(query, alias))) })).sort((a, b) => b.score - a.score);
