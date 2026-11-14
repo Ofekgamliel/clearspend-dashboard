@@ -306,5 +306,5 @@ is complete.
 - [x] Generated `dist/` contains no private data, preview labels, or stale
   development assets.
 - [x] Git privacy checks pass and only explicitly reviewed files are staged.
-- [ ] The branch is reviewed before merging; passing CI alone is not treated as
+- [x] The branch is reviewed before merging; passing CI alone is not treated as
   proof of UI parity.
