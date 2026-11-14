@@ -13,8 +13,8 @@ const {
   unresolvedDuplicateDecisions,
 } = require('./legacy/import-review.js');
 
-test('publishes the existing five staged-import steps', () => {
-  assert.deepEqual(importStepNames, ['Files', 'Checks', 'Merchants', 'Reconcile', 'Approve']);
+test('publishes the five single-file staged-import steps', () => {
+  assert.deepEqual(importStepNames, ['File', 'Checks', 'Merchants', 'Reconcile', 'Approve']);
 });
 
 test('requires reconciliation only for ready statements with manual or mismatched totals', () => {

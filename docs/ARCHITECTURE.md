@@ -70,9 +70,12 @@ The server currently exposes operations for:
 - Reversible observation-review decisions
 
 Import analysis and import commit are intentionally separate API operations.
-Analysis returns a staged preview without inserting live transactions or rules.
-The approved commit revalidates the batch, creates a timestamped pre-import
-backup under `data/backups/`, and then writes the batch.
+Each staged session accepts exactly one XLSX or PDF statement; one workbook may
+still contain multiple provider tabs or cards. Analysis returns a staged preview
+without inserting live transactions or rules. The approved commit revalidates
+the statement, creates and verifies a timestamped SQLite backup under
+`data/backups/`, and writes mappings, transactions, coverage and audit evidence
+in one transaction. Any failure rolls back the complete statement import.
 
 The frontend must obtain user data through these local APIs. Do not generate a
 tracked HTML or JavaScript snapshot containing live database results.

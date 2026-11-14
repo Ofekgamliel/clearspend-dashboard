@@ -128,6 +128,16 @@ class HttpHandlerTests(unittest.TestCase):
         self.assertIn("error", json.loads(invalid_body))
         self.assertEqual(missing_status, 404)
 
+    def test_legacy_direct_import_route_is_not_available(self) -> None:
+        status, _, _ = self.request(
+            "POST",
+            "/api/import",
+            body=b"",
+            headers={"Content-Type": "multipart/form-data; boundary=synthetic"},
+        )
+
+        self.assertEqual(status, 404)
+
 
 if __name__ == "__main__":
     unittest.main()

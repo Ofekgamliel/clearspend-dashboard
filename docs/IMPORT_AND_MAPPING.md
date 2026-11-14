@@ -18,7 +18,12 @@ New statement files must follow this sequence:
    warnings, and a complete preview of rows that will be inserted.
 8. Require explicit approval for unresolved or permanent decisions.
 9. Back up the database.
-10. Commit the approved batch and record the import audit result.
+10. Atomically commit the approved statement and record the import audit result.
+
+Only one XLSX or PDF file may be staged in an import session. A single file may
+contain multiple provider tabs or cards, but a second statement must use a new
+session. The backend enforces this boundary even if a caller bypasses the file
+picker.
 
 Analyzing or staging a file must not insert transactions or permanent mappings.
 
@@ -44,7 +49,7 @@ The staged review separates row-level results into three outcomes:
 
 - **Confirmed new:** no matching imported transaction was found.
 - **Exact duplicate:** the exact transaction identity already exists, or the
-  same identity appears earlier in the staged batch. List these rows explicitly
+  same identity appears earlier in the staged statement. List these rows explicitly
   and exclude them automatically.
 - **Possible duplicate:** the card/reference matches while statement details
   changed, or the card, purchase date, merchant, and amount match while billing
@@ -123,7 +128,7 @@ The merchant table exposes four related controls:
 - **Display name** is the existing or new canonical label used for grouping.
   The selector searches existing display identities and also permits a new
   label based on the original statement merchant.
-- **Apply to** distinguishes a decision for this staged batch from an exact-name
+- **Apply to** distinguishes a decision for this staged statement from an exact-name
   rule that should also apply to future imports. Linking a new alias to an
   existing display identity is inherently a permanent exact-name decision.
 

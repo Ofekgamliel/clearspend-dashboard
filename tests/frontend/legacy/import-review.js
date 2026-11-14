@@ -3,7 +3,7 @@
   if (typeof module === 'object' && module.exports) module.exports = review;
   root.ClearSpendImportReview = review;
 }(typeof globalThis !== 'undefined' ? globalThis : window, () => {
-  const importStepNames = ['Files', 'Checks', 'Merchants', 'Reconcile', 'Approve'];
+  const importStepNames = ['File', 'Checks', 'Merchants', 'Reconcile', 'Approve'];
   const decisionValues = decisions => decisions instanceof Map
     ? [...decisions.values()]
     : [...(decisions || [])];

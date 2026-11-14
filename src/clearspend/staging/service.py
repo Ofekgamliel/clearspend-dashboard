@@ -1,9 +1,10 @@
 from __future__ import annotations
 
-import shutil
 from datetime import datetime
 from pathlib import Path
 
+from clearspend.database.backup import create_verified_backup
+from clearspend.database.connection import connect_database
 from clearspend.import_engine import ImportDatabase
 from clearspend.staging.coverage import save_import_coverage
 from clearspend.staging.decisions import (
@@ -15,29 +16,37 @@ from clearspend.staging.decisions import (
 )
 
 
-def commit_staged_batch(
+def commit_staged_statement(
     database: Path,
     batch: dict,
     decisions: list[dict],
     duplicate_decisions: list[dict],
     analysis: dict,
 ) -> dict:
-    """Commit a reviewed staged batch after creating a recoverable database backup."""
+    """Atomically commit one reviewed statement after a verified SQLite backup."""
+    uploads = batch.get("uploads", [])
+    if len(uploads) != 1:
+        raise ValueError("Exactly one staged statement is required for import")
     decision_map = merchant_decision_map(decisions)
     review_required_merchants = merchants_requiring_review(analysis)
-    backup_dir = database.parent / "backups"
-    backup_dir.mkdir(parents=True, exist_ok=True)
-    stamp = datetime.now().strftime("%Y%m%d-%H%M%S-%f")
-    backup_path = backup_dir / f"clearspend-before-import-{stamp}.db"
-    shutil.copy2(database, backup_path)
+    reviewed_matches_by_file = reviewed_duplicate_matches(analysis, duplicate_decisions)
     db = ImportDatabase(database)
     results: list[dict] = []
     try:
-        reviewed_matches_by_file = reviewed_duplicate_matches(analysis, duplicate_decisions)
+        db.connection.execute("BEGIN IMMEDIATE")
+        backup_source = connect_database(database)
+        try:
+            backup_path = create_verified_backup(
+                backup_source,
+                database,
+                database.parent / "backups",
+                "before-import",
+            )
+        finally:
+            backup_source.close()
         now = datetime.now().astimezone().isoformat()
         apply_permanent_merchant_decisions(db.connection, decision_map, now)
-        db.connection.commit()
-        for file_index, staged_file in enumerate(batch["uploads"]):
+        for file_index, staged_file in enumerate(uploads):
             pending_keys = {
                 item["transaction_key"] for item in analysis.get("pending_transactions", [])
                 if int(item["file_index"]) == file_index
@@ -46,7 +55,10 @@ def commit_staged_batch(
                 staged_file["path"],
                 probable_duplicate_matches=reviewed_matches_by_file.get(file_index),
                 excluded_transaction_keys=pending_keys,
+                commit=False,
             )
+            if result.get("status") == "failed":
+                raise ValueError(result.get("error") or "The staged statement could not be imported")
             if result.get("import_id"):
                 table = "income_imports" if result.get("kind") == "income" else "imports"
                 db.connection.execute(
@@ -75,9 +87,12 @@ def commit_staged_batch(
                     )
                     result["inserted"] = max(int(result.get("inserted", 0)) - excluded, 0)
                     result["excluded"] = excluded
-            db.connection.commit()
             result["filename"] = staged_file["filename"]
             results.append(result)
+        db.connection.commit()
         return {"status": "committed", "backup": str(backup_path), "results": results}
+    except Exception:
+        db.connection.rollback()
+        raise
     finally:
         db.close()
