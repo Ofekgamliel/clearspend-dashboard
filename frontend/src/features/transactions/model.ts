@@ -20,6 +20,15 @@ export interface TransactionSort {
   direction: 'asc' | 'desc';
 }
 
+export interface TransactionActivityOptions {
+  transactionIds?: number[];
+  search?: string;
+  category?: string;
+  routine?: boolean;
+  grouped?: boolean;
+  title?: string;
+}
+
 export type MerchantGroupSortKey = 'merchant' | 'transactions' | 'latest_date' | 'cards' | 'amount';
 export interface MerchantGroupSort { key: MerchantGroupSortKey; direction: 'asc' | 'desc' }
 export interface TransactionMerchantGroup {

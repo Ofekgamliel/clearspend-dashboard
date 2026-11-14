@@ -39,6 +39,19 @@ data, imports, mapping changes, or other API-backed behavior.
 - `frontend/` contains the Vue 3 + TypeScript production source.
 - `dist/` contains generated production assets only. Do not edit it by hand;
   rebuild it with `cd frontend && npm run build`.
+- `frontend/src/api/contracts/` contains domain-focused API contracts. The
+  adjacent `api/contracts.ts` file is a compatibility barrel, not a contract
+  owner, so features can migrate imports without one application-wide type
+  file growing again.
+- `frontend/src/features/dashboard/useDashboardData.ts` owns shared dashboard
+  filter/loading state. Cross-feature modal navigation remains explicit in
+  `App.vue`; a global store is not required for the current interaction graph.
+- `frontend/src/features/transactions/` separates recent-transaction summary,
+  complete browsing, category correction, reimbursement editing, and shared
+  detail-table presentation. Transaction-specific styles live with this
+  feature instead of in the global stylesheet.
+- `frontend/src/features/management/ManageDataMenu.vue` owns the data-management
+  menu and its keyboard/focus behavior.
 - `frontend/src/features/observations/` presents backend-qualified monthly
   findings and longer-period patterns; it does not write financial records
   except through explicit review actions.
