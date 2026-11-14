@@ -148,6 +148,11 @@ The Playwright suite creates and replaces only its dedicated synthetic database
 in the operating system's temporary directory. It starts the real local server
 on port 8785 and never opens `data/clearspend.db`.
 
+Tracked visual baselines are reviewed with `npm run test:e2e` on macOS. GitHub
+CI runs the same browser workflows with `npm run test:e2e:ci`, omitting only
+pixel comparisons because Chromium text rendering differs across operating
+systems.
+
 Profile local sample statements:
 
 ```bash
