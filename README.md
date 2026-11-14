@@ -69,6 +69,15 @@ python3 -m venv .venv
 PYTHONPATH=src:. .venv/bin/python -m clearspend.server --port 8765
 ```
 
+Open `http://localhost:8765`. Before troubleshooting dashboard data, verify
+`http://localhost:8765/api/health` returns `status: ok` and the expected API
+compatibility identifier.
+
+The Python process keeps the code from the branch where it was started. After
+switching between `main` and a refactor branch, stop it with `Ctrl-C` and start
+it again from the new branch. The frontend blocks data requests and shows a
+retryable restart message when it detects an incompatible stale server.
+
 Open [http://localhost:8765](http://localhost:8765).
 
 Use the ClearSpend application server—not `python3 -m http.server`. A static
@@ -94,11 +103,55 @@ import.
 
 ## Useful local commands
 
-Run the test suite when its private local fixtures are available:
+Install the test-only Python dependencies before running the complete test and
+browser suites:
+
+```bash
+.venv/bin/python -m pip install -r requirements-dev.txt
+```
+
+Run the tracked synthetic suite available in every checkout:
+
+```bash
+PYTHONPATH=src:. .venv/bin/python -m unittest discover -s tests/synthetic -v
+```
+
+Run the complete local suite when its private statement fixtures are available:
 
 ```bash
 PYTHONPATH=src:. .venv/bin/python -m unittest discover -s tests -v
 ```
+
+Run the dependency-free frontend shared-utility tests with Node.js:
+
+```bash
+node --test tests/frontend/*.test.js
+```
+
+Build the Vue production frontend:
+
+```bash
+cd frontend
+npm install
+npm test
+npm run build
+npx playwright install chromium
+npm run test:e2e
+```
+
+The build writes generated assets to `dist/`, which is served by the local
+ClearSpend application. With the Python server running, `npm run dev` provides
+an optional development server at `http://127.0.0.1:5173/` and proxies local
+API requests to port 8765.
+
+The Playwright suite creates and replaces only its dedicated synthetic database
+in the operating system's temporary directory. It starts the real local server
+on port 8785 and never opens `data/clearspend.db`.
+
+Tracked visual baselines are reviewed with `npm run test:e2e` on macOS. GitHub
+CI runs the same browser workflows with `npm run test:e2e:ci`, omitting only
+pixel comparisons because Chromium text rendering differs across operating
+systems.
 
 Profile local sample statements:
 
@@ -117,6 +170,8 @@ The export is written to the ignored `data/merchant-mappings.json` path.
 ## Documentation
 
 - [Architecture and data ownership](docs/ARCHITECTURE.md)
+- [Refactoring baseline and current contracts](docs/REFACTORING_BASELINE.md)
+- [Database migration design](docs/DATABASE_MIGRATIONS.md)
 - [Import and merchant-mapping rules](docs/IMPORT_AND_MAPPING.md)
 - [Reporting and calculation rules](docs/REPORTING_RULES.md)
 - [Financial observation rules](docs/FINANCIAL_OBSERVATIONS.md)

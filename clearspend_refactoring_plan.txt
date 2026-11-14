@@ -1,0 +1,657 @@
+
+EXECUTIVE RECOMMENDATION
+Preserve ClearSpend as a local-first Python and SQLite application and refactor it
+incrementally into a modular monolith. The application already works and contains
+important reviewed financial behavior. The objective is to make that behavior easier to
+understand, test and change without altering totals, classifications, imports, events,
+recurring rules, observations or private data.
+
+The refactor should begin with a reproducible synthetic safety net and versioned database
+migrations. Backend responsibilities should then be separated behind stable API contracts,
+followed by import-pipeline extraction and an incremental Vue 3 + TypeScript frontend
+migration. Vue 3, TypeScript and Vite are the chosen frontend direction; FastAPI, Pinia
+and pytest remain later decisions rather than prerequisites for the first milestone.
+
+
+===========================================================================================
+1. REVIEW OUTCOME
+===========================================================================================
+
+The architecture review is directionally correct. Its central findings are supported by
+the current repository:
+
+- src/clearspend/server.py combines HTTP routing, validation, report construction,
+  application workflows and direct SQL access.
+- src/clearspend/import_engine.py combines statement parsing, canonical models, schema
+  creation, inline schema upgrades and persistence.
+- dist/app.js combines API access, UI state, rendering and interactions for most features.
+- dist/observations.js owns important financial-observation calculations in the browser.
+- Database upgrades are performed with inline schema inspection and ALTER TABLE statements;
+  there is no explicit database schema version or ordered migration history.
+- The current local test suite passes, but tests are ignored by Git and therefore do not
+  provide a reproducible safety net in a fresh checkout.
+- The HTTP upload path uses cgi.FieldStorage. The cgi module was removed from Python 3.13,
+  so compatibility must be constrained or the upload implementation replaced.
+
+Verified local baseline at the time of this plan
+------------------------------------------------
+
+Item                                  | Result
+--------------------------------------+----------------------------------------------
+Local Python tests                    | 32 passing
+Tracked files under tests/            | None; tests/ is ignored
+Database                              | SQLite; keep
+Server binding default                | 127.0.0.1; preserve local-only default
+Frontend source                       | dist/ is currently production source
+Confirmed SQL-injection defect        | None identified during architecture review
+Confirmed DOM-injection defect        | None established; dynamic HTML needs auditing
+
+File size is not itself the problem. The concern is that unrelated responsibilities and
+financial decisions are coupled inside a small number of files.
+
+
+===========================================================================================
+2. DECISIONS THAT DIFFER FROM THE ORIGINAL REVIEW
+===========================================================================================
+
+2.1 Frontend framework
+----------------------
+
+Vue 3 + TypeScript is the chosen frontend direction. Do not first perform a complete
+restructuring of the existing UI into polished vanilla-JavaScript feature modules, because
+Vue would then replace much of that UI-specific work.
+
+First extract only framework-independent behavior: API transport, request/response types,
+formatting, escaping, validation, normalization, constants and pure calculations. Then
+introduce Vue 3, TypeScript and Vite alongside the current frontend and migrate one complete
+DOM region at a time. Existing vanilla code and Vue must never control the same DOM subtree.
+
+Begin with a self-contained, mostly read-only panel to validate the build, API and visual
+parity approach. Migrate stateful and high-risk features such as staged importing later.
+
+Pinia remains optional and should be introduced only if shared state is demonstrably
+difficult with Vue's built-in composition and state patterns.
+
+2.2 HTTP framework
+------------------
+
+Do not move the existing large handlers directly into FastAPI routes. First extract use
+cases, database access and calculations from the current HTTP layer. Once the HTTP layer
+is thin and contract-tested, decide whether FastAPI provides enough value to replace it.
+
+Replacing cgi.FieldStorage is required for Python 3.13 support. This may be completed as a
+focused compatibility change or as part of a later FastAPI migration.
+
+2.3 Current dist/ directory
+---------------------------
+
+dist/ is not disposable generated output today. It contains the real production frontend
+source served by ClearSpend. It must remain authoritative while the Vue frontend is built
+and verified separately. During migration, Vite must write to a separate preview output
+such as dist-next/ rather than overwriting dist/.
+
+After full functional and visual parity, a deliberate cutover can make the Vue/Vite build
+the production source and turn dist/ into generated output. No cleanup task may delete or
+overwrite the existing dist/ before that cutover is proven and reversible.
+
+2.4 Test framework
+------------------
+
+The immediate problem is reproducibility, not unittest versus pytest. Keep unittest while
+building a tracked synthetic suite. pytest may be adopted later if its fixtures and
+parameterization materially improve the suite.
+
+2.5 Persistence abstraction
+----------------------------
+
+Use feature-oriented repositories and a shared connection/transaction boundary. Do not
+create an interface and implementation for every database table. Useful repository
+boundaries are likely to include transactions, imports, merchants, recurring profiles,
+events, observations/reviews and income/reporting queries.
+
+2.6 Financial observations
+--------------------------
+
+The backend should become the authoritative owner of observation qualification, baselines,
+thresholds, evidence, precedence, grouping identity and severity. The frontend may own
+presentation, sorting and expand/collapse behavior. Move these rules only after parity
+fixtures capture current intended behavior.
+
+
+===========================================================================================
+3. TARGET ARCHITECTURE
+===========================================================================================
+
+Keep one local application and one SQLite database.
+
++---------------------------------------------------------------------------+
+| BROWSER                                                                   |
+| Feature modules, rendering, interaction state, shared API client          |
++---------------------------------------------------------------------------+
+                                  | stable HTTP/JSON contracts
+                                  v
++---------------------------------------------------------------------------+
+| HTTP BOUNDARY                                                             |
+| Routing, request parsing, validation, response/error mapping              |
++---------------------------------------------------------------------------+
+                                  |
+                                  v
++---------------------------------------------------------------------------+
+| APPLICATION SERVICES                                                      |
+| Import workflows, merchant updates, reporting, events, recurring, reviews |
++---------------------------------------------------------------------------+
+                                  |
+                    +-------------+-------------+
+                    v                           v
++----------------------------------+  +--------------------------------------+
+| PURE FINANCIAL RULES             |  | INFRASTRUCTURE                       |
+| Dates, totals, observations,     |  | SQLite repositories, migrations,    |
+| installments, recurrence        |  | provider parsers, backups            |
++----------------------------------+  +--------------------------------------+
+
+Dependency rules
+----------------
+
+- Financial calculation modules do not import HTTP handlers or DOM code.
+- Pure financial rules accept values and return values; they do not open SQLite.
+- HTTP handlers do not contain SQL or financial thresholds.
+- Provider parsers produce canonical candidates and do not commit transactions.
+- Repositories do not decide category, recurring, observation or event policy.
+- The frontend does not independently reimplement authoritative financial rules.
+- API behavior changes only through explicit, tested contract changes.
+
+
+===========================================================================================
+4. PRACTICAL MODULE SHAPE
+===========================================================================================
+
+Do not move immediately to separate backend/ and frontend/ projects. Preserve the current
+package layout and evolve it gradually.
+
+Possible Python direction
+-------------------------
+
+src/clearspend/
+|-- server.py                    # bootstrap and temporary route registration
+|-- http/
+|   |-- handlers.py              # thin request/response boundary
+|   `-- errors.py
+|-- database/
+|   |-- connection.py
+|   |-- migrations/
+|   `-- repositories/
+|-- imports/
+|   |-- service.py               # analyze, stage, approve and commit
+|   |-- deduplication.py
+|   |-- reconciliation.py
+|   `-- parsers/
+|       |-- max.py
+|       |-- isracard.py
+|       `-- income.py
+|-- reporting/
+|   |-- service.py
+|   |-- periods.py
+|   `-- calculations.py
+|-- merchants/
+|-- recurring/
+|-- events/
+|-- observations/
+`-- shared/
+
+Possible incremental Vue frontend direction
+-------------------------------------------
+
+dist/                              # current production frontend during migration
+frontend/
+|-- package.json
+|-- tsconfig.json
+|-- vite.config.ts                 # preview output must not overwrite dist/
+`-- src/
+    |-- main.ts
+    |-- api/
+    |   |-- client.ts
+    |   `-- contracts.ts
+    |-- shared/
+    |   |-- format.ts
+    |   |-- validation.ts
+    |   `-- constants.ts
+    |-- components/
+    `-- features/
+        |-- dashboard/
+        |-- transactions/
+        |-- imports/
+        |-- merchants/
+        |-- recurring/
+        |-- events/
+        `-- observations/
+dist-next/                         # ignored preview build during migration
+
+Framework-independent logic may temporarily be consumed by either frontend where
+practical. UI-specific vanilla code should not be reorganized merely to be replaced by a
+Vue component shortly afterward.
+
+These structures are guides, not quotas. Create a module only when cohesive behavior is
+actually moved into it. Avoid empty layers and one-function wrapper classes.
+
+
+===========================================================================================
+5. REFACTORING ACTION PLAN
+===========================================================================================
+
+PHASE 0 - Freeze and inventory the working behavior
+---------------------------------------------------
+
+Actions
+~~~~~~~
+
+1. Confirm the worktree is clean before beginning each phase.
+2. Record current API routes, request bodies, response shapes and error behavior.
+3. Record current database tables, columns, indexes, triggers and relationships.
+4. Catalogue authoritative calculation rules from the code and existing documentation.
+5. Identify all code paths that write to SQLite.
+6. Identify every frontend fetch call and the feature that consumes it.
+7. Document the supported Python range; temporarily cap it below 3.13 if cgi remains.
+
+Acceptance criteria
+~~~~~~~~~~~~~~~~~~~
+
+- A route/API inventory exists.
+- A database-schema snapshot exists without containing private records.
+- Important financial rules have named owners and representative examples.
+- No production data or application behavior has changed.
+
+
+PHASE 1 - Create a reproducible safety net
+------------------------------------------
+
+Actions
+~~~~~~~
+
+1. Stop ignoring the entire tests/ directory.
+2. Move private statement-dependent tests or fixtures to an explicitly ignored local
+   location such as tests_private/ or local_fixtures/.
+3. Add tracked synthetic factories for cards, transactions, merchants, imports, income,
+   recurring profiles, events and reviews.
+4. Preserve representative coverage for:
+   - provider parsing and canonical transaction candidates;
+   - exact and possible duplicate behavior;
+   - staged import versus committed import;
+   - statement reconciliation and pending/outside-cycle rows;
+   - billing month versus transaction month;
+   - installments and installment identity;
+   - reimbursements and personal-spending totals;
+   - merchant aliases, display names and transaction overrides;
+   - event assignments and routine-only category scope;
+   - recurring aliases, cadence and lifecycle;
+   - monthly, latest-year and all-time observations;
+   - income, net spending and amount-left calculations.
+5. Add API contract tests for the responses used by the current frontend.
+6. Add a minimal browser smoke test after the core synthetic suite is stable.
+
+Acceptance criteria
+~~~~~~~~~~~~~~~~~~~
+
+- A fresh clone can run useful tests without a real database or statement file.
+- Private merchant names, card numbers, transactions and income do not enter Git.
+- The current local private regression suite remains available and passing.
+- Refactors can prove financial parity using synthetic examples.
+
+
+PHASE 2 - Introduce explicit database migrations
+------------------------------------------------
+
+Actions
+~~~~~~~
+
+1. Add a schema-version table or use SQLite PRAGMA user_version consistently.
+2. Convert current inline column/trigger upgrades into ordered, re-runnable migrations.
+3. Separate fresh-database schema creation from upgrades of existing databases.
+4. Add a shared connection helper and explicit write transaction boundaries.
+5. Ensure each migration:
+   - checks its expected starting version;
+   - runs transactionally where SQLite permits;
+   - updates the version only after success;
+   - fails clearly without silently continuing;
+   - is tested on a synthetic old-version database.
+6. Preserve the existing automatic backup requirement before material migrations.
+7. Test migrations on a copy of the current real database, never first on the live file.
+
+Acceptance criteria
+~~~~~~~~~~~~~~~~~~~
+
+- Database initialization no longer contains scattered ALTER TABLE decisions.
+- A database reports its current schema version.
+- Fresh creation and supported upgrade paths both pass tests.
+- A failed migration leaves the original live database recoverable.
+- Existing data and reviewed decisions remain unchanged.
+
+
+PHASE 3 - Extract pure reporting and financial rules
+----------------------------------------------------
+
+Actions
+~~~~~~~
+
+1. Extract period selection and reporting-date calculations.
+2. Extract spending, income, amount-left and average calculations.
+3. Extract installment reporting and purchase-activity behavior.
+4. Extract reimbursement/personal-spending calculations.
+5. Extract category scope behavior for all spending versus routine spending.
+6. Extract recurring cadence and lifecycle calculations.
+7. Move observation qualification and evidence calculation toward backend ownership.
+8. Add parity tests before removing each old implementation.
+
+Acceptance criteria
+~~~~~~~~~~~~~~~~~~~
+
+- Calculation modules run without HTTP, DOM or an open database connection.
+- Old and new implementations produce identical intended results on parity fixtures.
+- The existing dashboard continues to consume compatible response shapes.
+- No observation threshold or financial definition changes accidentally.
+
+
+PHASE 4 - Separate repositories and application services
+--------------------------------------------------------
+
+Actions
+~~~~~~~
+
+1. Add cohesive feature-oriented repositories around current parameterized SQL.
+2. Move SQL out of HTTP handlers into repositories or dedicated read/query services.
+3. Create application services for multi-step operations such as:
+   - merchant-rule and alias updates;
+   - transaction-specific category overrides;
+   - reimbursement adjustments;
+   - recurring profile changes;
+   - event creation/settings/assignment;
+   - observation review decisions;
+   - dashboard/report assembly.
+4. Keep transaction boundaries at the application-workflow level.
+5. Standardize not-found, validation, conflict and internal error results.
+
+Acceptance criteria
+~~~~~~~~~~~~~~~~~~~
+
+- HTTP handlers contain no direct financial policy and minimal or no SQL.
+- Multi-write operations commit completely or roll back completely.
+- Repositories are organized by cohesive behavior rather than by every table.
+- API contract and calculation tests remain unchanged and passing.
+
+
+PHASE 5 - Separate the import pipeline
+--------------------------------------
+
+Actions
+~~~~~~~
+
+1. Move each provider/file format behind a parser adapter.
+2. Make parsers return canonical transaction candidates without database writes.
+3. Separate these pipeline steps:
+   - profile/provider detection;
+   - parsing;
+   - normalization;
+   - existing merchant/display/category lookup;
+   - exact and possible duplicate detection;
+   - installment interpretation;
+   - statement reconciliation;
+   - staging and user review;
+   - authorized transactional commit;
+   - audit/import-history recording.
+4. Preserve database-first merchant mapping priority before fallback suggestions.
+5. Preserve explicit handling of pending rows and outside-cycle rows.
+6. Preserve the guarantee that analysis/staging does not change the database.
+
+Acceptance criteria
+~~~~~~~~~~~~~~~~~~~
+
+- Each supported provider has isolated parser tests.
+- Common deduplication and reconciliation rules are not duplicated across parsers.
+- Preview, reconciliation totals and committed results match the baseline.
+- Re-importing overlapping files remains safe and explainable.
+- Staging can be abandoned without persistent transaction changes.
+
+
+PHASE 6 - Thin and modernize the HTTP boundary
+----------------------------------------------
+
+Actions
+~~~~~~~
+
+1. Reduce the existing handler to routing, parsing, validation and response mapping.
+2. Return consistent JSON errors with stable status codes.
+3. Replace cgi.FieldStorage so supported Python versions are explicit and accurate.
+4. Preserve the 127.0.0.1 local-only default.
+5. Decide whether to retain the standard-library server or migrate the thin boundary to
+   FastAPI and Pydantic.
+6. If FastAPI is chosen, migrate routes incrementally and preserve their contracts until
+   the frontend is deliberately updated.
+
+Acceptance criteria
+~~~~~~~~~~~~~~~~~~~
+
+- All routes pass existing API contract tests.
+- Upload errors, malformed requests and application conflicts are predictable.
+- HTTP framework code does not own financial calculations or SQL.
+- The local server continues to start with one documented command.
+
+
+PHASE 7 - Incrementally migrate the frontend to Vue 3 + TypeScript
+-----------------------------------------------------------------
+
+Actions
+~~~~~~~
+
+1. Extract framework-independent API, contract, formatting, validation, normalization and
+   pure utility code without fully reorganizing the old UI.
+2. Add Vue 3, TypeScript and Vite in a separate frontend source directory.
+3. Configure a separate migration/preview build output so the current dist/ remains intact.
+4. Add browser smoke tests around the current UI before replacing individual regions.
+5. Migrate one complete feature/DOM subtree at a time; never let Vue and old event/rendering
+   code own the same elements.
+6. Start with a self-contained read-only panel, then migrate increasingly interactive
+   dashboard features. Migrate staged importing late because it is stateful and high-risk.
+7. Preserve current API contracts and CSS initially; visual redesign is not part of the
+   framework migration.
+8. Keep authoritative financial calculations on the backend and type their API responses.
+9. Audit old innerHTML paths as they are retired and ensure Vue output does not introduce
+   raw untrusted HTML rendering.
+10. Keep transient UI state separate from server-persisted financial decisions.
+11. Introduce Pinia only if cross-feature state remains difficult without it.
+12. Cut production over from the existing dist/ only after full functional, financial and
+   visual parity is verified and rollback is documented.
+
+Acceptance criteria
+~~~~~~~~~~~~~~~~~~~
+
+- Vue components progressively replace complete regions without conflicting DOM ownership.
+- Migrated features use one typed API client and shared framework-independent utilities.
+- Financial results remain identical to the backend test fixtures.
+- The existing dist/ remains deployable until the reviewed production cutover.
+- The staged-import workflow retains preview, review and commit behavior after migration.
+- The final Vue build reproduces the current dashboard from a clean checkout.
+
+
+PHASE 8 - Quality, performance and documentation
+------------------------------------------------
+
+Actions
+~~~~~~~
+
+1. Add CI for tracked synthetic tests and privacy checks.
+2. Add Python formatting/linting and optional typing incrementally.
+3. Add frontend linting after modules exist; avoid a toolchain that cannot reproduce the
+   deployed frontend.
+4. Measure slow queries with realistic synthetic volume before adding indexes.
+5. Add indexes based on measured query plans, especially for period, card, merchant,
+   event and import-dedup lookups.
+6. Keep README, architecture, reporting rules, operations and agent instructions aligned.
+7. Add short architecture decisions for major choices such as FastAPI or a frontend
+   framework.
+
+Acceptance criteria
+~~~~~~~~~~~~~~~~~~~
+
+- CI can validate a fresh checkout without private data.
+- Performance improvements have measurements before and after.
+- Documentation matches the actual runtime and repository layout.
+- Old compatibility code is deleted only after its replacement is proven.
+
+
+===========================================================================================
+6. SAFETY AND CHANGE-MANAGEMENT RULES
+===========================================================================================
+
+ 1. Never refactor against the only copy of the live database.
+ 2. Back up and verify the database before migrations or bulk writes.
+ 3. Do not mix an architectural extraction with a financial-rule change in one commit.
+ 4. Do not change backend architecture and frontend framework at the same time.
+ 5. Preserve API routes and payloads unless a separately reviewed change requires it.
+ 6. Preserve transaction categories, aliases, display names, event assignments,
+    reimbursements, recurring profiles and observation reviews as distinct concepts.
+ 7. Use synthetic data in tracked tests and documentation.
+ 8. Keep private statements, databases, backups, analysis exports and private tests out
+    of Git.
+ 9. Keep SQL parameterized and writes transactional.
+10. Make each commit small enough to revert independently.
+11. Run the relevant synthetic and private regression suites before every handoff.
+12. Compare dashboard totals and representative UI workflows after every extraction.
+13. Do not delete old code until the replacement has parity coverage and is active.
+14. Record any intentional financial-behavior change separately from refactoring work.
+
+
+===========================================================================================
+7. COMMIT STRATEGY
+===========================================================================================
+
+Each phase should be divided into small commits with one purpose. Example sequence:
+
+1. test: add tracked synthetic database and factories
+2. test: capture dashboard and import API contracts
+3. refactor: add schema-version infrastructure
+4. refactor: move existing inline upgrades into migrations
+5. refactor: extract reporting-period calculations
+6. refactor: extract transaction reporting repository
+7. refactor: extract staged-import service
+8. refactor: isolate provider parser
+9. refactor: centralize HTTP errors
+10. refactor: introduce frontend API module
+
+Do not use a single commit titled only "refactor architecture". Every commit should state
+the boundary it changes and the tests that protect it.
+
+
+===========================================================================================
+8. FRAMEWORK STATUS AND REMAINING DECISION GATES
+===========================================================================================
+
+FastAPI decision
+----------------
+
+Consider FastAPI after application services and API contract tests exist. Adopt it if it
+materially improves upload parsing, validation, error consistency and maintainability.
+Do not adopt it merely because the current server file is large.
+
+Vue, TypeScript and Vite status - selected
+------------------------------------------
+
+Vue 3 + TypeScript with Vite is the selected frontend direction. Adoption remains
+incremental: extract framework-independent logic, establish a parallel preview build, and
+replace complete UI regions one at a time. Do not perform a full vanilla-JavaScript UI
+restructure before beginning the Vue migration.
+
+Pinia decision
+--------------
+
+Do not adopt Pinia automatically with Vue. Add it only if state shared across migrated
+features cannot remain clear using component props, composables and small scoped stores.
+
+pytest decision
+---------------
+
+Consider pytest after the synthetic unittest suite is tracked. Adopt it if fixtures and
+parameterized calculation cases improve clarity. Both may coexist temporarily.
+
+ORM decision
+------------
+
+Continue using sqlite3 with explicit repositories unless query complexity demonstrates a
+specific need for an ORM. SQLAlchemy is not required for modularity.
+
+
+===========================================================================================
+9. DEFINITION OF A SUCCESSFUL REFACTOR
+===========================================================================================
+
+The refactor is successful when:
+
+- A fresh clone runs meaningful synthetic tests without private data.
+- The database has explicit, tested and recoverable schema migrations.
+- HTTP handlers are thin and contain no direct financial policy.
+- Statement parsers do not write to the database.
+- Import staging, reconciliation and deduplication remain safe and explainable.
+- Financial calculations have one authoritative owner and synthetic parity tests.
+- Frontend features are separated and consume a central API client.
+- The dashboard produces the same intended totals and reviewed results as before.
+- Local-first operation, SQLite and private-data boundaries are preserved.
+- Framework choices are based on demonstrated benefit rather than file size.
+
+
+===========================================================================================
+10. FIRST IMPLEMENTATION MILESTONE
+===========================================================================================
+
+The first implementation milestone should contain no production database migration and no
+framework conversion. It should deliver:
+
+1. A tracked synthetic test directory.
+2. Separation of private tests and private fixtures.
+3. Synthetic database/test-data factories.
+4. Characterization tests for the most important financial and import behavior.
+5. An API route and contract inventory.
+6. A database schema snapshot without private records.
+7. A proposed schema-version and migration-runner design.
+
+Only after this milestone passes should code be moved out of server.py,
+import_engine.py, app.js or observations.js.
+
+
+===========================================================================================
+11. SUMMARY
+===========================================================================================
+
+KEEP
+----
+
+Local-first operation, Python, SQLite, the current financial concepts, reviewed decisions,
+safe staged importing, current API behavior and the working dashboard design.
+
+REFACTOR FIRST
+--------------
+
+Tracked synthetic tests, database migrations, pure financial rules, persistence boundaries,
+the import pipeline and large feature-mixed modules.
+
+SELECTED FRONTEND DIRECTION
+---------------------------
+
+Vue 3, TypeScript and Vite through an incremental feature-by-feature migration. Preserve
+the current dist/ as the production fallback until complete parity and a reviewed cutover.
+
+DECIDE LATER
+------------
+
+FastAPI, Pinia, pytest and SQLAlchemy. Each requires a specific benefit and a safe
+incremental adoption plan.
+
+AVOID
+-----
+
+Microservices, cloud dependencies, database replacement, framework-led rewrites,
+unversioned schema changes, duplicated financial rules and all-at-once reorganization.
+
+ORDER OF OPERATIONS
+-------------------
+
+Establish reproducible safety first. Version and protect the database second. Extract
+financial and application boundaries third. Modernize transport and presentation only
+after behavior and contracts are stable.
