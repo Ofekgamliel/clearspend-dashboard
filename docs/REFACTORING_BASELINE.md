@@ -59,14 +59,13 @@ values are `all` and `routine`.
 | `POST /api/recurring-profile` | Edit cadence and lifecycle | `recurring_profiles` |
 | `POST /api/recurring-profile/manage` | Add/remove a reviewed recurring decision and aliases | `recurring_profiles`, `recurring_profile_members` |
 | `POST /api/observation-review` | Save or undo a review resolution | `observation_reviews` |
-| `POST /api/import/analyze` | Parse and stage uploaded files | Temporary files and in-memory batch only; no live transaction commit |
-| `POST /api/import/commit` | Reanalyze and commit an approved staged batch | Backup plus imports, transactions, mappings, coverage and related audit rows |
-| `POST /api/import` | Legacy immediate import | Direct import without the production staged-review UI |
+| `POST /api/import/analyze` | Parse and stage exactly one uploaded statement | One temporary file and an in-memory session only; no live transaction commit |
+| `POST /api/import/commit` | Reanalyze and atomically commit an approved statement | Verified backup plus imports, transactions, mappings, coverage and related audit rows |
 
-The production frontend calls `import/analyze` followed by `import/commit`. The
-legacy direct-import route conflicts with the current rule that imports must be
-staged and reviewed. Keep it unchanged during baseline capture, add contract
-coverage, then deprecate or remove it as a separately reviewed behavior change.
+The production frontend calls `import/analyze` followed by `import/commit`.
+Both the browser and backend enforce one file per staged session. The legacy
+direct-import route was removed so no production HTTP path can bypass review,
+duplicate decisions, reconciliation, the verified backup or atomic commit.
 
 ## Core response contracts used by the frontend
 
@@ -137,7 +136,8 @@ and a verified backup. `ImportDatabase.__init__` no longer performs inline
    backup; ordinary database opening only creates a schema when the file is new.
 2. Statement and income import methods create audit records and insert data.
 3. Staged commit additionally saves reviewed merchant/display decisions,
-   possible-duplicate decisions and coverage data.
+   possible-duplicate decisions and coverage data in the same transaction as
+   its one statement.
 4. Merchant management can update both rules and historical denormalized
    transaction category fields.
 5. Transaction category, reimbursement and event membership are intentionally
@@ -524,8 +524,8 @@ observations.
 - Python 3.13 runs all 337 tracked synthetic tests successfully; a complete
   private-fixture run additionally requires installing the pinned `pypdf`
   dependency into that interpreter's environment.
-- Preserve the staged analyze/commit workflow and pre-import backup.
-- Review the legacy direct-import route separately.
+- Preserve the one-file staged analyze/commit workflow and verified pre-import
+  backup.
 - Continue standardizing error mapping when new use cases are extracted.
 - Keep current SQL parameterized; no confirmed SQL-injection defect was found in
   this architectural inventory.

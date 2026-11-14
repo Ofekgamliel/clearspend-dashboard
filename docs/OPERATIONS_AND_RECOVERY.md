@@ -52,14 +52,19 @@ uploaded or pruned.
 ## Automatic import backup
 
 Staging a statement is read-only. Immediately before an approved staged import
-is committed, ClearSpend copies the live database to:
+is committed, ClearSpend acquires a SQLite write reservation, creates a
+consistent backup with SQLite's backup API, and verifies the source and backup
+with `PRAGMA integrity_check`:
 
 ```text
 data/backups/clearspend-before-import-YYYYMMDD-HHMMSS-microseconds.db
 ```
 
-The backup protects the pre-import state. Keep the import filename, audit record,
-coverage record, and post-import verification together when diagnosing a batch.
+The backup protects the pre-import state. The reviewed statement is then saved
+as one transaction: merchant decisions, transactions, duplicate links, coverage
+and audit rows either all commit or all roll back. Keep the import filename,
+audit record, coverage record and post-import verification together when
+diagnosing an import.
 
 ## Manual backup
 

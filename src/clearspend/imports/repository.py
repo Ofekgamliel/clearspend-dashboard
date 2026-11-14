@@ -29,8 +29,13 @@ class ImportDatabase:
     def close(self) -> None:
         self.connection.close()
 
+    def _commit(self, commit: bool) -> None:
+        if commit:
+            self.connection.commit()
+
     def import_statement(self, path: Path, probable_duplicate_matches: dict[str, int] | None = None,
-                         excluded_transaction_keys: set[str] | None = None) -> dict[str, Any]:
+                         excluded_transaction_keys: set[str] | None = None, *,
+                         commit: bool = True) -> dict[str, Any]:
         probable_duplicate_matches = probable_duplicate_matches or {}
         excluded_transaction_keys = excluded_transaction_keys or set()
         byte_hash = sha256_path(path)
@@ -48,7 +53,7 @@ class ImportDatabase:
                 (path.name, str(path), byte_hash, source_format, "duplicate_file", now,
                  prior_file["provider"], prior_file["card_last4"], prior_file["parsed_rows"], 0, prior_file["parsed_rows"]),
             )
-            self.connection.commit()
+            self._commit(commit)
             return {"import_id": cursor.lastrowid, "status": "duplicate_file", "matches_import_id": prior_file["id"]}
 
         try:
@@ -59,7 +64,7 @@ class ImportDatabase:
                 VALUES(?,?,?,?,?,?,?)""",
                 (path.name, str(path), byte_hash, source_format, "failed", now, str(error)),
             )
-            self.connection.commit()
+            self._commit(commit)
             return {"import_id": cursor.lastrowid, "status": "failed", "error": str(error)}
 
         semantic_hash = statement.semantic_hash
@@ -150,7 +155,7 @@ class ImportDatabase:
         self.connection.execute(
             "UPDATE imports SET inserted_rows=?, duplicate_rows=? WHERE id=?", (inserted, duplicates, import_id)
         )
-        self.connection.commit()
+        self._commit(commit)
         return {
             "import_id": import_id,
             "status": status,
@@ -163,7 +168,7 @@ class ImportDatabase:
             "matches_import_id": prior_semantic["id"] if prior_semantic else None,
         }
 
-    def import_income(self, path: Path) -> dict[str, Any]:
+    def import_income(self, path: Path, *, commit: bool = True) -> dict[str, Any]:
         if path.suffix.lower() != ".xlsx":
             raise ValueError("Income files must use XLSX format")
         byte_hash = sha256_path(path)
@@ -179,7 +184,7 @@ class ImportDatabase:
                 (path.name, str(path), byte_hash, ".xlsx", "duplicate_file", prior_file["parsed_rows"], 0,
                  prior_file["parsed_rows"], now),
             )
-            self.connection.commit()
+            self._commit(commit)
             return {"import_id": cursor.lastrowid, "status": "duplicate_file", "kind": "income",
                     "matches_import_id": prior_file["id"]}
         try:
@@ -190,7 +195,7 @@ class ImportDatabase:
                 imported_at,error_message) VALUES(?,?,?,?,?,?,?)""",
                 (path.name, str(path), byte_hash, ".xlsx", "failed", now, str(error)),
             )
-            self.connection.commit()
+            self._commit(commit)
             return {"import_id": cursor.lastrowid, "status": "failed", "kind": "income", "error": str(error)}
         cursor = self.connection.execute(
             """INSERT INTO income_imports(original_name,source_path,byte_hash,source_format,status,
@@ -214,15 +219,17 @@ class ImportDatabase:
             "UPDATE income_imports SET status=?,inserted_rows=?,duplicate_rows=? WHERE id=?",
             (status, inserted, duplicates, import_id),
         )
-        self.connection.commit()
+        self._commit(commit)
         return {"import_id": import_id, "status": status, "kind": "income", "parsed": len(entries),
                 "inserted": inserted, "duplicates": duplicates}
 
     def import_file(self, path: Path, probable_duplicate_matches: dict[str, int] | None = None,
-                    excluded_transaction_keys: set[str] | None = None) -> dict[str, Any]:
-        return self.import_income(path) if is_income_xlsx(path) else self.import_statement(
+                    excluded_transaction_keys: set[str] | None = None, *,
+                    commit: bool = True) -> dict[str, Any]:
+        return self.import_income(path, commit=commit) if is_income_xlsx(path) else self.import_statement(
             path, probable_duplicate_matches=probable_duplicate_matches,
             excluded_transaction_keys=excluded_transaction_keys,
+            commit=commit,
         )
 
     def summary(self) -> dict[str, Any]:

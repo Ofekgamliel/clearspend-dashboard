@@ -7,6 +7,7 @@ from pathlib import Path
 from types import ModuleType
 from typing import Sequence
 
+from clearspend.database.backup import DatabaseBackupError, create_verified_backup
 from clearspend.database.migrations import v001_current_baseline
 
 
@@ -93,29 +94,6 @@ def inspect_database(path: Path) -> SchemaStatus:
         connection.close()
 
 
-def _verified_backup(
-    source: sqlite3.Connection,
-    database_path: Path,
-    backup_directory: Path,
-    target_version: int,
-) -> Path:
-    backup_directory.mkdir(parents=True, exist_ok=True)
-    timestamp = datetime.now().strftime("%Y%m%d-%H%M%S-%f")
-    destination = (
-        backup_directory
-        / f"{database_path.stem}-before-schema-v{target_version}-{timestamp}.db"
-    )
-    backup = sqlite3.connect(destination)
-    try:
-        source.backup(backup)
-        result = backup.execute("PRAGMA integrity_check").fetchone()[0]
-        if result != "ok":
-            raise MigrationError(f"Backup integrity check failed: {result}")
-    finally:
-        backup.close()
-    return destination
-
-
 def _record_migration(connection: sqlite3.Connection, migration: ModuleType) -> None:
     connection.execute(
         "INSERT INTO schema_migrations(version,name,applied_at) VALUES(?,?,?)",
@@ -154,10 +132,15 @@ def migrate_database(
         if has_pending_work and existed_with_content:
             if backup_directory is None:
                 raise MigrationError("A backup directory is required before migrating an existing database")
-            integrity = connection.execute("PRAGMA integrity_check").fetchone()[0]
-            if integrity != "ok":
-                raise MigrationError(f"Source database integrity check failed: {integrity}")
-            backup_path = _verified_backup(connection, path, backup_directory, len(ordered))
+            try:
+                backup_path = create_verified_backup(
+                    connection,
+                    path,
+                    backup_directory,
+                    f"before-schema-v{len(ordered)}",
+                )
+            except DatabaseBackupError as error:
+                raise MigrationError(str(error)) from error
 
         if version == 0 and unversioned_tables:
             connection.execute("BEGIN IMMEDIATE")

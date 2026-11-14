@@ -98,7 +98,7 @@ class ClearSpendHandler(BaseHTTPRequestHandler):
             except Exception as error:
                 self.send_json({"error": str(error)}, 500)
             return
-        if parsed_path not in {"/api/import", "/api/import/analyze"}:
+        if parsed_path != "/api/import/analyze":
             self.send_error(HTTPStatus.NOT_FOUND)
             return
         content_type = self.headers.get("Content-Type", "")
@@ -120,7 +120,6 @@ class ClearSpendHandler(BaseHTTPRequestHandler):
                 self.app.database,
                 self.app.staged_imports,
                 items,
-                staged=parsed_path == "/api/import/analyze",
             )
             self.send_json(result, status)
         except Exception as error:

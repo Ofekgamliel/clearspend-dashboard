@@ -31,60 +31,26 @@ class HttpImportTests(unittest.TestCase):
             self.database,
             self.staged_imports,
             [UploadedFile("synthetic.txt", BytesIO(b"not a statement"))],
-            staged=False,
         )
 
-        self.assertEqual(status, 200)
-        self.assertEqual(payload["results"][0]["status"], "unsupported")
-        self.assertEqual(list((self.root / "uploads").iterdir()), [])
+        self.assertEqual(status, 400)
+        self.assertEqual(payload["error"], "Use one XLSX or PDF statement")
+        self.assertFalse((self.root / "staging").exists())
 
-    @patch("clearspend.http.imports.ImportDatabase")
-    def test_direct_upload_records_original_filename_and_closes_importer(
-        self, importer_class
-    ) -> None:
-        importer = importer_class.return_value
-        importer.import_file.return_value = {
-            "status": "imported",
-            "kind": "statement",
-            "import_id": 7,
-        }
-
+    def test_multiple_files_are_rejected_before_any_file_is_written(self) -> None:
         payload, status = process_import_uploads(
             self.database,
             self.staged_imports,
-            [UploadedFile("Synthetic statement.xlsx", BytesIO(b"synthetic workbook"))],
-            staged=False,
+            [
+                UploadedFile("first.xlsx", BytesIO(b"first")),
+                UploadedFile("second.xlsx", BytesIO(b"second")),
+            ],
         )
 
-        self.assertEqual(status, 200)
-        self.assertEqual(payload["results"][0]["filename"], "Synthetic statement.xlsx")
-        importer.connection.execute.assert_called_once_with(
-            "UPDATE imports SET original_name = ? WHERE id = ?",
-            ("Synthetic statement.xlsx", 7),
-        )
-        importer.connection.commit.assert_called_once_with()
-        importer.close.assert_called_once_with()
-        uploads = list((self.root / "uploads").iterdir())
-        self.assertEqual(len(uploads), 1)
-        self.assertEqual(uploads[0].read_bytes(), b"synthetic workbook")
-
-    @patch("clearspend.http.imports.ImportDatabase")
-    def test_direct_duplicate_upload_removes_temporary_file(self, importer_class) -> None:
-        importer_class.return_value.import_file.return_value = {
-            "status": "duplicate_content"
-        }
-
-        payload, status = process_import_uploads(
-            self.database,
-            self.staged_imports,
-            [UploadedFile("duplicate.xlsx", BytesIO(b"synthetic duplicate"))],
-            staged=False,
-        )
-
-        self.assertEqual(status, 200)
-        self.assertEqual(payload["results"][0]["status"], "duplicate_content")
-        self.assertEqual(list((self.root / "uploads").iterdir()), [])
-        importer_class.return_value.close.assert_called_once_with()
+        self.assertEqual(status, 400)
+        self.assertIn("exactly one", payload["error"].lower())
+        self.assertFalse((self.root / "staging").exists())
+        self.assertEqual(self.staged_imports, {})
 
     @patch("clearspend.http.imports.analyze_staged_files")
     def test_staged_upload_is_persisted_and_registered(self, analyze) -> None:
@@ -94,7 +60,6 @@ class HttpImportTests(unittest.TestCase):
             self.database,
             self.staged_imports,
             [UploadedFile("Synthetic statement.xlsx", BytesIO(b"synthetic workbook"))],
-            staged=True,
         )
 
         self.assertEqual(status, 200)
@@ -113,12 +78,10 @@ class HttpImportTests(unittest.TestCase):
             self.database,
             self.staged_imports,
             [UploadedFile("synthetic.xlsx", BytesIO(b"invalid workbook"))],
-            staged=True,
         )
 
         self.assertEqual(status, 400)
         self.assertEqual(payload["error"], "Synthetic statement could not be analyzed")
-        self.assertEqual(payload["results"], [])
         self.assertEqual(list((self.root / "staging").iterdir()), [])
         self.assertEqual(self.staged_imports, {})
 
@@ -145,7 +108,22 @@ class HttpImportTests(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertEqual(payload, {"status": "discarded", "removed": False})
 
-    @patch("clearspend.http.imports.commit_staged_batch")
+    def test_commit_rejects_a_forged_multi_file_session(self) -> None:
+        self.staged_imports["batch"] = {
+            "uploads": [
+                {"filename": "first.xlsx", "path": self.root / "first.xlsx"},
+                {"filename": "second.xlsx", "path": self.root / "second.xlsx"},
+            ]
+        }
+
+        with self.assertRaisesRegex(ValueError, "Exactly one staged statement"):
+            commit_staged_import(
+                self.database,
+                self.staged_imports,
+                {"batch_id": "batch"},
+            )
+
+    @patch("clearspend.http.imports.commit_staged_statement")
     @patch("clearspend.http.imports.analyze_staged_files")
     def test_reconciliation_confirmation_is_required_before_commit(
         self, analyze, commit
@@ -175,7 +153,7 @@ class HttpImportTests(unittest.TestCase):
         self.assertTrue(upload_path.exists())
         self.assertIn("batch", self.staged_imports)
 
-    @patch("clearspend.http.imports.commit_staged_batch")
+    @patch("clearspend.http.imports.commit_staged_statement")
     @patch("clearspend.http.imports.analyze_staged_files")
     def test_successful_commit_removes_session_and_temporary_files(
         self, analyze, commit

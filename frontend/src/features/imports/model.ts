@@ -1,6 +1,6 @@
 import type { DisplayIdentityReference, ImportMerchantDecision, StagedFile, StagedImportBatch, StagedMerchant, StagedTransaction } from '../../api/contracts.ts';
 
-export const importSteps = ['Files', 'Checks', 'Merchants', 'Reconcile', 'Approve'] as const;
+export const importSteps = ['File', 'Checks', 'Merchants', 'Reconcile', 'Approve'] as const;
 export type DuplicateAction = 'skip' | 'import';
 
 function normalize(value: string): string { return value.normalize('NFKD').toLocaleLowerCase().replace(/[\u0591-\u05c7]/g, '').replace(/[^\p{L}\p{N}]+/gu, ' ').replace(/\b\d+\b/g, ' ').replace(/\s+/g, ' ').trim(); }

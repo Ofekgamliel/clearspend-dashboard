@@ -10,11 +10,12 @@ test('all five import stages review and commit a synthetic statement', async ({ 
   const dialog = page.getByRole('dialog', { name: 'Import statements' });
   await expect(dialog).toBeVisible();
   const steps = dialog.getByRole('navigation', { name: 'Import steps' });
-  await expect(steps.getByRole('button', { name: /1 Files/ })).toHaveClass(/active/);
+  await expect(steps.getByRole('button', { name: /1 File/ })).toHaveClass(/active/);
+  await expect(dialog.locator('input[type="file"]')).not.toHaveAttribute('multiple');
   await dialog.locator('input[type="file"]').setInputFiles(path.join(tmpdir(), 'clearspend-browser-e2e-statement.xlsx'));
 
   await expect(steps.getByRole('button', { name: /2 Checks/ })).toHaveClass(/active/);
-  await expect(dialog.getByText('1 files staged. Nothing was added to the database.')).toBeVisible();
+  await expect(dialog.getByText('clearspend-browser-e2e-statement.xlsx staged. Nothing was added to the database.')).toBeVisible();
   await expect(dialog.locator('.import-metrics')).toContainText('Parsed rows1');
   await expect(dialog.locator('.import-metrics')).toContainText('Confirmed new1');
   await expect(dialog.getByText('No exact duplicates found.')).toBeVisible();
@@ -37,7 +38,7 @@ test('all five import stages review and commit a synthetic statement', async ({ 
 
   await expect(steps.getByRole('button', { name: /5 Approve/ })).toHaveClass(/active/);
   await expect(dialog.locator('.import-preview tbody tr', { hasText: 'Synthetic Browser Import' })).toContainText('Utilities');
-  await expect(dialog.getByText('Nothing has been added yet. Approve & import is the only action that writes this batch.')).toBeVisible();
+  await expect(dialog.getByText('Nothing has been added yet. Approve & import atomically saves the reviewed statement or rolls it all back.')).toBeVisible();
   await dialog.getByRole('button', { name: 'Approve & import' }).click();
   await expect(dialog).toBeHidden();
 

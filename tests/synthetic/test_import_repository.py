@@ -7,6 +7,7 @@ from unittest.mock import MagicMock, patch, sentinel
 
 from clearspend.import_engine import ImportDatabase as CompatibilityImportDatabase
 from clearspend.import_engine import import_paths
+from clearspend.imports.domain import ParsedStatement
 from clearspend.imports.repository import ImportDatabase
 
 
@@ -57,12 +58,44 @@ class ImportRepositoryTests(unittest.TestCase):
                 sentinel.statement,
             )
 
-        database.import_income.assert_called_once_with(source)
+        database.import_income.assert_called_once_with(source, commit=True)
         database.import_statement.assert_called_once_with(
             source,
             probable_duplicate_matches={"candidate": 7},
             excluded_transaction_keys={"excluded"},
+            commit=True,
         )
+
+    def test_caller_managed_statement_transaction_does_not_commit(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "synthetic.xlsx"
+            source.write_bytes(b"synthetic statement")
+            database_path = root / "synthetic.db"
+            database = ImportDatabase(database_path)
+            try:
+                statement = ParsedStatement("synthetic", "0001", None, None, [])
+                with patch("clearspend.imports.repository.parse_statement", return_value=statement):
+                    result = database.import_statement(source, commit=False)
+
+                observer = ImportDatabase(database_path)
+                try:
+                    self.assertEqual(
+                        observer.connection.execute(
+                            "SELECT COUNT(*) FROM imports WHERE id=?", (result["import_id"],)
+                        ).fetchone()[0],
+                        0,
+                    )
+                finally:
+                    observer.close()
+
+                database.connection.rollback()
+                self.assertEqual(
+                    database.connection.execute("SELECT COUNT(*) FROM imports").fetchone()[0],
+                    0,
+                )
+            finally:
+                database.close()
 
     @patch("clearspend.import_engine.ImportDatabase")
     def test_import_paths_always_closes_repository(self, database_type) -> None:
