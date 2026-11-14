@@ -256,9 +256,18 @@ The optional development server is local-only on `127.0.0.1:5173` and proxies
 `/api` to the existing local ClearSpend server on `127.0.0.1:8765`.
 
 `frontend/src/api/client.ts` mirrors the production transport semantics with a
-generic typed client. `frontend/src/api/contracts.ts` records backend-owned JSON
-contracts, beginning with the categories read model, and `api/categories.ts`
-owns its typed URL/query assembly.
+generic typed client. Backend-owned JSON contracts are separated by domain in
+`frontend/src/api/contracts/`; `api/contracts.ts` re-exports them as a stable
+compatibility boundary for existing feature imports. Feature-specific API
+modules own typed URL/query assembly.
+
+Shared dashboard filter, loading, compatibility-health and revision state is
+owned by `features/dashboard/useDashboardData.ts`. The data-management menu and
+its keyboard/focus lifecycle are owned by
+`features/management/ManageDataMenu.vue`. `App.vue` retains only deliberate
+cross-feature navigation refs and top-level composition. This interaction
+graph does not justify adding a global state library; that decision should be
+revisited only if state must be shared independently by several feature roots.
 
 The Vue application owns the category panel.
 `features/categories/CategoriesPanel.vue` loads the typed categories contract,
@@ -294,10 +303,11 @@ value; longer periods render backend monthly spending and optional household
 income. The income privacy preference is shared browser state so hiding income
 also removes it from this chart, matching the existing behavior.
 
-The transaction browser owns the read-only Recent transactions
-panel and View all modal. It consumes the dashboard's six-row summary and the
-typed `/api/transactions` contract, preserves the default transaction-date
-descending sort, supports every displayed source column, and delegates
+The transaction feature separates the read-only recent summary, the complete
+browser, transaction-specific category correction, and reimbursement editing
+into focused components. `TransactionBrowser.vue` consumes the typed
+`/api/transactions` contract, preserves the default transaction-date descending
+sort, supports every displayed source column, and delegates
 substring search to the backend. Browsing without a search remains capped at
 1,000 rows; a non-empty query searches the complete history inside the selected
 period and card. Event assignment and transaction-specific category correction
@@ -307,6 +317,12 @@ merchant rule and future imports unchanged. Reviewed full and partial
 reimbursements are also migrated: the original charge stays intact, only the
 personal-spending adjustment is written, and an existing adjustment can be
 removed independently.
+
+Transaction-specific presentation rules live in
+`features/transactions/transactions.css`. The remaining global stylesheet
+continues to own shared application layout and older feature rules; styles
+should move beside a feature incrementally when that feature is changed rather
+than through a second wholesale visual rewrite.
 
 The Recurring & commitments region consumes the typed
 `/api/recurring` read model. It renders backend-owned recurring and installment
@@ -521,7 +537,7 @@ observations.
 ## Known compatibility and audit targets
 
 - Preserve `127.0.0.1` as the default bind address.
-- Python 3.13 runs all 337 tracked synthetic tests successfully; a complete
+- Python 3.13 runs all 352 tracked synthetic tests successfully; a complete
   private-fixture run additionally requires installing the pinned `pypdf`
   dependency into that interpreter's environment.
 - Preserve the one-file staged analyze/commit workflow and verified pre-import
@@ -537,9 +553,9 @@ observations.
 - Tracked dependency-free frontend shared-utility suite: `tests/frontend/`
 - Private statement-derived regression tests: ignored local files under `tests/`
 - Baseline at introduction: 7 synthetic tests and 39 total local tests passing
-- Current refactoring checkpoint: 337 synthetic tests and 369 total Python tests passing, plus 43 legacy-compatibility frontend tests
+- Current refactoring checkpoint: 352 tracked synthetic tests passing, plus 43 legacy-compatibility frontend tests
 - Current legacy shared-utility compatibility checkpoint: 43 tests passing
-- Current Vue production checkpoint: 62 typed category/filter/income/metric/card/trend/transaction/import/merchant/recurring/event/observation tests passing
+- Current Vue production checkpoint: 71 typed category/filter/income/metric/card/trend/transaction/import/merchant/recurring/event/observation tests passing, plus 15 Playwright production-safety and interaction tests
 
 This inventory should be updated only when an intentional contract or ownership
 change is reviewed and accepted.
