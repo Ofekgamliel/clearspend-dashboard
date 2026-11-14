@@ -1,155 +1,250 @@
 # ClearSpend architecture
 
-This document is the source of truth for ClearSpend's application boundaries,
-runtime components, local data ownership, and persistence model.
+This document is the living contract for ClearSpend's runtime, module ownership,
+dependency boundaries, state ownership, and development workflow. Detailed
+financial behavior belongs in the domain documents linked from
+[`README.md`](README.md).
 
-## Core principle
+## System overview
 
-ClearSpend is an offline-first, local application. The browser renders the UI,
-the local Python server performs application operations, and SQLite stores the
-user's financial state. GitHub stores application code only.
+ClearSpend is a local-first modular monolith for importing and understanding
+personal financial records. A Vue browser application, Python HTTP server, and
+one SQLite database run on the same computer. GitHub stores application code,
+never the user's financial state.
 
-No production frontend file may contain real transactions, merchants, amounts,
-income, dates, card suffixes, or other statement-derived information.
+The system is intentionally not a cloud service or collection of microservices.
+No production frontend asset may contain real transactions, merchants, amounts,
+income, dates, card suffixes, or statement-derived fixtures.
 
-## Runtime flow
+## Technology decisions
+
+| Area | Current decision |
+| --- | --- |
+| Frontend | Vue 3, TypeScript and Vite under `frontend/` |
+| Backend | Python standard-library `ThreadingHTTPServer` with modular application packages under `src/clearspend/` |
+| Storage | One local SQLite database with explicit versioned migrations |
+| Production assets | Generated Vite output under tracked `dist/` |
+| Backend tests | `unittest` with synthetic temporary databases |
+| Frontend tests | Node tests, Vue type/unit tests, Playwright E2E and reviewed visual snapshots |
+
+Pinia, FastAPI, cloud storage, and separate services are not adopted. Add a new
+dependency only for a demonstrated requirement, not architectural symmetry.
+
+## Runtime and data flow
 
 ```text
-Browser
-  -> dist/index.html and generated dist/assets/*
-  -> Vue 3 + TypeScript application built from frontend/
-  -> local /api requests
-Python server
-  -> parsing, validation, dashboard queries, mappings, imports
-SQLite database
-  -> local transactions, mappings, income, and import audit history
+Vue feature component
+  -> frontend/src/api client and typed contract
+  -> src/clearspend/http request decoding and response mapping
+  -> feature query or application service
+  -> pure financial rules and/or scoped SQLite access
+  -> data/clearspend.db
 ```
 
-The real application must be started with:
+Statement imports have a deliberately stronger boundary:
+
+```text
+one upload
+  -> provider recognition and canonical parsing
+  -> staged duplicate/coverage/merchant/reconciliation analysis
+  -> explicit user decisions and complete insertion preview
+  -> revalidation + verified SQLite backup
+  -> one approved database transaction
+  -> commit everything or roll everything back
+```
+
+The real application starts with:
 
 ```bash
 PYTHONPATH=src:. .venv/bin/python -m clearspend.server --port 8765
 ```
 
-`python3 -m http.server` serves static files only. It cannot provide database
-data, imports, mapping changes, or other API-backed behavior.
+`python3 -m http.server` serves static files only and cannot provide database or
+API behavior.
 
-## Source layout
+## Repository structure
 
-- `frontend/` contains the Vue 3 + TypeScript production source.
-- `dist/` contains generated production assets only. Do not edit it by hand;
-  rebuild it with `cd frontend && npm run build`.
-- `frontend/src/api/contracts/` contains domain-focused API contracts. The
-  adjacent `api/contracts.ts` file is a compatibility barrel, not a contract
-  owner, so features can migrate imports without one application-wide type
-  file growing again.
-- `frontend/src/features/dashboard/useDashboardData.ts` owns shared dashboard
-  filter/loading state. Cross-feature modal navigation remains explicit in
-  `App.vue`; a global store is not required for the current interaction graph.
-- `frontend/src/features/transactions/` separates recent-transaction summary,
-  complete browsing, category correction, reimbursement editing, and shared
-  detail-table presentation. Transaction-specific styles live with this
-  feature instead of in the global stylesheet.
-- `frontend/src/features/management/ManageDataMenu.vue` owns the data-management
-  menu and its keyboard/focus behavior.
-- `frontend/src/features/observations/` presents backend-qualified monthly
-  findings and longer-period patterns; it does not write financial records
-  except through explicit review actions.
-- `frontend/src/features/imports/` owns the staged-import review interface; the
-  backend remains authoritative for parsing, duplicate detection, validation,
-  reconciliation, backups, and commits.
-- `src/clearspend/http/` serves static assets and exposes the local API.
-- `src/clearspend/imports/` parses statements and persists normalized records.
-- `src/clearspend/staging/` owns staged analysis, duplicate decisions,
-  reconciliation, reviewed commit decisions, and pre-commit backups.
-- `tools/` contains generic local utilities permitted by `.gitignore`.
-- `data/` contains the live database and user-specific exports. It is private.
-- `analysis/`, `samples/`, private tests, and review prototypes remain local.
+| Path | Responsibility |
+| --- | --- |
+| `frontend/src/` | Editable Vue production source |
+| `frontend/src/features/` | Feature rendering, interaction and transient UI state |
+| `frontend/src/api/` | Central browser transport and compile-time response contracts |
+| `frontend/src/shared/` | Genuinely reused presentation utilities |
+| `frontend/e2e/` | Synthetic browser workflows and visual baselines |
+| `dist/` | Generated production assets; never hand-authored UI source |
+| `src/clearspend/http/` | HTTP decoding, dispatch, compatibility and static serving |
+| `src/clearspend/imports/` | Canonical import domain, provider parsers and persistence primitives |
+| `src/clearspend/staging/` | Read-only review analysis and approved import orchestration |
+| `src/clearspend/database/` | Connections, backups, schema and migrations |
+| `src/clearspend/<feature>/` | Feature queries, pure rules and write services |
+| `tests/synthetic/` | Tracked backend tests using synthetic temporary data |
+| `tests/frontend/` | Tracked framework-independent compatibility tests |
+| `docs/` | Current documentation and archived project history |
+| `data/`, `samples/`, `analysis/` | Private ignored local state and research |
 
-## Local API responsibilities
+## Backend module boundaries
 
-The server currently exposes operations for:
+| Capability | Owner | Responsibility and boundary |
+| --- | --- | --- |
+| HTTP | `http/` | Decode and validate transport input, dispatch operations, map statuses/errors; no SQL or financial thresholds |
+| Provider parsing | `imports/isracard.py`, `max.py`, `leumi.py`, `income.py` | Translate external formats into canonical candidates; never write SQLite directly |
+| Import persistence | `imports/repository.py` | Import audit, transaction identity and persistence primitives |
+| Staged review | `staging/` | Preview, duplicates, coverage, merchant suggestions, reviewed decisions and atomic commit orchestration |
+| Reporting | `reporting/` | Period/card/event scope, categories, totals, income, trends and dashboard assembly |
+| Transactions | `transactions/` | Complete browsing/search reads and transaction-specific category/reimbursement writes |
+| Merchants | `merchants/` | Permanent category and display-identity reads/writes |
+| Recurring | `recurring/` | Reviewed recurring membership, cadence, lifecycle, history and burden |
+| Events | `events/` | Event visibility, exact membership, creation and settings |
+| Observations | `observations/` | Pure qualification rules, input adapters, presentation, review policy and consolidated reads |
+| Database | `database/` | Connections, verified backups, current schema and explicit migration runner |
 
-- Health and dashboard summaries
-- Transactions and categories
-- Full-database transaction search within the selected period/card/event scope
-- Merchant mappings and merchant management
-- Transaction-specific category corrections
-- Transaction-specific full or partial reimbursement adjustments
-- Projects/events and transaction-specific event assignment
-- Reviewed recurring profiles, merchant-level add/remove decisions, lifecycle,
-  cadence, and installment summaries
-- Import analysis and approved import commits
-- Reversible observation-review decisions
+The current code uses feature query modules for SQLite reads and feature service
+modules for writes. Do not introduce repository interfaces for every table
+merely for naming consistency. A service coordinates the transaction boundary
+when several writes form one business operation; staged import is the clearest
+example.
 
-Import analysis and import commit are intentionally separate API operations.
-Each staged session accepts exactly one XLSX or PDF statement; one workbook may
-still contain multiple provider tabs or cards. Analysis returns a staged preview
-without inserting live transactions or rules. The approved commit revalidates
-the statement, creates and verifies a timestamped SQLite backup under
-`data/backups/`, and writes mappings, transactions, coverage and audit evidence
-in one transaction. Any failure rolls back the complete statement import.
+Pure financial-rule modules accept values and must be testable without an HTTP
+server or database connection. Query and presentation modules may adapt stored
+data to those rules but must not silently create a second eligibility policy.
 
-The frontend must obtain user data through these local APIs. Do not generate a
-tracked HTML or JavaScript snapshot containing live database results.
+## Frontend module boundaries
 
-## Persistence model
+- `App.vue` owns composition and explicit cross-feature navigation only.
+- `features/dashboard/useDashboardData.ts` owns shared filter loading,
+  compatibility health, refresh revision and dashboard response state.
+- `features/management/ManageDataMenu.vue` owns its menu and focus lifecycle.
+- Each directory under `features/` owns its rendering, user interaction and
+  feature-local presentation model.
+- The transaction feature separates recent summary, complete browser, category
+  correction, reimbursement editing, detail tables and feature CSS.
+- `api/client.ts` is the common transport. Contracts are split by domain under
+  `api/contracts/`; `api/contracts.ts` is only a compatibility export barrel.
+- `shared/` is for code already reused across features, not a destination for
+  helpers that might someday be shared.
 
-The principal SQLite tables have separate responsibilities:
+Use component-local state by default and a feature composable when several
+components share one feature workflow. Introduce global state management only
+after multiple independent feature roots require coordinated state. Do not move
+the old monolith into `App.vue`, one giant component, or one giant composable.
 
-- `imports`: statement import audit records and file/semantic fingerprints.
-- `transactions`: normalized source transactions and provider-specific fields.
-- `merchant_mappings`: permanent category rules keyed by normalized merchant.
-- `merchant_display_mappings`: canonical display identities without replacing
-  the original statement description.
-- `transaction_category_overrides`: exceptions applying to one transaction.
-- `transaction_spending_adjustments`: reviewed full or partial reimbursements
-  keyed to one transaction; the imported card charge remains unchanged.
-- `events`: project/event identity, type, optional business-trip destination,
-  display dates, status, and optional budget. Business-trip destination is
-  presentation metadata; it does not determine transaction membership.
-- `event_transactions`: exact transaction membership for an event. Membership
-  does not alter the transaction category or merchant mapping.
-- `import_transactions`: links imports to inserted or duplicate transactions.
-- `import_coverage`: per-import, per-card statement provenance and coverage,
-  including statement period/as-of date, purchase and billing ranges, pending
-  and outside-cycle counts, and official totals when supplied by the provider.
-- `income_imports`: income-file import audit records.
-- `income_entries`: monthly income contributions used in aggregate calculations.
-- `recurring_profiles`: reviewed recurring/not-recurring decisions and editable
-  cadence/lifecycle state keyed by canonical display identity.
-- `recurring_profile_members`: the exact normalized merchant aliases included
-  in or excluded from each recurring profile. A shared display identity does
-  not automatically make every underlying alias recurring.
-- `observation_reviews`: reversible reviewed decisions for an exact duplicate
-  group, recurring billing occurrence, or unusual transaction. Structured
-  transaction and recurring-series references keep one decision from
-  suppressing a different future finding.
+Feature components may format and arrange backend results, calculate bounded
+display geometry, and manage draft form values. They must not independently
+reimplement authoritative totals, observation thresholds, import identity, or
+other financial policy.
 
-Do not merge these concepts. In particular, display identity, merchant category,
-and transaction-specific category are intentionally independent.
+## Dependency rules
 
-## Data ownership and portability
+### Enforced by structure and tests
 
-The application repository is portable; the user's financial state is not part
-of Git. A fresh clone starts without personal transactions. Move or restore the
-database through a separate approved backup process.
+- Provider parsers return canonical candidates and do not persist them.
+- Production UI is authored in `frontend/src/`; `dist/` is generated.
+- Browser API calls use the centralized transport and typed contracts.
+- Staged analysis is separate from the approved atomic import commit.
+- Schema changes use the migration mechanism and verified backups.
 
-The default database is `data/clearspend.db`. Uploaded statements, database
-backups, mappings, and research artifacts must remain in ignored local paths.
-See `OPERATIONS_AND_RECOVERY.md` for the supported backup and restore procedure.
+### Required design rules
 
-## Database-change requirements
+- HTTP modules must not execute direct SQL or own financial thresholds.
+- Pure financial rules must not import HTTP or open SQLite connections.
+- Feature query/service modules must not depend on frontend code.
+- Vue features must not create competing financial calculations or hidden API
+  pathways.
+- Avoid circular feature imports; coordinate cross-feature navigation at the
+  application composition boundary.
+- Put feature-specific CSS beside the feature when practical. Keep global CSS
+  for application layout, shared tokens and older rules awaiting incremental
+  extraction.
 
-Before a schema migration, bulk mapping update, category rewrite, duplicate
-repair, or other material mutation:
+Some dependency rules are reviewed conventions rather than lint-enforced
+constraints. Do not claim automated enforcement unless the check runs in CI.
 
-1. Create and verify a database backup.
+## State and financial ownership
+
+SQLite is authoritative for imported transactions, mappings, display
+identities, transaction overrides, reimbursements, event membership, recurring
+profiles, import coverage and observation reviews. Python owns reporting totals,
+financial qualification, duplicate identity and approved write behavior.
+
+Vue owns transient selections, open/closed UI, form drafts, sorting, focus,
+privacy preference presentation and display transforms. A browser refresh key
+invalidates affected feature reads after a successful mutation; it is not a
+second financial database.
+
+Merchant category, display identity, transaction category exception,
+reimbursement, event membership, recurring membership and observation review
+are independent concepts. Do not merge them for implementation convenience.
+
+## Database and write rules
+
+The default private database is `data/clearspend.db`. Its main persisted concepts
+are defined by the current schema, including `schema_migrations`, imports,
+transactions, mappings, overrides, adjustments, income, recurring profiles,
+events, import coverage and observation reviews.
+
+Before a migration, bulk category/mapping rewrite, duplicate repair or other
+material mutation:
+
+1. Create and verify an SQLite-consistent backup.
 2. Record relevant before-counts and totals.
-3. Prefer one transaction so failures can roll back cleanly.
-4. Make migrations safe to re-run where practical.
-5. Verify counts, totals, mappings, and representative records afterward.
-6. Preserve original provider data and reviewed user decisions.
+3. Use one transaction when the operation must succeed as a unit.
+4. Preserve original provider evidence and reviewed decisions.
+5. Verify integrity, counts, totals and representative records afterward.
 
-Never silently rebuild or replace the live database. Never delete private local
-data merely to make the repository appear clean.
+See [`DATABASE_MIGRATIONS.md`](DATABASE_MIGRATIONS.md) and
+[`OPERATIONS_AND_RECOVERY.md`](OPERATIONS_AND_RECOVERY.md). Never silently
+rebuild or replace the live database.
+
+## Feature ownership matrix
+
+| Change | Frontend owner | Backend owner | Primary tests/docs |
+| --- | --- | --- | --- |
+| Read-only dashboard panel | `features/<feature>/` | relevant `reporting/` or feature query | Vue model/component, HTTP/reporting tests, UI guide |
+| Transaction editor | `features/transactions/` | `transactions/service.py` | transaction service + Playwright workflow |
+| Merchant mapping | `features/merchants/` | `merchants/` | merchant query/service + import rules |
+| Recurring behavior | `features/recurring/` | `recurring/` | recurring rule/query/service + reporting rules |
+| Observation | `features/observations/` | `observations/` | pure rule, presentation, read-service and E2E tests |
+| Statement provider | import review consumer if needed | `imports/<provider>.py`, `dispatch.py` | parser/import fixtures + import rules |
+| Staged review | `features/imports/` | `staging/`, `http/imports.py` | failure/rollback and complete E2E import workflow |
+| Event | `features/events/` and transaction assignment | `events/` | event rules/query/service + E2E writes |
+| Schema change | contract/UI only if exposed | `database/migrations/` | migration tests + migration guide |
+
+## Adding or changing a feature
+
+1. Identify the existing owner and read this document plus the applicable
+   domain specification.
+2. Confirm whether the change belongs in a component, composable, query,
+   service, pure rule, parser, migration, or typed API contract.
+3. Preserve one authoritative financial rule and one supported API path.
+4. Add the smallest relevant pure, query/service, HTTP, Vue or browser tests.
+5. Run the checks in [`TESTING.md`](TESTING.md).
+6. Update `API_CONTRACTS.md` for exchanged semantics, the owning domain document
+   for behavioral changes, and this file only for responsibility or dependency
+   changes.
+7. Record a current exception explicitly rather than describing a desired rule
+   as already enforced.
+
+Examples:
+
+- A new dashboard panel gets a feature component and backend-owned read model;
+  it does not calculate new financial totals in Vue.
+- A new statement provider adds a canonical parser and dispatch recognition,
+  then participates in the existing staged workflow rather than adding another
+  import route.
+- A new observation starts with a pure backend qualification rule, then input,
+  presentation and API tests; Vue renders the returned finding.
+- A new database field uses an ordered migration and verified backup path, not
+  opportunistic `ALTER TABLE` code during ordinary startup.
+
+## Documentation ownership
+
+`ARCHITECTURE.md` owns module structure and allowed dependencies. Domain
+documents own financial behavior. `API_CONTRACTS.md` owns exchanged HTTP
+semantics. `OPERATIONS_AND_RECOVERY.md` owns runtime recovery. `AGENTS.md` is a
+concise work policy and navigation layer.
+
+Architectural boundary changes require an update here in the same pull request.
+Behavioral changes update only their authoritative domain document. Historical
+records under `archive/` provide context and never override maintained
+documentation. Verify local Markdown links before merging documentation
+changes.

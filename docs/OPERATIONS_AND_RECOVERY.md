@@ -66,6 +66,11 @@ and audit rows either all commit or all roll back. Keep the import filename,
 audit record, coverage record and post-import verification together when
 diagnosing an import.
 
+If commit validation or persistence fails, no partial approved import is kept.
+The staged session remains available for a corrected retry while the same server
+process is running. Cancelling it removes the temporary upload; restarting the
+server also means the original statement must be staged again.
+
 ## Manual backup
 
 Before a migration, bulk correction, duplicate repair, or other material edit,
@@ -80,6 +85,10 @@ Replace the timestamp placeholder with the actual date and time. Verify that the
 backup exists and can be opened before continuing. If taking a backup while the
 application is live, use SQLite's backup facility instead of copying a database
 with possible active sidecar files.
+
+Schema migrations have their own verified-backup workflow. Follow
+[`DATABASE_MIGRATIONS.md`](DATABASE_MIGRATIONS.md) rather than manually editing
+schema objects.
 
 ## Restore a backup
 

@@ -26,6 +26,15 @@ session. The backend enforces this boundary even if a caller bypasses the file
 picker.
 
 Analyzing or staging a file must not insert transactions or permanent mappings.
+The production API exposes only staged analyze, cancel, and approved commit;
+the retired direct-import route is unavailable.
+
+Commit re-parses and revalidates the staged file and reviewed decisions before
+writing. A validation, backup, coverage, merchant-decision, or persistence
+failure rolls back the complete approved operation. The original statement may
+remain staged so corrected decisions can be retried; cancel discards its
+temporary copy, and a server restart requires staging it again. An incomplete
+failed commit is never treated as a successful import.
 
 The staged UI is organized as Files, Checks, Merchants, Reconcile, and Approve.
 The final preview lists every row that will be inserted. Rows marked pending are

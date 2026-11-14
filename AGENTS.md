@@ -5,18 +5,38 @@ These rules apply to every automated or AI-assisted change in this repository.
 ## Read the relevant source of truth
 
 - Git, commits, pushes, privacy checks: `GIT_WORKFLOW.md`
-- Runtime boundaries, persistence, migrations: `docs/ARCHITECTURE.md`
-- Current refactoring contracts and ownership: `docs/REFACTORING_BASELINE.md`
+- Documentation map and ownership: `docs/README.md`
+- Runtime boundaries, module ownership, dependencies: `docs/ARCHITECTURE.md`
+- HTTP request/response semantics: `docs/API_CONTRACTS.md`
 - Migration-runner design: `docs/DATABASE_MIGRATIONS.md`
 - Imports, duplicates, merchants, categories: `docs/IMPORT_AND_MAPPING.md`
 - Dates, installments, income, charts, totals: `docs/REPORTING_RULES.md`
 - Observation eligibility, thresholds, merging, reviews: `docs/FINANCIAL_OBSERVATIONS.md`
 - Layout and interaction behavior: `docs/UI_GUIDELINES.md`
 - Running, backups, restore, and incident recovery: `docs/OPERATIONS_AND_RECOVERY.md`
+- Test layers and change-specific verification: `docs/TESTING.md`
 
 Read every document relevant to the requested change before acting. If code,
 documentation, and user instructions conflict, do not silently choose one;
 surface the conflict and preserve user data while resolving it.
+
+Historical files under `docs/archive/` are background only. They never override
+current architecture, API, domain, or operational documentation.
+
+## Architecture and implementation
+
+- Follow the Vue 3 + TypeScript + Vite frontend architecture. Author production
+  UI in `frontend/src/`; never add hand-written features to generated `dist/`.
+- Identify the existing feature owner before adding a shared helper, component,
+  composable, API path, query, service, parser, or migration.
+- Keep browser transport and TypeScript contracts synchronized with backend
+  endpoints. TypeScript contracts do not replace server validation.
+- Keep authoritative financial calculations and qualifications in Python. Vue
+  may own transient interaction state and presentation transforms.
+- Use component-local state by default, feature composables when behavior is
+  genuinely shared, and global state only after a concrete cross-feature need.
+- Update `ARCHITECTURE.md` when responsibility or dependency boundaries change;
+  update the owning domain document only when its behavior changes.
 
 ## Non-negotiable privacy boundary
 
@@ -81,5 +101,7 @@ surface the conflict and preserve user data while resolving it.
 - Verify before/after counts and totals for data-model or reporting changes.
 - For observation changes, verify representative qualifying, suppressed,
   grouped, reviewed, and future-period cases.
+- For frontend changes, run applicable Vue tests, type checking, production
+  build, and Playwright workflows from `docs/TESTING.md`.
 - Report backups, tests, files changed, commits created, and whether anything
   was pushed.
