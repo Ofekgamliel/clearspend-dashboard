@@ -1,188 +1,154 @@
-# Database migration design
+# Database migrations
 
-This document defines ClearSpend's migration mechanism. It does not authorize
-a live database migration by itself.
+This document defines the current ClearSpend schema-versioning mechanism and
+the requirements for future schema changes. A migration command is a separate,
+explicit operation; reading this document does not authorize changing the live
+database.
 
-## Implementation status
+## Current implementation
 
-The version-1 schema definition and migration runner live under
-`src/clearspend/database/` with synthetic coverage. Fresh databases are created
-through that runner. Ordinary server startup validates an existing database
-but does not register or migrate a compatible unversioned database. The live
-database therefore remains unversioned until an explicit cutover is approved.
+Migration ownership is under `src/clearspend/database/`:
 
-Run an approved migration as a separate operation:
+```text
+database/
+├── backup.py
+├── connection.py
+├── migration_runner.py
+├── schema.py
+└── migrations/
+    └── v001_current_baseline.py
+```
+
+`schema_migrations` records ordered versions, names, and application timestamps.
+Version 1 represents the current baseline schema. Importing Python modules does
+not migrate a database, and ordinary startup never upgrades a compatible
+non-empty database implicitly.
+
+Fresh or empty databases are initialized through the migration runner. Existing
+compatible unversioned databases remain readable, but registration as version 1
+is an explicit migration operation. An unknown, partial, or newer-than-supported
+schema is rejected rather than guessed or rebuilt.
+
+## Inspecting and migrating
+
+Run the approved migration command from the repository root:
 
 ```bash
 PYTHONPATH=src:. .venv/bin/python -m clearspend.server --migrate-database
 ```
 
-For a non-empty database, this command creates and verifies a timestamped
-SQLite backup under `data/backups/` before applying pending migrations. It exits
-without starting the server. Running the regular server command never performs
-that cutover implicitly.
+The command:
 
-Copy-based verification is performed with:
+1. Inspects the current schema.
+2. Rejects unsupported shapes before changing them.
+3. Creates and verifies a timestamped SQLite backup when a non-empty database
+   has pending work.
+4. Applies each migration and its version record transactionally.
+5. Runs migration and final-schema verification.
+6. Exits without starting the web server.
+
+If no migration is pending, it performs no backup and no schema write.
+
+The status of a particular private database must be established by inspection;
+tracked documentation must not assume whether that local database is versioned.
+
+## Copy-based verification
+
+Before approving a live cutover, migrate a SQLite-consistent temporary copy:
 
 ```bash
 PYTHONPATH=src:. .venv/bin/python tools/verify_migration_copy.py data/clearspend.db
 ```
 
-The utility opens the source read-only, uses SQLite's backup API for the
-temporary copy, migrates only that copy, and compares every existing table plus
-representative API payloads before and after. It prints only generic counts and
-status information.
+The utility opens the source read-only, creates the temporary copy with SQLite's
+backup API, migrates only that copy, and compares existing tables plus
+representative API payloads. It prints generic status and counts rather than
+private records.
 
-## Goals
+## Schema states
 
-- Give every database an explicit schema version.
-- Make fresh database creation and existing database upgrades deterministic.
-- Stop performing hidden schema/backfill work in `ImportDatabase.__init__`.
-- Back up a non-empty database before applying pending migrations.
-- Fail safely when the existing schema is unknown or inconsistent.
-- Preserve all transactions, mappings, overrides, adjustments, events,
-  recurring profiles, reviews and import audit evidence.
+`inspect_database(path)` reports one of these states:
 
-## Migration metadata
+- `empty` — no initialized application schema.
+- `current_unversioned` — schema matches the supported baseline but has no
+  migration record.
+- `versioned` — supported migration metadata and schema are present.
+- `unsupported` — required objects are missing, inconsistent, or newer than the
+  running application understands.
 
-Use a dedicated table rather than relying only on `PRAGMA user_version`:
-
-```sql
-CREATE TABLE schema_migrations (
-  version INTEGER PRIMARY KEY,
-  name TEXT NOT NULL UNIQUE,
-  applied_at TEXT NOT NULL
-);
-```
-
-Migration versions are ordered positive integers. A version is inserted only
-after its migration and verification succeed.
-
-## Initial baseline strategy
-
-ClearSpend already has unversioned databases, so the first migration cannot
-blindly recreate or alter the schema.
-
-### Empty database
-
-1. Create `schema_migrations`.
-2. Apply the complete current baseline schema as version 1.
-3. Verify required tables, columns, indexes and triggers.
-4. Record version 1.
-
-### Existing unversioned database
-
-1. Open read-only for inspection first.
-2. Compare its tables, columns, indexes and triggers with the expected current
-   baseline fingerprint.
-3. If it matches, create `schema_migrations` and record version 1 without
-   rewriting user records.
-4. If it does not match, stop with an explicit unsupported-schema report. Do
-   not guess, rebuild or silently run old inline upgrades.
-
-Supporting older shapes can be added later as explicit, tested compatibility
-migrations when an actual older schema fixture is available.
-
-## Runner behavior
-
-The runner exposes explicit operations:
-
-```text
-inspect_database(path) -> schema status
-pending_migrations(path) -> ordered migrations
-migrate_database(path, backup_directory) -> applied versions and backup path
-```
-
-Rules:
-
-1. Importing a Python module must never migrate the database.
-2. Opening a repository must not perform opportunistic `ALTER TABLE` work.
-3. If no migration is pending, startup performs no backup and no write.
-4. If a migration is pending for a non-empty database, create and verify an
-   SQLite-consistent backup first.
-5. Acquire an appropriate SQLite write lock and apply one ordered migration at
-   a time.
-6. Apply transactional DDL/data changes and the version record in the same
-   transaction where SQLite permits.
-7. Run migration-specific verification before commit.
-8. Roll back and report the preserved backup on failure.
-9. Never delete old backups automatically.
+An unsupported state is a stop condition. Do not add opportunistic `ALTER
+TABLE`, silent backfills, or automatic database replacement to server startup.
 
 ## Migration representation
 
-Use small Python migration modules because some ClearSpend changes require
-data verification or backfills in addition to SQL. Each migration should
-provide fixed metadata and two functions:
+Each migration is a small ordered Python module under
+`database/migrations/` with fixed metadata and explicit apply/verify functions:
 
 ```python
 VERSION = 2
-NAME = "example_change"
+NAME = "descriptive_change"
 
 def apply(connection): ...
 def verify(connection): ...
 ```
 
-Migration modules must not import HTTP or frontend code. They may use shared
-database helpers that do not contain financial policy.
+Versions are unique, contiguous positive integers. A version record is written
+only after application and verification succeed. Migration modules may use
+database helpers but must not import HTTP or frontend code.
 
-## Proposed package
+Use Python migration modules rather than raw SQL files when a safe change needs
+data validation, a deterministic backfill, or post-change verification.
 
-```text
-src/clearspend/database/
-|-- __init__.py
-|-- connection.py
-|-- migration_runner.py
-`-- migrations/
-    |-- __init__.py
-    |-- v001_current_baseline.py
-    `-- v002_example_future_change.py
-```
+## Adding a future migration
 
-The first implementation should add only the runner, the current baseline and
-tests. No example future migration should remain in production code.
+1. Describe the stored-data change and compatibility impact.
+2. Add the next contiguous migration module.
+3. Keep the migration deterministic and safe to retry after rollback.
+4. Preserve transactions, provider evidence, mappings, overrides,
+   reimbursements, events, recurring decisions, reviews, coverage and audit
+   records unless the approved change explicitly says otherwise.
+5. Add synthetic tests for the old supported shape, successful upgrade,
+   idempotent second run, verification failure and rollback.
+6. Verify a private database copy before considering the live database.
+7. Update the schema inventory and affected API contracts only when their
+   maintained semantics change.
 
-## Required synthetic tests
+Do not create an empty placeholder migration or example production version.
 
-1. An empty database is created at the current version.
-2. A current unversioned database is registered without changing row data.
-3. Running the runner twice is a no-op the second time.
-4. An unknown or partial schema is rejected without modification.
-5. A pending migration creates a verified backup before writing.
-6. A deliberately failing migration rolls back schema, data and version state.
-7. Required tables, columns, indexes and triggers exist after migration.
-8. Representative transaction, mapping, event, recurring and income rows are
-   unchanged when registering the baseline.
+## Required test coverage
 
-Tests must use temporary synthetic databases only.
+Migration coverage must include:
 
-## Cutover from current initialization
+1. Empty database creation at the current version.
+2. Compatible unversioned baseline registration without row changes.
+3. No-op behavior when run a second time.
+4. Rejection of unknown or partial schemas without modification.
+5. Verified backup before pending work on a non-empty database.
+6. Rollback of schema, data, and version state after deliberate failure.
+7. Verification of required tables, columns, indexes and triggers.
+8. Preservation of representative financial and reviewed records.
 
-Implementation should happen in reversible steps:
+Tests use temporary synthetic databases. See [`TESTING.md`](TESTING.md).
 
-1. Extract the current schema definition without changing behavior.
-2. Add schema-fingerprint and migration-runner tests.
-3. Register version 1 on synthetic copies of the current schema.
-4. Test against a copy of the private live database and compare counts/totals.
-5. Make fresh-database creation use the runner and make ordinary startup
-   validate existing schemas without migrating them.
-6. Remove inline `ALTER TABLE`, backfill and re-key work from
-   `ImportDatabase.__init__` after parity is proven.
-7. Run the full local regression suite and representative dashboard checks.
+## Backup, failure, and recovery
 
-The real database must never be the first database used for this cutover.
+A pending migration for a non-empty database requires a backup directory.
+Backups use SQLite's backup API and integrity verification; they are not raw
+copies of a potentially active database with unresolved WAL state.
 
-## Backup and restore requirements
+Each migration applies inside a transaction where SQLite permits. A failure
+rolls back that migration and leaves the verified pre-migration backup in place.
+The runner reports the backup path but never restores or deletes files
+automatically.
 
-Before the first live migration:
+Before a live migration:
 
-- Stop new imports and other writes.
-- Create an SQLite-consistent timestamped backup.
-- Run `PRAGMA integrity_check` on both live and backup copies.
-- Record relevant table counts and dashboard totals.
-- Apply the migration.
-- Verify the version, integrity, counts, totals and representative reviewed
-  decisions.
+- stop imports and other writes;
+- record relevant table counts and dashboard totals;
+- migrate and verify a copy;
+- preserve the live pre-migration backup;
+- run integrity, version, count, total and representative-decision checks after
+  the approved migration.
 
-Restoring a backup remains a separate destructive action requiring explicit
-approval. The runner must report the backup path but must never restore or
-delete files automatically.
+Restoring a backup replaces financial state and requires separate explicit
+approval. Follow [`OPERATIONS_AND_RECOVERY.md`](OPERATIONS_AND_RECOVERY.md).

@@ -1,4 +1,10 @@
-# Refactoring baseline
+# Historical refactoring record
+
+> **Archived:** This document records the modular-backend and Vue migration.
+> It is not current implementation authority. Use
+> [`../ARCHITECTURE.md`](../ARCHITECTURE.md),
+> [`../API_CONTRACTS.md`](../API_CONTRACTS.md), and the domain documents linked
+> from [`../README.md`](../README.md) for current behavior.
 
 This document began as the pre-refactor runtime inventory and now records the
 contracts preserved by the completed backend extraction and Vue production

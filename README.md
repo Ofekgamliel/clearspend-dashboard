@@ -2,8 +2,9 @@
 
 ClearSpend is a local-first personal finance dashboard for turning credit-card
 statements and income records into a private, searchable view of household
-spending. The browser UI, Python application server, and SQLite database all run
-on the same computer; personal financial data is not stored in this repository.
+spending. Its Vue 3 + TypeScript + Vite frontend, Python application server, and
+SQLite database all run on the same computer; personal financial data is not
+stored in this repository.
 
 > ClearSpend is currently a single-user personal project. Its parsers and
 > reporting rules are tailored to the statement formats documented below.
@@ -69,7 +70,7 @@ python3 -m venv .venv
 PYTHONPATH=src:. .venv/bin/python -m clearspend.server --port 8765
 ```
 
-Open `http://localhost:8765`. Before troubleshooting dashboard data, verify
+Open [http://localhost:8765](http://localhost:8765). Before troubleshooting dashboard data, verify
 `http://localhost:8765/api/health` returns `status: ok` and the expected API
 compatibility identifier.
 
@@ -77,8 +78,6 @@ The Python process keeps the code from the branch where it was started. After
 switching between `main` and a refactor branch, stop it with `Ctrl-C` and start
 it again from the new branch. The frontend blocks data requests and shows a
 retryable restart message when it detects an incompatible stale server.
-
-Open [http://localhost:8765](http://localhost:8765).
 
 Use the ClearSpend application server—not `python3 -m http.server`. A static
 server can render files from `dist/`, but it cannot access SQLite or provide
@@ -132,8 +131,9 @@ Build the Vue production frontend:
 
 ```bash
 cd frontend
-npm install
+npm ci
 npm test
+npm run typecheck
 npm run build
 npx playwright install chromium
 npm run test:e2e
@@ -169,9 +169,11 @@ The export is written to the ignored `data/merchant-mappings.json` path.
 
 ## Documentation
 
-- [Architecture and data ownership](docs/ARCHITECTURE.md)
-- [Refactoring baseline and current contracts](docs/REFACTORING_BASELINE.md)
-- [Database migration design](docs/DATABASE_MIGRATIONS.md)
+- [Documentation map and ownership](docs/README.md)
+- [Architecture and module boundaries](docs/ARCHITECTURE.md)
+- [Local API contracts](docs/API_CONTRACTS.md)
+- [Testing and change acceptance](docs/TESTING.md)
+- [Database migrations](docs/DATABASE_MIGRATIONS.md)
 - [Import and merchant-mapping rules](docs/IMPORT_AND_MAPPING.md)
 - [Reporting and calculation rules](docs/REPORTING_RULES.md)
 - [Financial observation rules](docs/FINANCIAL_OBSERVATIONS.md)
@@ -179,3 +181,7 @@ The export is written to the ignored `data/merchant-mappings.json` path.
 - [Operations, backups, and recovery](docs/OPERATIONS_AND_RECOVERY.md)
 - [Git and privacy workflow](GIT_WORKFLOW.md)
 - [Instructions for coding agents](AGENTS.md)
+
+Completed refactoring plans and parity checklists are retained under
+[`docs/archive/`](docs/archive/) as historical records, not current sources of
+truth.

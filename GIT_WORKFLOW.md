@@ -7,7 +7,8 @@ on the local computer and must never be committed or pushed to GitHub.
 
 Commit reusable application material only:
 
-- Production frontend files in `dist/` that are part of the live application
+- Editable Vue source in `frontend/src/`
+- Generated production frontend assets in `dist/`, rebuilt from reviewed source
 - Application source in `src/`
 - Generic, reusable utilities explicitly allowed by `.gitignore`
 - Dependency declarations and project documentation
@@ -33,24 +34,41 @@ Never commit or push:
 `.gitignore` blocks the known private locations and file types. The pre-commit
 hook adds a second check, but neither replaces reviewing the staged diff.
 
+Keep commits narrow enough to describe one responsibility and its verification.
+Do not combine unrelated cleanup merely because the files are nearby.
+
 ## Safe workflow for a normal change
 
 Run every command from the repository root.
 
-1. Inspect all changes:
+1. Start from updated `main` and create a focused branch:
+
+   ```bash
+   git switch main
+   git pull --ff-only origin main
+   git switch -c feature/descriptive-name
+   ```
+
+   Do not mix personal and company remotes or identities. Do not work directly
+   on `main` for an application change.
+
+2. Inspect all changes:
 
    ```bash
    git status --short
    git diff
    ```
 
-2. Stage only named, reviewed files. Do not use `git add .` or `git add -A`:
+3. For frontend changes, edit `frontend/src/`, run the verified commands in
+   `docs/TESTING.md`, and rebuild `dist/`. Never hand-edit a generated bundle.
+
+4. Stage only named, reviewed files. Do not use `git add .` or `git add -A`:
 
    ```bash
-   git add src/clearspend/server.py dist/app.js
+   git add frontend/src/features/example/ExamplePanel.vue dist/index.html dist/assets/index-EXAMPLE.js
    ```
 
-3. Review exactly what the commit would contain:
+5. Review exactly what the commit would contain:
 
    ```bash
    git diff --cached --name-status
@@ -58,7 +76,7 @@ Run every command from the repository root.
    git diff --cached --check
    ```
 
-4. Confirm the repository identity and destination:
+6. Confirm the repository identity and destination:
 
    ```bash
    git config --show-origin --get user.email
@@ -69,7 +87,8 @@ Run every command from the repository root.
    the `github-personal` SSH alias and point to
    `Ofekgamliel/clearspend-dashboard`.
 
-5. Run the tracked synthetic tests:
+7. Run the applicable checks from `docs/TESTING.md`. Backend changes normally
+   include at least the tracked synthetic suite:
 
    ```bash
    PYTHONPATH=src:. .venv/bin/python -m unittest discover -s tests/synthetic -v
@@ -85,24 +104,30 @@ Run every command from the repository root.
    Only `tests/synthetic/` is committed. Statement-derived tests and fixtures
    elsewhere under `tests/` remain private and intentionally ignored.
 
-6. Commit with a specific description:
+8. Commit with a specific description:
 
    ```bash
    git commit -m "Describe the application change"
    ```
 
-7. Inspect the final commit before pushing:
+9. Inspect the final commit before pushing:
 
    ```bash
    git show --stat --oneline HEAD
    git status --short --branch
    ```
 
-8. Push only after the destination and staged content have been verified:
+10. Push the focused branch only after the destination and staged content have
+    been verified:
 
    ```bash
-   git push origin main
+   git push -u origin feature/descriptive-name
    ```
+
+11. Open a pull request against `main`. Record the behavior changed, privacy or
+    data-safety implications, and verification performed. Merge only after the
+    diff and required checks are reviewed. Delete the remote branch afterward
+    only when the user requests or approves cleanup.
 
 ## Statement imports and database changes
 

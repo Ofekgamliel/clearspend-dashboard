@@ -1,4 +1,8 @@
-# Vue production parity checklist
+# Historical Vue production parity checklist
+
+> **Completed and archived:** The Vue production cutover was merged in 2026.
+> This checklist preserves its acceptance record and must not be interpreted as
+> an active plan or as authority over the current application.
 
 This checklist tracks the work required before the Vue frontend on
 `refactor/modular-architecture` can replace the current production frontend on
