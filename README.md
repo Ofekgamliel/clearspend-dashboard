@@ -103,6 +103,13 @@ import.
 
 ## Useful local commands
 
+Install the test-only Python dependencies before running the complete test and
+browser suites:
+
+```bash
+.venv/bin/python -m pip install -r requirements-dev.txt
+```
+
 Run the tracked synthetic suite available in every checkout:
 
 ```bash
