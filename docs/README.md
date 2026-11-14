@@ -42,6 +42,7 @@ acceptance evidence. They are useful background, not living implementation
 contracts:
 
 - [`archive/REFACTORING_BASELINE.md`](archive/REFACTORING_BASELINE.md)
+- [`archive/CLEARSPEND_REFACTORING_PLAN.md`](archive/CLEARSPEND_REFACTORING_PLAN.md)
 - [`archive/VUE_PRODUCTION_PARITY_CHECKLIST.md`](archive/VUE_PRODUCTION_PARITY_CHECKLIST.md)
 
 ## Documentation maintenance

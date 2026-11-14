@@ -1,5 +1,12 @@
 
-EXECUTIVE RECOMMENDATION
+# ClearSpend refactoring plan
+
+> Historical document: this plan guided the completed architecture refactor.
+> It is preserved for context and must not override the current documentation,
+> code, or repository instructions.
+
+## Executive recommendation
+
 Preserve ClearSpend as a local-first Python and SQLite application and refactor it
 incrementally into a modular monolith. The application already works and contains
 important reviewed financial behavior. The objective is to make that behavior easier to
