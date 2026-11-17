@@ -1,0 +1,234 @@
+UI COMPONENT LIBRARY EXECUTION PLAN — FINAL REVIEW
+==================================================
+
+PURPOSE
+-------
+
+This document reviews the revised
+docs/UI_COMPONENT_LIBRARY_EXECUTION_PLAN.md. It records the remaining
+recommendations before implementation. The execution plan remains the
+authoritative plan; this file is review context only.
+
+
+FINAL ASSESSMENT
+----------------
+
+The revised plan is architecturally strong and close to implementation-ready.
+It now addresses the important risks identified in the first review:
+
+- The status correctly says that theme and visual-token work is in progress
+  while shared Vue components have not started.
+- Migration happens through complete bounded workflow slices rather than by
+  replacing one component type throughout the application.
+- Theme, visualization, accessibility, generic UI and feature ownership are
+  separated.
+- Feature-specific content, financial behavior, validation and state remain
+  feature-owned.
+- Buttons and links retain their correct native semantics.
+- Dialog behavior includes focus, stacking, inert background, close reasons
+  and dirty/saving policy.
+- Selection controls distinguish tabs, radio groups and toggle buttons.
+- Badges, inline notices, toasts and undo notifications are not treated as one
+  interchangeable feedback pattern.
+- Popovers and menus are inventoried before a shared overlay primitive is
+  created.
+- Component-level testing is introduced when the first interactive primitive
+  appears.
+- The development gallery begins with the first primitives rather than after
+  migration is complete.
+- Theme validation covers completeness, fallback, contrast and all-theme smoke
+  behavior.
+- Visual snapshots use representative light and dark themes rather than every
+  state multiplied by all twelve themes.
+- Staged import is migrated last.
+- Every workflow slice remains independently reviewable and reversible.
+
+The plan can proceed after the operational refinements below are added or
+recorded as explicit Phase 0–3 decisions.
+
+
+REMAINING RECOMMENDATIONS
+-------------------------
+
+1. Clarify what proves that a component is shared
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The plan currently requires two features to need a component, while also
+saying a migrated workflow should demonstrate repeated use. One migrated
+workflow cannot by itself demonstrate two feature consumers.
+
+Recommended wording:
+
+  A component qualifies for shared/ui when the inventory or implemented
+  consumers demonstrate at least two independent uses, normally across
+  features.
+
+The inventory may therefore prove existing repetition before the first
+migration. A component used repeatedly only inside one domain should normally
+remain feature-owned until another independent consumer appears.
+
+
+2. Integrate component tests into the normal test command
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+After a Vue component-testing framework is introduced, its command should not
+remain an additional manual instruction that developers or CI can forget.
+
+Recommended package-script shape:
+
+  {
+    "scripts": {
+      "test:unit": "...existing tests...",
+      "test:components": "...component tests...",
+      "test": "npm run test:unit && npm run test:components"
+    }
+  }
+
+The exact names may follow the chosen tool, but npm test and CI must include the
+component contracts automatically.
+
+
+3. Make the gallery strictly development-only
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The current plan says the gallery should preferably remain outside the
+production bundle. This should become an explicit decision:
+
+- It is not shown in production navigation.
+- It is not accessible through a hidden production route.
+- It uses synthetic content only.
+- The production build excludes it unless a later reviewed requirement says
+  otherwise.
+- A test or build inspection confirms the exclusion.
+
+Possible implementations include a separate development entry or a build-time
+development guard that is proven to be removed from production output.
+
+
+4. Define the inventory artifact
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Phase 1 should produce a maintained migration table rather than an informal
+list. Recommended columns:
+
+  Existing control
+  File and feature owner
+  Current consumers
+  Native/ARIA semantics
+  Keyboard behavior
+  Density
+  Existing selectors
+  Target shared component or feature-owned exception
+  Required tests
+  Migration status
+
+This table becomes the implementation checklist and prevents controls,
+selectors or consumers from being forgotten during cleanup.
+
+
+5. Refine shared accessibility and interaction ownership
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Focus trapping, restoration and accessible labelling clearly belong to
+accessibility ownership. Overlay positioning, stacking, outside-click handling
+and scroll locking are broader interaction mechanics.
+
+Do not put every overlay behavior under shared/accessibility automatically.
+Choose one of these after inventory:
+
+- Keep dialog-only mechanics private to UiDialog.
+- Add shared/interaction only when another independent overlay needs the same
+  behavior.
+- Keep genuinely accessibility-specific helpers under shared/accessibility.
+
+Do not create a shared interaction directory speculatively.
+
+
+6. Record the concrete theme-generation boundary
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The plan correctly selects a typed theme catalogue and generated palette CSS.
+Phase 2 must record the implementation details needed to keep that contract
+real:
+
+- Which source file is authoritative.
+- Which command or build step generates palette CSS.
+- Where generated CSS is written.
+- Whether that generated file is tracked or build-only.
+- How CI detects stale generated output.
+- Where the pre-paint bootstrap lives.
+- How the bootstrap storage key and theme identifiers stay synchronized with
+  the catalogue.
+- How the no-JavaScript fallback is verified.
+
+The Phase 2 exit gate should include this record. Do not allow a generated file
+whose freshness depends only on developers remembering an undocumented command.
+
+
+7. Consider automated accessibility scanning
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The plan already requires semantic and keyboard contract tests. Once the
+gallery exists, an automated accessibility scan can complement those tests by
+finding common labelling, role, contrast and structural mistakes across
+component states.
+
+An axe integration in component tests or Playwright is a reasonable option if
+it provides useful signal. It should not replace deliberate keyboard, focus,
+dialog, role and screen-reader semantics tests, and it should not be adopted if
+it creates noisy checks without actionable value.
+
+
+DOCUMENT OWNERSHIP
+-------------------
+
+The execution plan is now the authoritative document for implementation. This
+review file should not become a competing active specification.
+
+Recommended handling:
+
+1. Keep this file during review.
+2. Commit the execution plan as the authoritative plan.
+3. Once the plan is accepted, either keep this review local or move it to
+   docs/archive with a historical notice.
+4. Do not require implementers to reconcile two active instruction files.
+
+
+REPOSITORY PREREQUISITE
+-----------------------
+
+The repository is currently on docs/archive-refactoring-plan and contains
+substantial uncommitted theme, UI, screenshot, generated-asset and documentation
+changes. Component-library implementation must not begin in this state.
+
+Required sequence:
+
+1. Preserve and move the theme/visual-foundation work to a dedicated branch.
+2. Review its behavior and documentation changes.
+3. Run the complete frontend tests, type checking, build and Playwright suite.
+4. Review all screenshot differences and generated assets.
+5. Commit and merge the prerequisite work, or deliberately revise it.
+6. Create a fresh component-library branch from the updated main branch.
+7. Begin Phase 0 from that known baseline.
+
+
+APPROVAL RECOMMENDATION
+-----------------------
+
+Approve the revised execution plan after recording the seven refinements above.
+
+The architectural direction is ready:
+
+- internal, dependency-light component primitives;
+- shared only after demonstrated reuse;
+- feature-owned workflows and financial behavior;
+- vertical migration slices;
+- explicit semantics and accessibility;
+- tested theme and token ownership;
+- early isolated component review;
+- staged import last;
+- incremental cleanup with reversible checkpoints.
+
+No additional broad redesign is needed before Phase 0. The remaining work is to
+make the operational details explicit and establish a clean prerequisite branch
+and baseline.
