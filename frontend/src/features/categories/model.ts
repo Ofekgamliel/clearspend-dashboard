@@ -5,8 +5,9 @@ import type {
 } from '../../api/contracts';
 
 export const CATEGORY_COLORS = [
-  '#6658e8', '#41b98c', '#e6a14b', '#e76b77', '#5b8def',
-  '#a66dd4', '#50a9b8', '#d8834f', '#8f96a8',
+  'var(--theme-chart-1)', 'var(--theme-chart-2)', 'var(--theme-chart-3)',
+  'var(--theme-chart-4)', 'var(--theme-chart-5)', 'var(--theme-chart-6)',
+  'var(--theme-chart-7)', 'var(--theme-chart-8)', 'var(--theme-chart-9)',
 ] as const;
 
 export interface CategorySegment extends CategoryRow {
@@ -53,11 +54,11 @@ export function buildCategorySegments(
   const segments = categories.map((category, index) => {
     const start = Math.min(cursor, 100);
     cursor = Math.min(cursor + category.share, 100);
-    const color = colors[index % colors.length] ?? '#8f96a8';
+    const color = colors[index % colors.length] ?? 'var(--theme-chart-9)';
     gradientStops.push(`${color} ${start}% ${cursor}%`);
     return { ...category, color, start, end: cursor };
   });
-  if (cursor < 100) gradientStops.push(`#ececf1 ${cursor}% 100%`);
+  if (cursor < 100) gradientStops.push(`var(--theme-chart-empty) ${cursor}% 100%`);
   return {
     ariaLabel: categories
       .map((category) => `${category.category}: ${category.share}%`)

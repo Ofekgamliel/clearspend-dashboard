@@ -46,7 +46,7 @@ export function buildMonthlyTrend(
   points.forEach((point) => (point.categories ?? []).forEach((item) => {
     if (!categoryNames.includes(item.category)) categoryNames.push(item.category);
   }));
-  const colors = new Map(categoryNames.map((category, index) => [category, CATEGORY_COLORS[index % CATEGORY_COLORS.length] ?? '#6658e8']));
+  const colors = new Map(categoryNames.map((category, index) => [category, CATEGORY_COLORS[index % CATEGORY_COLORS.length] ?? 'var(--theme-chart-1)']));
   const positions = new Map(categoryNames.map((category, index) => [category, index]));
   const start = parseDate(period.start);
   const periodEnd = parseDate(period.end);
@@ -84,7 +84,7 @@ export function buildMonthlyTrend(
       .map((item) => {
         const height = Number(item.amount) / dailyMax * CHART.height;
         cursor -= height;
-        return { category: item.category, amount: item.amount, color: colors.get(item.category) ?? '#6658e8', x, y: cursor, width: barWidth, height: Math.max(height, .8) };
+        return { category: item.category, amount: item.amount, color: colors.get(item.category) ?? 'var(--theme-chart-1)', x, y: cursor, width: barWidth, height: Math.max(height, .8) };
       });
     return { ...point, x: index * slot + slot / 2, lineY: CHART.bottom - point.cumulativeDisplay / cumulativeMax * CHART.height, segments };
   });

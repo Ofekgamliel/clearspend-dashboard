@@ -23,6 +23,7 @@ test('fills missing calendar days and builds category stacks and cumulative valu
   assert.deepEqual(model.days.map((day) => day.amount), [100, 0, -20]);
   assert.deepEqual(model.days.map((day) => day.cumulative), [100, 100, 80]);
   assert.equal(model.days[0]?.segments.length, 1);
+  assert.equal(model.days[0]?.segments[0]?.color, 'var(--theme-chart-1)');
   assert.equal(model.days[2]?.refunds, 20);
   assert.match(model.path, /^M/);
 });

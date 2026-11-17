@@ -47,6 +47,25 @@ Local review prototypes derived from real dashboard data must remain ignored.
 - Empty states and missing values must be explicit; do not display fabricated
   zeros or demo transactions.
 
+## Visual primitives
+
+- Equivalent controls use the shared visual tiers defined in `frontend/src/style.css`:
+  standard dashboard panels, large dialogs, compact editors, regular form
+  controls, dense table controls, standard actions, icon actions, and segmented
+  controls.
+- Feature layout may differ, but it must not redefine the height, radius,
+  typography, focus treatment, or semantic color of an existing control tier.
+- Dashboard panel headings share one scale. Income remains a compact household
+  summary and may keep stronger hierarchy without creating a second panel style.
+- Large dialogs share the same frame, header padding, title scale, close action,
+  border, and elevation. Compact create/edit dialogs use the documented compact
+  title tier and the same controls and action treatments.
+- Regular form controls and dense table controls are intentionally different
+  sizes. Do not introduce a third size for a feature-local dropdown or input.
+- Primary, secondary, destructive, and ghost actions keep their semantic role
+  across every workflow. Provider marks and category/chart colors are data or
+  brand encodings, not action colors.
+
 ## Transactions
 
 - Default individual transactions to purchase date descending.

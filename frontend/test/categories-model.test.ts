@@ -33,8 +33,19 @@ test('builds the preview donut from backend-owned shares', () => {
     { name: 'One', start: 0, end: 60, color: '#111111' },
     { name: 'Two', start: 60, end: 85, color: '#222222' },
   ]);
-  assert.match(model.gradient, /#ececf1 85% 100%/);
+  assert.match(model.gradient, /var\(--theme-chart-empty\) 85% 100%/);
   assert.equal(model.ariaLabel, 'One: 60%, Two: 25%');
+});
+
+test('uses live theme chart tokens by default', () => {
+  const model = buildCategorySegments([
+    category({ category: 'One', share: 60 }),
+    category({ category: 'Two', share: 40 }),
+  ]);
+  assert.deepEqual(model.segments.map((segment) => segment.color), [
+    'var(--theme-chart-1)',
+    'var(--theme-chart-2)',
+  ]);
 });
 
 test('resolves donut pointer positions while ignoring its empty centre', () => {

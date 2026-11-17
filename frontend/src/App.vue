@@ -16,6 +16,8 @@ import type { ObservationActivity } from './features/observations/model';
 import RecurringPanel from './features/recurring/RecurringPanel.vue';
 import TransactionsPanel from './features/transactions/TransactionsPanel.vue';
 import TrendPanel from './features/trend/TrendPanel.vue';
+import ThemePicker from './features/theme/ThemePicker.vue';
+import { applyTheme, readStoredTheme, storeTheme, type ThemeId } from './features/theme/theme';
 
 const {
   period,
@@ -40,6 +42,8 @@ function storedIncomeVisibility(): boolean {
 }
 
 const incomeHidden = ref(storedIncomeVisibility());
+const colorTheme = ref<ThemeId>(readStoredTheme());
+applyTheme(colorTheme.value);
 const incomePanel = ref<InstanceType<typeof IncomePanel> | null>(null);
 const transactionsPanel = ref<InstanceType<typeof TransactionsPanel> | null>(null);
 const recurringPanel = ref<InstanceType<typeof RecurringPanel> | null>(null);
@@ -67,6 +71,12 @@ function openManagement(target: ManagementTarget | 'recurring', canonicalGroupId
 function changeIncomeVisibility(hidden: boolean): void {
   incomeHidden.value = hidden;
   try { localStorage.setItem('clearspend-income-hidden', hidden ? '1' : '0'); } catch { /* Keep the in-memory preference. */ }
+}
+
+function changeColorTheme(theme: ThemeId): void {
+  colorTheme.value = theme;
+  applyTheme(theme);
+  storeTheme(theme);
 }
 
 function openObservationActivity(activity: ObservationActivity): void {
@@ -106,6 +116,7 @@ function openCategoryTransactions(payload: { category: string; routine: boolean 
         :period="period" :month="effectiveMonth" :card="card" :cards="dashboard?.cards ?? []" :available-months="dashboard?.available_months ?? []"
         :loading="filtersLoading" :error="filtersError" @period-change="period = $event" @month-change="changeMonth" @card-change="card = $event" @retry="loadFilters"
       />
+      <ThemePicker v-if="runtimeReady" :model-value="colorTheme" @update:model-value="changeColorTheme" />
       <ManageDataMenu v-if="runtimeReady" @select="openManagement" />
     </header>
     <section v-if="runtimeChecking" class="runtime-state" role="status"><strong>Connecting to ClearSpend…</strong><span>Checking the local server and database.</span></section>

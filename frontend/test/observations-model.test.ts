@@ -29,7 +29,7 @@ test('uses the actual grouped finding months instead of the whole selected range
 });
 
 test('preserves established visual identity and metric-label overrides', () => {
-  assert.deepEqual(observationVisual('POSSIBLE DUPLICATE'), { icon: '≡', color: '#6658e8', priority: true });
+  assert.deepEqual(observationVisual('POSSIBLE DUPLICATE'), { icon: '≡', color: 'var(--theme-chart-1)', priority: true });
   assert.deepEqual(observationMetricLabels({
     type: 'LARGE PURCHASE', month: '2026-11', label: 'A', title: 'A', description: '', score: 1,
     value: '₪500', evidence: [], comparisonLabel: 'Custom baseline',
