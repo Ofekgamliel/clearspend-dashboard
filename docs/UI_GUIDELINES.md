@@ -35,6 +35,22 @@ Local review prototypes derived from real dashboard data must remain ignored.
 - Dashboard changes require functional checks at desktop and narrow widths;
   visible changes require reviewed visual snapshots where the suite covers them.
 
+## Shared UI components
+
+- Generic cross-feature primitives live under `frontend/src/shared/ui/` only
+  after the maintained UI inventory demonstrates at least two independent uses.
+- Shared components own native semantics, accessibility relationships and their
+  visual contract. Features retain workflow state, validation, API calls and
+  financial meaning.
+- Use semantic variants and documented density tiers. Do not pass arbitrary
+  feature colors, radii or layout rules into a shared primitive.
+- Shared components must not import feature modules. A feature-specific wrapper
+  may compose shared primitives.
+- Migrate one complete workflow slice at a time and remove only selectors whose
+  known consumers migrated.
+- Component contracts run through the ordinary `npm test` command. The
+  development gallery uses synthetic data and is excluded from production.
+
 ## Data presentation
 
 - Production UI values come from the local API; do not hardcode live values.

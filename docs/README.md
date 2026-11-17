@@ -27,6 +27,8 @@ subject. Archived plans never override current code or maintained guidance.
   accessibility, Vue state ownership, and visual-regression expectations.
 - [`UI_COMPONENT_LIBRARY_EXECUTION_PLAN.md`](UI_COMPONENT_LIBRARY_EXECUTION_PLAN.md)
   — authoritative phased plan for the internal Vue component library.
+- [`UI_COMPONENT_LIBRARY_INVENTORY.md`](UI_COMPONENT_LIBRARY_INVENTORY.md) —
+  maintained control inventory and workflow-migration checklist.
 
 ## Operations and repository safety
 

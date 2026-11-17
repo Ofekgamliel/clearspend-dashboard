@@ -2,8 +2,10 @@
 
 ## Status and purpose
 
-Status: proposed execution plan. The theme and visual-token foundation is in
-progress; shared Vue components have not started.
+Status: implementation in progress. The alternate theme/layout work is isolated
+on `feature/dashboard-theme-layout`. The shared-component branch has completed
+its inventory, component-test/gallery foundation and first Event create/edit
+pilot without importing that alternate visual work.
 
 This file is the authoritative implementation sequence and checklist for this
 initiative. Review files are context only and do not create competing execution
@@ -225,6 +227,11 @@ Exit: the maintained inventory exists, the pilot is resolved and broader
 unknowns are explicitly deferred.
 
 ### Phase 2 — Theme, tokens and visualization
+
+Branch decision: this branch establishes semantic tokens for the current
+production baseline only. The twelve-palette implementation remains isolated
+for later comparison; its catalogue, generation and all-theme requirements
+apply only if that work is deliberately integrated.
 
 - Establish the typed catalogue, generated CSS boundary and safe fallback.
 - Record the authoritative source path, generation command/build step, output

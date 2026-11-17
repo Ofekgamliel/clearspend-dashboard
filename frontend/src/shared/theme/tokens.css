@@ -1,0 +1,24 @@
+:root {
+  --ui-surface: #fff;
+  --ui-footer: #fbfbfd;
+  --ui-text: #3f4050;
+  --ui-heading: #292839;
+  --ui-label: #727382;
+  --ui-muted: #74727f;
+  --ui-subtle: #8d8c98;
+  --ui-border: #dedde6;
+  --ui-button-border: #dfdde7;
+  --ui-dialog-border: #e5e3ed;
+  --ui-icon-muted: #999aaa;
+  --ui-divider: #ecebf1;
+  --ui-primary: #6557e8;
+  --ui-on-primary: #fff;
+  --ui-focus: #6658e8;
+  --ui-focus-border: #aaa2ef;
+  --ui-focus-soft: #efedff;
+  --ui-danger: #c6535f;
+  --ui-danger-border: #eac7c7;
+  --ui-overlay: rgba(18, 18, 32, .55);
+  --ui-overlay-nested: rgba(18, 18, 32, .42);
+  --ui-dialog-shadow: rgba(19, 17, 42, .25);
+}

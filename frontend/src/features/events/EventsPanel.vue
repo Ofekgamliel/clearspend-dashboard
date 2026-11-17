@@ -4,6 +4,7 @@ import { createEvent, getEvents, saveEvent } from '../../api/events';
 import type { EventSummary, EventsResponse, EventTransaction, PeriodKey } from '../../api/contracts';
 import { formatDate, formatMoney } from '../../shared/format';
 import { modalFocus as vModalFocus } from '../../shared/modalFocus';
+import { UiButton, UiDialog, UiField, UiInput, UiSelect } from '../../shared/ui';
 import { buildEventPanelItems, categoryTotals, eventFormError, eventIcon, isBusinessTrip, type EventGroupItem } from './model';
 
 const colors = ['#6658e8', '#41b98c', '#e6a14b', '#5b8def', '#d76a8a', '#7f74c9', '#3aa6a0', '#d17c43'];
@@ -173,9 +174,8 @@ async function submitCreate(): Promise<void> {
 
 function handleKeydown(event: KeyboardEvent): void {
   if (event.key !== 'Escape') return;
-  if (editOpen.value) closeEdit();
-  else if (createOpen.value) closeCreate();
-  else if (modalOpen.value) closeModal();
+  if (editOpen.value || createOpen.value) return;
+  if (modalOpen.value) closeModal();
 }
 watch([() => props.period, () => props.month, () => props.card, () => props.refreshKey], loadEvents, { immediate: true });
 watch([() => props.period, () => props.month, () => props.card], closeModal);
@@ -204,45 +204,31 @@ defineExpose({ reload: loadEvents });
       <template v-if="showGroup && activeGroup"><div class="event-summary-preview"><div><span>Personal spending</span><strong>{{ formatMoney(activeGroup.events.reduce((sum,event) => sum + Number(event.total_amount || 0),0)) }}</strong><small>Across these trips</small></div><div><span>Transactions</span><strong>{{ groupTransactions.length }}</strong><small>Exact transaction IDs</small></div><div><span>Categories</span><strong>{{ groupCategories }}</strong><small>Cross-category events</small></div><div><span>Cards</span><strong>{{ groupCards }}</strong><small>Across these trips</small></div></div><div class="business-trip-table-preview"><div class="business-trip-head-preview"><span>Trip</span><span>Dates</span><span>Transactions</span><span>Personal spending</span><span /></div><button v-for="event in activeGroup.events" :key="event.id" type="button" @click="openEvent(event,true)"><span><strong>{{ event.name }}</strong><small>Business trip</small></span><span>{{ formatDate(event.start_date) }} – {{ formatDate(event.end_date) }}</span><span>{{ event.total_transaction_count }}</span><b>{{ formatMoney(event.total_amount) }}</b><i>›</i></button></div></template>
       <template v-else-if="activeEvent"><div class="event-summary-preview"><div><span>Personal spending</span><strong>{{ formatMoney(activeEvent.total_amount) }}</strong><small>Entire event</small></div><div><span>Transactions</span><strong>{{ activeEvent.total_transaction_count }}</strong><small>Exact transaction membership</small></div><div><span>Categories</span><strong>{{ activeEvent.category_count }}</strong><small>Across this event</small></div><div><span>Cards</span><strong>{{ activeEvent.card_count }}</strong><small>Used during this event</small></div></div><div class="event-detail-columns-preview"><section><h3>Spending by category</h3><div class="event-category-list-preview"><button type="button" :class="{ active: activeCategory === 'all' }" @click="activeCategory = 'all'"><i style="background:#aaa8b7"/><span>All categories</span><b>{{ formatMoney(activeEvent.total_amount) }}</b></button><button v-for="(category,index) in categories" :key="category.category" type="button" :class="{ active: activeCategory === category.category }" @click="activeCategory = category.category"><i :style="{ background: colors[index % colors.length] }"/><span dir="auto">{{ category.category }}</span><b>{{ formatMoney(category.amount) }}</b></button></div></section><section><h3>{{ activeCategory === 'all' ? `All transactions · ${visibleTransactions.length}` : `${activeCategory} · ${visibleTransactions.length}` }}</h3><div class="event-transaction-list-preview"><div v-for="item in visibleTransactions" :key="item.id"><span><strong dir="auto">{{ item.merchant_display_name || item.merchant_raw }}</strong><small dir="auto">{{ item.category }}</small></span><span>{{ formatDate(item.transaction_date) }}</span><span>{{ item.provider.toUpperCase() }} •• {{ item.card_last4 }}</span><strong dir="ltr">{{ formatMoney(item.personal_amount) }}</strong></div><p v-if="!visibleTransactions.length">No transactions in this category.</p></div></section></div></template>
     </div></section></div></Teleport>
-  <Teleport to="body">
-    <div v-if="createOpen" class="event-modal-backdrop-preview" @mousedown.self="closeCreate">
-      <section v-modal-focus class="event-create-modal-preview" role="dialog" aria-modal="true" aria-labelledby="event-create-title">
-        <button type="button" class="event-modal-close-preview" aria-label="Close event creation" @click="closeCreate">×</button>
-        <header><h2 id="event-create-title">Create new event</h2><p>Create the event first, then assign individual transactions to it.</p></header>
-        <form @submit.prevent="submitCreate">
-          <div class="event-create-body-preview">
-            <label><span>Name</span><input v-model="createForm.name" required placeholder="For example: Prague 2027" autofocus></label>
-            <label><span>Type</span><select v-model="createForm.event_type"><option value="trip">Personal trip</option><option value="business_trip">Business trip</option><option value="celebration">Celebration</option><option value="home">Home project</option><option value="other">Other</option></select></label>
-            <label v-if="createForm.event_type === 'business_trip'"><span>Destination</span><input v-model="createForm.destination" required placeholder="For example: City name"><small>Business trips with the same destination are grouped in longer-period views.</small></label>
-            <div class="event-create-dates-preview"><label><span>Start date</span><input v-model="createForm.start_date" type="date" required></label><label><span>End date</span><input v-model="createForm.end_date" type="date" required></label></div>
-            <label><span>Budget <small>(optional)</small></span><input v-model="createForm.budget" type="number" min="0" step="0.01" placeholder="Not set"></label>
-            <label><span>Status</span><select v-model="createForm.status"><option value="planned">Planned</option><option value="active">Active</option><option value="completed">Completed</option></select></label>
-            <p v-if="createError" class="event-create-error-preview" role="alert">{{ createError }}</p>
-          </div>
-          <footer><button type="button" class="secondary" :disabled="createSaving" @click="closeCreate">Cancel</button><button type="submit" class="primary" :disabled="createSaving">{{ createSaving ? 'Creating…' : 'Create event' }}</button></footer>
-        </form>
-      </section>
-    </div>
-  </Teleport>
-  <Teleport to="body">
-    <div v-if="editOpen" class="event-modal-backdrop-preview event-edit-layer-preview" @mousedown.self="closeEdit">
-      <section v-modal-focus class="event-create-modal-preview" role="dialog" aria-modal="true" aria-labelledby="event-edit-title">
-        <button type="button" class="event-modal-close-preview" aria-label="Close event editor" @click="closeEdit">×</button>
-        <header><h2 id="event-edit-title">Edit event</h2><p>Update how this event is presented.</p></header>
-        <form @submit.prevent="submitEdit">
-          <div class="event-create-body-preview">
-            <label><span>Name</span><input v-model="editForm.name" required></label>
-            <label><span>Type</span><select v-model="editForm.event_type"><option value="trip">Personal trip</option><option value="business_trip">Business trip</option><option value="celebration">Celebration</option><option value="home">Home project</option><option value="other">Other</option></select></label>
-            <label v-if="editForm.event_type === 'business_trip'"><span>Destination</span><input v-model="editForm.destination" required placeholder="For example: City name"><small>Business trips with the same destination are grouped in longer-period views.</small></label>
-            <div class="event-create-dates-preview"><label><span>Start date</span><input v-model="editForm.start_date" type="date" required></label><label><span>End date</span><input v-model="editForm.end_date" type="date" required></label></div>
-            <label><span>Budget <small>(optional)</small></span><input v-model="editForm.budget" type="number" min="0" step="0.01" placeholder="Not set"></label>
-            <label><span>Status</span><select v-model="editForm.status"><option value="planned">Planned</option><option value="active">Active</option><option value="completed">Completed</option><option value="cancelled">Cancelled</option></select></label>
-            <p v-if="editError" class="event-create-error-preview" role="alert">{{ editError }}</p>
-          </div>
-          <footer><button type="button" class="secondary" :disabled="editSaving" @click="closeEdit">Close</button><button type="submit" class="primary" :disabled="editSaving">{{ editSaving ? 'Saving…' : 'Save changes' }}</button></footer>
-        </form>
-      </section>
-    </div>
-  </Teleport>
+  <UiDialog :open="createOpen" title-id="event-create-title" close-label="Close event creation" size="compact" @request-close="closeCreate">
+    <template #header><h2 id="event-create-title">Create new event</h2><p>Create the event first, then assign individual transactions to it.</p></template>
+    <form id="event-create-form" class="event-create-fields" @submit.prevent="submitCreate">
+      <UiField for-id="event-create-name" label="Name"><UiInput id="event-create-name" v-model="createForm.name" required placeholder="For example: Prague 2027" autofocus /></UiField>
+      <UiField for-id="event-create-type" label="Type"><UiSelect id="event-create-type" v-model="createForm.event_type"><option value="trip">Personal trip</option><option value="business_trip">Business trip</option><option value="celebration">Celebration</option><option value="home">Home project</option><option value="other">Other</option></UiSelect></UiField>
+      <UiField v-if="createForm.event_type === 'business_trip'" for-id="event-create-destination" label="Destination" description="Business trips with the same destination are grouped in longer-period views." v-slot="ids"><UiInput id="event-create-destination" v-model="createForm.destination" required placeholder="For example: City name" :aria-describedby="ids.descriptionId" /></UiField>
+      <div class="event-create-dates-preview"><UiField for-id="event-create-start" label="Start date"><UiInput id="event-create-start" v-model="createForm.start_date" type="date" required /></UiField><UiField for-id="event-create-end" label="End date"><UiInput id="event-create-end" v-model="createForm.end_date" type="date" required /></UiField></div>
+      <UiField for-id="event-create-budget" label="Budget" optional><UiInput id="event-create-budget" v-model="createForm.budget" type="number" min="0" step="0.01" placeholder="Not set" /></UiField>
+      <UiField for-id="event-create-status" label="Status"><UiSelect id="event-create-status" v-model="createForm.status"><option value="planned">Planned</option><option value="active">Active</option><option value="completed">Completed</option></UiSelect></UiField>
+      <p v-if="createError" class="event-create-error-preview" role="alert">{{ createError }}</p>
+    </form>
+    <template #footer><UiButton :disabled="createSaving" @click="closeCreate">Cancel</UiButton><UiButton form="event-create-form" type="submit" variant="primary" :busy="createSaving">{{ createSaving ? 'Creating…' : 'Create event' }}</UiButton></template>
+  </UiDialog>
+  <UiDialog :open="editOpen" title-id="event-edit-title" close-label="Close event editor" size="compact" layer="nested" @request-close="closeEdit">
+    <template #header><h2 id="event-edit-title">Edit event</h2><p>Update how this event is presented.</p></template>
+    <form id="event-edit-form" class="event-create-fields" @submit.prevent="submitEdit">
+      <UiField for-id="event-edit-name" label="Name"><UiInput id="event-edit-name" v-model="editForm.name" required /></UiField>
+      <UiField for-id="event-edit-type" label="Type"><UiSelect id="event-edit-type" v-model="editForm.event_type"><option value="trip">Personal trip</option><option value="business_trip">Business trip</option><option value="celebration">Celebration</option><option value="home">Home project</option><option value="other">Other</option></UiSelect></UiField>
+      <UiField v-if="editForm.event_type === 'business_trip'" for-id="event-edit-destination" label="Destination" description="Business trips with the same destination are grouped in longer-period views." v-slot="ids"><UiInput id="event-edit-destination" v-model="editForm.destination" required placeholder="For example: City name" :aria-describedby="ids.descriptionId" /></UiField>
+      <div class="event-create-dates-preview"><UiField for-id="event-edit-start" label="Start date"><UiInput id="event-edit-start" v-model="editForm.start_date" type="date" required /></UiField><UiField for-id="event-edit-end" label="End date"><UiInput id="event-edit-end" v-model="editForm.end_date" type="date" required /></UiField></div>
+      <UiField for-id="event-edit-budget" label="Budget" optional><UiInput id="event-edit-budget" v-model="editForm.budget" type="number" min="0" step="0.01" placeholder="Not set" /></UiField>
+      <UiField for-id="event-edit-status" label="Status"><UiSelect id="event-edit-status" v-model="editForm.status"><option value="planned">Planned</option><option value="active">Active</option><option value="completed">Completed</option><option value="cancelled">Cancelled</option></UiSelect></UiField>
+      <p v-if="editError" class="event-create-error-preview" role="alert">{{ editError }}</p>
+    </form>
+    <template #footer><UiButton :disabled="editSaving" @click="closeEdit">Close</UiButton><UiButton form="event-edit-form" type="submit" variant="primary" :busy="editSaving">{{ editSaving ? 'Saving…' : 'Save changes' }}</UiButton></template>
+  </UiDialog>
   <Teleport to="body"><div v-if="eventNotice" class="event-save-notice-preview" role="status"><span><strong>{{ eventNotice.title }}</strong><small>{{ eventNotice.detail }}</small></span><button type="button" aria-label="Dismiss event message" @click="eventNotice = null">×</button></div></Teleport>
 </template>
