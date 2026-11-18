@@ -23,4 +23,10 @@ describe('UiDialog', () => {
     expect(second.emitted('requestClose')).toEqual([['escape']]);
     first.unmount(); second.unmount();
   });
+
+  it.each(['compact', 'medium', 'wide', 'standard', 'insight', 'large', 'browser', 'analysis', 'management'] as const)('exposes the finite %s size tier', (size) => {
+    const wrapper = mount(UiDialog, { props: { open: true, titleId: `${size}-title`, closeLabel: `Close ${size}`, size }, slots: { default: `<h2 id="${size}-title">${size}</h2>` } });
+    expect(document.body.querySelector('[data-ui-dialog]')?.classList.contains(`ui-dialog--${size}`)).toBe(true);
+    wrapper.unmount();
+  });
 });

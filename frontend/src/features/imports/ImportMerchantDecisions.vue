@@ -2,6 +2,7 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue';
 import type { DisplayIdentityReference, ImportMerchantDecision, StagedMerchant } from '../../api/contracts.ts';
 import { formatDate, formatMoney } from '../../shared/format.ts';
+import { UiSelect } from '../../shared/ui';
 import { rankedIdentityMatches } from './model.ts';
 
 const props = defineProps<{
@@ -111,8 +112,8 @@ onBeforeUnmount(() => {
             <small v-if="decisions.get(merchant.merchant_normalized)?.suggested_match" class="identity-suggestion">Suggested match: {{ decisions.get(merchant.merchant_normalized)?.display_name }}</small>
           </td>
           <td><strong>{{ merchant.providers.join(', ').toUpperCase() }}</strong><small>{{ formatDate(merchant.first_date) }} – {{ formatDate(merchant.last_date) }}</small></td>
-          <td><select :value="decisions.get(merchant.merchant_normalized)?.resolution" @change="emit('update', merchant.merchant_normalized, 'resolution', ($event.target as HTMLSelectElement).value)"><option value="create">Create new rule</option><option value="link">Link existing merchant</option><option v-if="merchant.provider_category" value="provider">Use provider value</option><option value="needs_review">Needs review</option><option value="exclude">Exclude rows</option></select></td>
-          <td><select :value="decisions.get(merchant.merchant_normalized)?.category" :disabled="decisions.get(merchant.merchant_normalized)?.resolution === 'exclude'" @change="emit('update', merchant.merchant_normalized, 'category', ($event.target as HTMLSelectElement).value)"><option v-for="category in categoryOptions(decisions.get(merchant.merchant_normalized)!)" :key="category">{{ category }}</option></select></td>
+          <td><UiSelect :model-value="decisions.get(merchant.merchant_normalized)?.resolution ?? ''" density="dense" @update:model-value="emit('update', merchant.merchant_normalized, 'resolution', $event)"><option value="create">Create new rule</option><option value="link">Link existing merchant</option><option v-if="merchant.provider_category" value="provider">Use provider value</option><option value="needs_review">Needs review</option><option value="exclude">Exclude rows</option></UiSelect></td>
+          <td><UiSelect :model-value="decisions.get(merchant.merchant_normalized)?.category ?? ''" density="dense" :disabled="decisions.get(merchant.merchant_normalized)?.resolution === 'exclude'" @update:model-value="emit('update', merchant.merchant_normalized, 'category', $event)"><option v-for="category in categoryOptions(decisions.get(merchant.merchant_normalized)!)" :key="category">{{ category }}</option></UiSelect></td>
           <td>
             <input
               :value="decisions.get(merchant.merchant_normalized)?.display_name"
@@ -126,7 +127,7 @@ onBeforeUnmount(() => {
               @input="updateDisplay($event, merchant)"
             >
           </td>
-          <td><select :value="decisions.get(merchant.merchant_normalized)?.scope" :disabled="['link', 'exclude'].includes(decisions.get(merchant.merchant_normalized)?.resolution ?? '')" :title="decisions.get(merchant.merchant_normalized)?.resolution === 'link' ? 'This exact statement name will be linked permanently.' : 'Choose whether the decision applies to future exact matches.'" @change="emit('update', merchant.merchant_normalized, 'scope', ($event.target as HTMLSelectElement).value)"><option value="exact">This name, future too</option><option v-if="decisions.get(merchant.merchant_normalized)?.resolution !== 'link'" value="batch">This batch only</option></select></td>
+          <td><UiSelect :model-value="decisions.get(merchant.merchant_normalized)?.scope ?? ''" density="dense" :disabled="['link', 'exclude'].includes(decisions.get(merchant.merchant_normalized)?.resolution ?? '')" :title="decisions.get(merchant.merchant_normalized)?.resolution === 'link' ? 'This exact statement name will be linked permanently.' : 'Choose whether the decision applies to future exact matches.'" @update:model-value="emit('update', merchant.merchant_normalized, 'scope', $event)"><option value="exact">This name, future too</option><option v-if="decisions.get(merchant.merchant_normalized)?.resolution !== 'link'" value="batch">This batch only</option></UiSelect></td>
         </tr>
       </tbody>
     </table>

@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import { computed, ref, watch } from 'vue';
 import { getObservations, saveObservationReview } from '../../api/observations';
 import type { ObservationFinding, ObservationGroup, ObservationsResponse, PeriodKey } from '../../api/contracts';
-import { modalFocus as vModalFocus } from '../../shared/modalFocus';
+import { UiButton, UiDialog } from '../../shared/ui';
 import { observationActivity, observationCount, observationMetricLabels, observationMonthRange, observationReviewOption, observationReviewRequest, observationScope, observationVisual, type ObservationActivity } from './model';
 
 const props = defineProps<{ period: PeriodKey; month: string; card: string; incomeHidden: boolean; refreshKey: number }>();
@@ -59,7 +59,6 @@ async function load(preserveUndo = false, preserveModal = false): Promise<void> 
 function open(group: ObservationGroup): void { active.value = group; }
 function close(): void { active.value = null; }
 function evidenceLabel(item: ObservationFinding): string { return item.entityLabel ?? item.label; }
-function handleKeydown(event: KeyboardEvent): void { if (event.key === 'Escape' && active.value) close(); }
 function openActivity(item: ObservationFinding): void { close(); emit('openActivity', observationActivity(item)); }
 
 async function review(item: ObservationFinding, remove = false): Promise<void> {
@@ -85,8 +84,6 @@ async function review(item: ObservationFinding, remove = false): Promise<void> {
 }
 
 watch([() => props.period, () => props.month, () => props.card, () => props.incomeHidden, () => props.refreshKey], () => { void load(); }, { immediate: true });
-onMounted(() => document.addEventListener('keydown', handleKeydown));
-onBeforeUnmount(() => document.removeEventListener('keydown', handleKeydown));
 </script>
 
 <template>
@@ -110,9 +107,9 @@ onBeforeUnmount(() => document.removeEventListener('keydown', handleKeydown));
     <span v-if="loading && response" class="observations-updating-preview">Updating…</span>
   </article>
 
-  <Teleport to="body"><div v-if="active" class="observation-modal-backdrop-preview" @mousedown.self="close"><section v-modal-focus class="observation-modal-preview" role="dialog" aria-modal="true" aria-labelledby="observation-preview-modal-title">
-    <button type="button" class="observation-modal-close-preview" aria-label="Close observation details" @click="close">×</button>
-    <header :style="{ '--observation-color': observationVisual(active.type).color }"><span><i aria-hidden="true" />{{ active.type }}</span><h2 id="observation-preview-modal-title">{{ modalTitle }}</h2><p>{{ active.description }}</p></header>
+  <UiDialog :open="Boolean(active)" title-id="observation-preview-modal-title" close-label="Close observation details" size="insight" @request-close="close">
+    <template v-if="active" #header><div class="observation-modal-head-preview" :style="{ '--observation-color': observationVisual(active.type).color }"><span><i aria-hidden="true" />{{ active.type }}</span><h2 id="observation-preview-modal-title">{{ modalTitle }}</h2><p>{{ active.description }}</p></div></template>
+    <template v-if="active">
     <div class="observation-modal-body-preview">
       <div class="observation-metrics-preview">
         <div><span>{{ isGrouped ? 'Findings' : activeLabels[0] }}</span><strong>{{ isGrouped ? activeItems.length : active.value }}</strong></div>
@@ -138,8 +135,8 @@ onBeforeUnmount(() => document.removeEventListener('keydown', handleKeydown));
         </div>
       </section>
       <p v-if="reviewError && active" class="observation-review-error-preview">{{ reviewError }}</p>
-    </div>
-    <footer v-if="!isGrouped && activeItems[0]" class="observation-modal-footer-preview"><button v-if="observationReviewOption(activeItems[0].type) && activeItems[0].findingKey" type="button" class="observation-review-button-preview" :disabled="savingKey === activeItems[0].findingKey" @click="review(activeItems[0])">{{ savingKey === activeItems[0].findingKey ? 'Saving…' : observationReviewOption(activeItems[0].type)?.action }}</button><button type="button" class="observation-activity-button-preview primary" @click="openActivity(activeItems[0])">{{ observationActivity(activeItems[0]).label }}</button></footer>
-  </section></div></Teleport>
+    </div></template>
+    <template v-if="active && !isGrouped && activeItems[0]" #footer><UiButton v-if="observationReviewOption(activeItems[0].type) && activeItems[0].findingKey" variant="soft-accent" size="compact" :busy="savingKey === activeItems[0].findingKey" @click="review(activeItems[0])">{{ savingKey === activeItems[0].findingKey ? 'Saving…' : observationReviewOption(activeItems[0].type)?.action }}</UiButton><UiButton variant="primary" size="compact" @click="openActivity(activeItems[0])">{{ observationActivity(activeItems[0]).label }}</UiButton></template>
+  </UiDialog>
   <Teleport to="body"><div v-if="lastReview" class="observation-undo-preview" role="status"><span><strong>{{ observationReviewOption(lastReview.type)?.resolved }}</strong><small dir="auto">{{ lastReview.label }}</small></span><button type="button" :disabled="Boolean(savingKey)" @click="review(lastReview,true)">Undo</button><button type="button" aria-label="Dismiss review confirmation" @click="lastReview = null">×</button></div><div v-else-if="reviewError && !active" class="observation-undo-preview error" role="alert"><span><strong>Review could not be updated</strong><small>{{ reviewError }}</small></span><button type="button" aria-label="Dismiss error" @click="reviewError = ''">×</button></div></Teleport>
 </template>

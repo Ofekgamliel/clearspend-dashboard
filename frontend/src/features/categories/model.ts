@@ -3,11 +3,7 @@ import type {
   CategoryComparisonStatus,
   CategoryRow,
 } from '../../api/contracts';
-
-export const CATEGORY_COLORS = [
-  '#6658e8', '#41b98c', '#e6a14b', '#e76b77', '#5b8def',
-  '#a66dd4', '#50a9b8', '#d8834f', '#8f96a8',
-] as const;
+import { CATEGORY_COLORS } from '../../shared/visualization/chartPalette.ts';
 
 export interface CategorySegment extends CategoryRow {
   color: string;

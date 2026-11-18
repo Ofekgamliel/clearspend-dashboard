@@ -1,9 +1,9 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import { computed, ref, watch } from 'vue';
 import { saveTransactionAdjustment } from '../../api/transactions';
 import type { TransactionRow } from '../../api/contracts';
 import { formatDate, formatMoney, formatSourceAmount } from '../../shared/format';
-import { modalFocus as vModalFocus } from '../../shared/modalFocus';
+import { UiButton, UiDialog, UiField, UiInput } from '../../shared/ui';
 
 const props = defineProps<{ transaction: TransactionRow | null }>();
 const emit = defineEmits<{
@@ -82,10 +82,6 @@ function requestRemoval(): void {
   void save(true);
 }
 
-function handleKeydown(event: KeyboardEvent): void {
-  if (event.key === 'Escape' && props.transaction) close();
-}
-
 watch(() => props.transaction, (transaction) => {
   if (!transaction) return;
   kind.value = transaction.adjustment_type === 'partial_reimbursement' ? 'partial' : 'full';
@@ -95,23 +91,18 @@ watch(() => props.transaction, (transaction) => {
   error.value = '';
   removeConfirmed.value = false;
 });
-onMounted(() => document.addEventListener('keydown', handleKeydown));
-onBeforeUnmount(() => document.removeEventListener('keydown', handleKeydown));
 </script>
 
 <template>
-  <Teleport to="body">
-    <div v-if="transaction" class="transaction-editor-backdrop" @mousedown.self="close">
-      <section v-modal-focus class="transaction-adjustment-editor" role="dialog" aria-modal="true" aria-labelledby="transaction-adjustment-title">
-        <button type="button" class="transaction-editor-close" aria-label="Close spending adjustment" @click="close">×</button>
-        <header><h2 id="transaction-adjustment-title">Mark as reimbursed</h2><p>Keep the original card charge while correcting personal-spending statistics.</p></header>
+  <UiDialog :open="Boolean(transaction)" title-id="transaction-adjustment-title" close-label="Close spending adjustment" size="wide" @request-close="close">
+    <template #header><h2 id="transaction-adjustment-title">Mark as reimbursed</h2><p>Keep the original card charge while correcting personal-spending statistics.</p></template>
+    <template v-if="transaction">
         <div class="transaction-editor-snapshot"><div><span>Merchant</span><strong>{{ transaction.merchant_display_name || transaction.merchant_raw }}</strong><small>{{ transaction.merchant_raw }}</small></div><div><span>Purchase date</span><strong>{{ transaction.transaction_date ? formatDate(transaction.transaction_date) : '—' }}</strong></div><div><span>Card</span><strong>{{ transaction.provider.toUpperCase() }} •• {{ transaction.card_last4 }}</strong></div><div><span>Card charge</span><strong>{{ formatSourceAmount(transaction.amount, transaction.charged_currency) }}</strong></div></div>
         <div class="transaction-adjustment-kinds"><label :class="{ active: kind === 'full' }"><input v-model="kind" type="radio" value="full"><span><strong>Fully reimbursed</strong><small>None of this charge counts as personal spending.</small></span></label><label :class="{ active: kind === 'partial' }"><input v-model="kind" type="radio" value="partial"><span><strong>Partially reimbursed</strong><small>Only the unreimbursed remainder counts as personal spending.</small></span></label></div>
-        <div class="transaction-adjustment-fields"><label><span>Reimbursed amount</span><input v-model="amount" type="number" min="0.01" :max="transaction.amount" step="0.01" :disabled="kind === 'full' || saving"></label><label><span>Reimbursement date <small>(optional)</small></span><input v-model="date" type="date" :disabled="saving"></label><label class="wide"><span>Note <small>(optional)</small></span><input v-model="note" maxlength="500" placeholder="For example: paid for another person" :disabled="saving"></label></div>
+        <div class="transaction-adjustment-fields"><UiField for-id="transaction-reimbursed-amount" label="Reimbursed amount"><UiInput id="transaction-reimbursed-amount" v-model="amount" type="number" min="0.01" :max="transaction.amount" step="0.01" :disabled="kind === 'full' || saving" /></UiField><UiField for-id="transaction-reimbursement-date" label="Reimbursement date" optional><UiInput id="transaction-reimbursement-date" v-model="date" type="date" :disabled="saving" /></UiField><UiField class="wide" for-id="transaction-reimbursement-note" label="Note" optional><UiInput id="transaction-reimbursement-note" v-model="note" maxlength="500" placeholder="For example: paid for another person" :disabled="saving" /></UiField></div>
         <p class="transaction-adjustment-explanation"><b>i</b><span>The original charge remains {{ formatSourceAmount(transaction.amount, transaction.charged_currency) }}. Personal amount after this adjustment: <strong>{{ formatMoney(personalAmount) }}</strong>.</span></p>
         <p v-if="error" class="transaction-editor-error" role="alert">{{ error }}</p>
-        <footer><button v-if="transaction.adjustment_type" type="button" class="remove" :disabled="saving" @click="requestRemoval">{{ removeConfirmed ? 'Confirm removal' : 'Remove adjustment' }}</button><span /><button type="button" class="secondary" :disabled="saving" @click="close">Cancel</button><button type="button" class="primary" :disabled="saving" @click="save(false)">{{ saving ? 'Saving…' : 'Save adjustment' }}</button></footer>
-      </section>
-    </div>
-  </Teleport>
+    </template>
+    <template #footer><UiButton v-if="transaction?.adjustment_type" variant="danger" :disabled="saving" @click="requestRemoval">{{ removeConfirmed ? 'Confirm removal' : 'Remove adjustment' }}</UiButton><span class="transaction-editor-footer-spacer" /><UiButton :disabled="saving" @click="close">Cancel</UiButton><UiButton variant="primary" :busy="saving" @click="save(false)">{{ saving ? 'Saving…' : 'Save adjustment' }}</UiButton></template>
+  </UiDialog>
 </template>

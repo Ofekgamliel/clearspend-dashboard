@@ -69,7 +69,10 @@ API behavior.
 | `frontend/src/` | Editable Vue production source |
 | `frontend/src/features/` | Feature rendering, interaction and transient UI state |
 | `frontend/src/api/` | Central browser transport and compile-time response contracts |
-| `frontend/src/shared/` | Genuinely reused presentation utilities |
+| `frontend/src/shared/ui/` | Generic cross-feature Vue interaction and presentation primitives |
+| `frontend/src/shared/theme/` | Semantic UI tokens for the selected production theme boundary |
+| `frontend/src/shared/visualization/` | Cross-feature chart and data-encoding definitions |
+| `frontend/src/shared/accessibility/` | Reused focus and accessibility-specific helpers |
 | `frontend/e2e/` | Synthetic browser workflows and visual baselines |
 | `dist/` | Generated production assets; never hand-authored UI source |
 | `src/clearspend/http/` | HTTP decoding, dispatch, compatibility and static serving |
@@ -116,6 +119,12 @@ data to those rules but must not silently create a second eligibility policy.
 - `features/management/ManageDataMenu.vue` owns its menu and focus lifecycle.
 - Each directory under `features/` owns its rendering, user interaction and
   feature-local presentation model.
+- `shared/ui/` owns only generic component contracts demonstrated by multiple
+  feature consumers; feature state, validation, financial meaning and API calls
+  remain in `features/`.
+- `shared/theme/` owns semantic component tokens, `shared/visualization/` owns
+  cross-feature data-encoding palettes, and `shared/accessibility/` owns reused
+  focus/accessibility mechanics. Shared modules must not import features.
 - The transaction feature separates recent summary, complete browser, category
   correction, reimbursement editing, detail tables and feature CSS.
 - `api/client.ts` is the common transport. Contracts are split by domain under

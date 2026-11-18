@@ -13,6 +13,11 @@
   --ui-divider: #ecebf1;
   --ui-primary: #6557e8;
   --ui-on-primary: #fff;
+  --ui-accent-soft: color-mix(in srgb, var(--ui-primary) 7%, var(--ui-surface));
+  --ui-accent-border: color-mix(in srgb, var(--ui-primary) 27%, var(--ui-surface));
+  --ui-accent-text: var(--ui-primary);
+  --ui-accent-soft-hover: color-mix(in srgb, var(--ui-primary) 12%, var(--ui-surface));
+  --ui-accent-border-hover: color-mix(in srgb, var(--ui-primary) 42%, var(--ui-surface));
   --ui-focus: #6658e8;
   --ui-focus-border: #aaa2ef;
   --ui-focus-soft: #efedff;
@@ -21,4 +26,6 @@
   --ui-overlay: rgba(18, 18, 32, .55);
   --ui-overlay-nested: rgba(18, 18, 32, .42);
   --ui-dialog-shadow: rgba(19, 17, 42, .25);
+  --ui-panel-border: #e8e7ee;
+  --ui-panel-shadow: rgba(28, 25, 52, .055);
 }

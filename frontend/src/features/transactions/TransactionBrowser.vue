@@ -1,10 +1,10 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import { computed, onBeforeUnmount, ref, watch } from 'vue';
 import { getEvents } from '../../api/events';
 import { getTransactions, saveTransactionEvent } from '../../api/transactions';
 import type { AvailableEvent, PeriodKey, TransactionRow } from '../../api/contracts';
 import { formatDate, formatInteger, formatMoney } from '../../shared/format';
-import { modalFocus as vModalFocus } from '../../shared/modalFocus';
+import { UiDialog } from '../../shared/ui';
 import {
   groupTransactionsByMerchant,
   nextMerchantGroupSort,
@@ -173,13 +173,6 @@ function close(): void {
   requestId += 1;
 }
 
-function handleKeydown(event: KeyboardEvent): void {
-  if (event.key !== 'Escape') return;
-  if (activeCategoryTransaction.value) activeCategoryTransaction.value = null;
-  else if (activeAdjustmentTransaction.value) activeAdjustmentTransaction.value = null;
-  else if (modalOpen.value) close();
-}
-
 watch(search, () => {
   if (!modalOpen.value) return;
   clearTimeout(searchTimer);
@@ -188,25 +181,20 @@ watch(search, () => {
 watch([() => props.period, () => props.month, () => props.card], () => {
   if (modalOpen.value) { void loadTransactions(); void loadAvailableEvents(); }
 });
-onMounted(() => document.addEventListener('keydown', handleKeydown));
 onBeforeUnmount(() => {
   clearTimeout(searchTimer);
   clearTimeout(noticeTimer);
-  document.removeEventListener('keydown', handleKeydown);
 });
 defineExpose({ open, openActivity });
 </script>
 
 <template>
-  <Teleport to="body">
-    <div v-if="modalOpen" class="transactions-modal-backdrop" role="presentation" @mousedown.self="close">
-      <section v-modal-focus class="transactions-modal" role="dialog" aria-modal="true" aria-labelledby="transactions-modal-title">
-        <button type="button" class="transactions-modal-close" aria-label="Close transactions" @click="close">×</button>
-        <header class="transactions-modal-head">
+  <UiDialog :open="modalOpen" title-id="transactions-modal-title" close-label="Close transactions" size="browser" @request-close="close">
+    <template #header><div class="transactions-modal-head">
           <h2 id="transactions-modal-title">{{ activityTitle }}</h2>
           <p>{{ periodLabel }} · {{ card === 'all' ? 'All cards' : 'Selected card' }}</p>
           <label class="transactions-search"><span aria-hidden="true">⌕</span><input v-model="search" type="search" placeholder="Search every merchant, display name or category…" autocomplete="off"></label>
-        </header>
+    </div></template>
         <div class="transactions-modal-summary">
           <div><strong>{{ search.trim() ? `${formatInteger(rows.length)} matches` : groupedMode ? `${formatInteger(rows.length)} transactions · ${formatInteger(merchantGroups.length)} merchants` : `${formatInteger(total)} transactions` }}</strong><span>{{ scopeLabel }}</span></div>
           <div v-if="activityCategory" class="transaction-view-toggle" role="group" aria-label="Transaction presentation"><button type="button" :class="{ active: groupedMode }" :aria-pressed="groupedMode" @click="groupedMode = true">By merchant</button><button type="button" :class="{ active: !groupedMode }" :aria-pressed="!groupedMode" @click="groupedMode = false">Individual</button></div>
@@ -236,9 +224,7 @@ defineExpose({ open, openActivity });
           <span v-if="detailLoading" class="transactions-refreshing" role="status">Updating…</span>
         </div>
         <div v-else class="transactions-detail-table" :aria-busy="detailLoading"><TransactionDetailTable v-model:sort="detailSort" :rows="rows" :available-events="availableEvents" :event-options-error="eventOptionsError" :saving-event-ids="savingEventIds" @assign-event="assignEvent" @edit-category="activeCategoryTransaction = $event" @edit-adjustment="openAdjustmentEditor" /><span v-if="detailLoading" class="transactions-refreshing" role="status">Updating…</span></div>
-      </section>
-    </div>
-  </Teleport>
+  </UiDialog>
   <TransactionCategoryEditor :transaction="activeCategoryTransaction" @close="activeCategoryTransaction = null" @saved="handleEditorSaved($event, true)" />
   <TransactionAdjustmentEditor :transaction="activeAdjustmentTransaction" @close="activeAdjustmentTransaction = null" @saved="handleEditorSaved($event)" />
   <Teleport to="body"><div v-if="transactionNotice" class="transaction-save-notice" :class="{ error: transactionNotice.error }" :role="transactionNotice.error ? 'alert' : 'status'"><span><strong>{{ transactionNotice.title }}</strong><small>{{ transactionNotice.detail }}</small></span><button type="button" aria-label="Dismiss transaction message" @click="transactionNotice = null">×</button></div></Teleport>

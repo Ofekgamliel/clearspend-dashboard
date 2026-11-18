@@ -22,4 +22,10 @@ describe('shared fields', () => {
     await wrapper.get('select').setValue('active');
     expect((wrapper.vm as unknown as { value: string }).value).toBe('active');
   });
+
+  it('exposes the finite dense input and select tier', () => {
+    const wrapper = mount({ components: { UiInput, UiSelect }, data: () => ({ value: '' }), template: `<div><UiInput v-model="value" density="dense"/><UiSelect v-model="value" density="dense"><option value="">All</option></UiSelect></div>` });
+    expect(wrapper.get('input').classes()).toContain('ui-input--dense');
+    expect(wrapper.get('select').classes()).toContain('ui-select--dense');
+  });
 });

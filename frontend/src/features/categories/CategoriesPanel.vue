@@ -1,9 +1,9 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import { computed, ref, watch } from 'vue';
 import { getCategories } from '../../api/categories';
 import type { CategoriesResponse, CategoryRow, EventScope, PeriodKey } from '../../api/contracts';
 import { formatInteger, formatMoney, formatMonth, formatPercent } from '../../shared/format';
-import { modalFocus as vModalFocus } from '../../shared/modalFocus';
+import { UiDialog } from '../../shared/ui';
 import { buildCategorySegments, categoryComparisonModel, categorySegmentAtPoint, type CategorySegment } from './model';
 
 const scope = ref<EventScope>('all');
@@ -20,8 +20,6 @@ const response = ref<CategoriesResponse | null>(null);
 const loading = ref(true);
 const error = ref('');
 const overviewOpen = ref(false);
-const overviewButton = ref<HTMLButtonElement | null>(null);
-const overviewClose = ref<HTMLButtonElement | null>(null);
 const activeDonutSegment = ref<CategorySegment | null>(null);
 const donutTooltipPosition = ref({ left: '50%', top: '50%' });
 let requestId = 0;
@@ -64,12 +62,10 @@ function comparisonTitle(category: CategoryRow): string {
 
 function openOverview(): void {
   overviewOpen.value = true;
-  void nextTick(() => overviewClose.value?.focus());
 }
 
-function closeOverview(restoreFocus = false): void {
+function closeOverview(): void {
   overviewOpen.value = false;
-  if (restoreFocus) void nextTick(() => overviewButton.value?.focus());
 }
 
 function chooseCategory(category: string): void {
@@ -111,17 +107,11 @@ function handleDonutKeydown(event: KeyboardEvent): void {
   showDonutSegment(segments[next]);
 }
 
-function handleEscape(event: KeyboardEvent): void {
-  if (event.key === 'Escape' && overviewOpen.value) closeOverview(true);
-}
-
 watch(
   [scope, () => props.period, () => props.month, () => props.card, () => props.refreshKey],
   loadCategories,
   { immediate: true },
 );
-onMounted(() => document.addEventListener('keydown', handleEscape));
-onBeforeUnmount(() => document.removeEventListener('keydown', handleEscape));
 </script>
 
 <template>
@@ -136,7 +126,7 @@ onBeforeUnmount(() => document.removeEventListener('keydown', handleEscape));
           <button type="button" :class="{ active: scope === 'all' }" :aria-pressed="scope === 'all'" @click="scope = 'all'">All spending</button>
           <button type="button" :class="{ active: scope === 'routine' }" :aria-pressed="scope === 'routine'" @click="scope = 'routine'">Routine only</button>
         </div>
-        <button ref="overviewButton" type="button" class="category-view-details" :disabled="!response?.categories.length" @click="openOverview">View details →</button>
+        <button type="button" class="category-view-details" :disabled="!response?.categories.length" @click="openOverview">View details →</button>
       </div>
     </header>
 
@@ -167,11 +157,9 @@ onBeforeUnmount(() => document.removeEventListener('keydown', handleEscape));
     </div>
   </article>
 
-  <Teleport to="body">
-    <div v-if="overviewOpen && response" class="category-overview-backdrop" @mousedown.self="closeOverview(true)">
-      <section v-modal-focus class="category-overview-modal" role="dialog" aria-modal="true" aria-labelledby="category-overview-title">
-        <button ref="overviewClose" type="button" class="transactions-modal-close" aria-label="Close category overview" @click="closeOverview(true)">×</button>
-        <header><p>Category breakdown</p><h2 id="category-overview-title">All categories</h2><span>{{ response.period.label }} · {{ card === 'all' ? 'all cards' : 'selected card' }}<template v-if="scope === 'routine'"> · routine only</template></span></header>
+  <UiDialog :open="overviewOpen && Boolean(response)" title-id="category-overview-title" close-label="Close category overview" size="standard" @request-close="closeOverview">
+    <template v-if="response" #header><div class="category-overview-head"><div class="category-overview-eyebrow">Category breakdown</div><h2 id="category-overview-title">All categories</h2><span>{{ response.period.label }} · {{ card === 'all' ? 'all cards' : 'selected card' }}<template v-if="scope === 'routine'"> · routine only</template></span></div></template>
+    <template v-if="response">
         <div class="category-overview-summary"><strong>{{ response.categories.length }} categories</strong><span>Select a category to view its transactions</span><b>{{ formatMoney(response.total) }} total</b></div>
         <div class="category-overview-list">
           <button v-for="(item,index) in response.categories" :key="item.category" type="button" @click="chooseCategory(item.category)">
@@ -180,7 +168,6 @@ onBeforeUnmount(() => document.removeEventListener('keydown', handleEscape));
             <span><strong>{{ formatMoney(item.amount) }}</strong><small>{{ formatPercent(item.share) }} · View transactions →</small></span>
           </button>
         </div>
-      </section>
-    </div>
-  </Teleport>
+    </template>
+  </UiDialog>
 </template>

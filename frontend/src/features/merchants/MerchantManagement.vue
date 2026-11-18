@@ -1,9 +1,9 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
+import { computed, ref } from 'vue';
 import { getMerchantReference, saveMerchant } from '../../api/merchants.ts';
 import type { MerchantRecord, MerchantReferenceResponse } from '../../api/contracts.ts';
 import { formatInteger, formatMoney } from '../../shared/format.ts';
-import { modalFocus as vModalFocus } from '../../shared/modalFocus';
+import { UiButton, UiDialog } from '../../shared/ui';
 import type { RecurringVerdictFilter } from '../recurring/management.ts';
 import MerchantRecurringEditor from './MerchantRecurringEditor.vue';
 import {
@@ -118,21 +118,12 @@ async function applyChanges(): Promise<void> {
   }
 }
 
-function handleKeydown(event: KeyboardEvent): void {
-  if (event.key === 'Escape' && openState.value) close();
-}
-
-onMounted(() => document.addEventListener('keydown', handleKeydown));
-onBeforeUnmount(() => document.removeEventListener('keydown', handleKeydown));
 defineExpose({ open });
 </script>
 
 <template>
-  <Teleport to="body">
-    <div v-if="openState" class="merchant-manager-backdrop" @mousedown.self="close">
-      <section v-modal-focus class="merchant-manager" role="dialog" aria-modal="true" aria-labelledby="merchant-manager-title">
-        <button type="button" class="transactions-modal-close" aria-label="Close merchant management" @click="close">×</button>
-        <header class="merchant-manager-head"><div><h2 id="merchant-manager-title">Merchants</h2><span>Manage display identities, exact-alias categories, and recurring membership.</span></div></header>
+  <UiDialog :open="openState" title-id="merchant-manager-title" close-label="Close merchant management" size="management" @request-close="close">
+        <template #header><div class="merchant-manager-head"><h2 id="merchant-manager-title">Merchants</h2><span>Manage display identities, exact-alias categories, and recurring membership.</span></div></template>
         <div v-if="payload" class="merchant-manager-summary"><span><strong>{{ formatInteger(payload.summary.display_identities) }}</strong>Display identities</span><span><strong>{{ formatInteger(payload.summary.mapped_aliases) }}</strong>Original aliases</span><span><strong>{{ formatInteger(payload.summary.transactions) }}</strong>Covered transactions</span><span><strong>{{ formatInteger(payload.summary.multiple_categories) }}</strong>Multiple categories</span><span><strong>{{ formatInteger(payload.summary.recurring) }}</strong>Recurring merchants</span></div>
         <div v-if="error && !payload" class="panel-state error-state"><span>{{ error }}</span><button type="button" @click="loadMerchants()">Try again</button></div>
         <div v-else class="merchant-manager-body" :aria-busy="loading">
@@ -181,14 +172,12 @@ defineExpose({ open });
               <p v-if="editorError" class="transaction-editor-error" role="alert">{{ editorError }}</p>
               <p v-if="notice" class="merchant-save-success" role="status">{{ notice }}</p>
               <footer class="merchant-editor-actions">
-                <button type="button" class="secondary" :disabled="saving || !merchantDraftChanged(draft)" @click="reviewImpact">Review impact</button>
-                <button type="button" class="primary" :disabled="saving || !impactReviewed" @click="applyChanges">{{ saving ? 'Saving…' : 'Apply changes' }}</button>
+                <UiButton :disabled="saving || !merchantDraftChanged(draft)" @click="reviewImpact">Review impact</UiButton>
+                <UiButton variant="primary" :disabled="!impactReviewed" :busy="saving" @click="applyChanges">{{ saving ? 'Saving…' : 'Apply changes' }}</UiButton>
               </footer>
               <MerchantRecurringEditor :merchant="selected!" :disabled="saving || merchantDraftChanged(draft)" @saved="recurringSaved" />
             </template>
           </main>
         </div>
-      </section>
-    </div>
-  </Teleport>
+  </UiDialog>
 </template>
