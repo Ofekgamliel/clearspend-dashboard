@@ -15,23 +15,23 @@ export interface ObservationActivity {
 }
 
 const visuals: Record<string, ObservationVisual> = {
-  'AMOUNT LEFT TREND': { icon: '↘', color: '#c64f64', priority: true },
-  'SPENDING ROUTINE SHIFTED': { icon: '≈', color: '#6658e8', priority: true },
-  'RECURRING BURDEN SHIFTED': { icon: '↗', color: '#d89a32', priority: false },
-  'PERSISTENT INSTALLMENT BURDEN': { icon: '▤', color: '#df793f', priority: false },
-  'CATEGORY ROUTINE SHIFTED': { icon: '▥', color: '#278f9d', priority: false },
-  'MERCHANT HABIT SHIFTED': { icon: '↕', color: '#329568', priority: false },
-  'AMOUNT LEFT DECREASED': { icon: '↘', color: '#c64f64', priority: true },
-  'POSSIBLE DUPLICATE': { icon: '≡', color: '#6658e8', priority: true },
-  'ADDITIONAL RECURRING CHARGE': { icon: '+', color: '#df793f', priority: false },
-  'RECURRING AMOUNT INCREASED': { icon: '↗', color: '#d89a32', priority: false },
-  'FEE AMOUNT INCREASED': { icon: '%', color: '#467fc2', priority: false },
-  'FIRST FEE OBSERVED': { icon: '◇', color: '#9364c7', priority: false },
-  'CATEGORY SPENDING INCREASED': { icon: '▥', color: '#278f9d', priority: false },
-  'MERCHANT ACTIVITY CHANGED': { icon: '↕', color: '#329568', priority: false },
-  'LARGE AND UNUSUAL PURCHASE': { icon: '‼', color: '#c34f86', priority: true },
-  'LARGE PURCHASE': { icon: '↑', color: '#dd6268', priority: false },
-  'UNUSUAL TRANSACTION': { icon: '?', color: '#756658', priority: false },
+  'AMOUNT LEFT TREND': { icon: '↘', color: 'var(--ui-danger)', priority: true },
+  'SPENDING ROUTINE SHIFTED': { icon: '≈', color: 'var(--ui-chart-1)', priority: true },
+  'RECURRING BURDEN SHIFTED': { icon: '↗', color: 'var(--ui-chart-3)', priority: false },
+  'PERSISTENT INSTALLMENT BURDEN': { icon: '▤', color: 'var(--ui-chart-8)', priority: false },
+  'CATEGORY ROUTINE SHIFTED': { icon: '▥', color: 'var(--ui-chart-7)', priority: false },
+  'MERCHANT HABIT SHIFTED': { icon: '↕', color: 'var(--ui-chart-2)', priority: false },
+  'AMOUNT LEFT DECREASED': { icon: '↘', color: 'var(--ui-danger)', priority: true },
+  'POSSIBLE DUPLICATE': { icon: '≡', color: 'var(--ui-chart-1)', priority: true },
+  'ADDITIONAL RECURRING CHARGE': { icon: '+', color: 'var(--ui-chart-8)', priority: false },
+  'RECURRING AMOUNT INCREASED': { icon: '↗', color: 'var(--ui-chart-3)', priority: false },
+  'FEE AMOUNT INCREASED': { icon: '%', color: 'var(--ui-chart-5)', priority: false },
+  'FIRST FEE OBSERVED': { icon: '◇', color: 'var(--ui-chart-6)', priority: false },
+  'CATEGORY SPENDING INCREASED': { icon: '▥', color: 'var(--ui-chart-7)', priority: false },
+  'MERCHANT ACTIVITY CHANGED': { icon: '↕', color: 'var(--ui-chart-2)', priority: false },
+  'LARGE AND UNUSUAL PURCHASE': { icon: '‼', color: 'var(--ui-chart-4)', priority: true },
+  'LARGE PURCHASE': { icon: '↑', color: 'var(--ui-danger)', priority: false },
+  'UNUSUAL TRANSACTION': { icon: '?', color: 'var(--ui-chart-9)', priority: false },
 };
 
 const labels: Record<string, [string, string, string]> = {
@@ -61,7 +61,7 @@ const reviewOptions: Record<string, ObservationReviewOption> = {
 };
 
 export function observationVisual(type: string): ObservationVisual {
-  return visuals[type] ?? { icon: '•', color: '#6658e8', priority: false };
+  return visuals[type] ?? { icon: '•', color: 'var(--ui-chart-1)', priority: false };
 }
 
 export function observationMetricLabels(item: ObservationFinding): [string, string, string] {

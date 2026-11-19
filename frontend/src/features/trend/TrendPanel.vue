@@ -75,7 +75,7 @@ watch(() => props.dashboard, () => { activeIndex.value = null; });
       <div class="trend-y-axis"><span v-for="value in axisValues(isMonth ? monthly.dailyMax : billing.max)" :key="value">₪{{ formatCompact(value) }}</span></div>
       <div v-if="isMonth" class="trend-y-axis right"><span v-for="value in axisValues(monthly.cumulativeMax)" :key="value">₪{{ formatCompact(value) }}</span></div>
       <svg :viewBox="`0 0 ${CHART.width} 235`" preserveAspectRatio="none" role="img" :aria-label="isMonth ? 'Daily purchase activity by category' : 'Monthly income and spending'">
-        <defs><pattern id="preview-refund-hatch" width="4" height="4" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="4" height="4" fill="#f2a0a8"/><rect width="2" height="4" fill="#db5c69"/></pattern></defs>
+        <defs><pattern id="preview-refund-hatch" width="4" height="4" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="4" height="4" fill="var(--ui-danger-soft)"/><rect width="2" height="4" fill="var(--ui-danger)"/></pattern></defs>
         <g class="trend-gridlines"><line v-for="y in [14,65,116,167,218]" :key="y" x1="0" :y1="y" :x2="CHART.width" :y2="y" /></g>
         <template v-if="isMonth">
           <g v-for="(day, index) in monthly.days" :key="day.bucket">

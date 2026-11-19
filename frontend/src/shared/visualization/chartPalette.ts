@@ -1,4 +1,7 @@
 export const CATEGORY_COLORS = [
-  '#6658e8', '#41b98c', '#e6a14b', '#e76b77', '#5b8def',
-  '#a66dd4', '#50a9b8', '#d8834f', '#8f96a8',
+  'var(--ui-chart-1)', 'var(--ui-chart-2)', 'var(--ui-chart-3)',
+  'var(--ui-chart-4)', 'var(--ui-chart-5)', 'var(--ui-chart-6)',
+  'var(--ui-chart-7)', 'var(--ui-chart-8)', 'var(--ui-chart-9)',
 ] as const;
+
+export const CHART_EMPTY_COLOR = 'var(--ui-chart-empty)';
