@@ -287,7 +287,11 @@ excluded from production by the verified build boundary. An automated axe
 dependency was evaluated but not added to this bounded refactor: focused
 semantic/component tests and Playwright keyboard/workflow coverage remain the
 enforced gates, while a whole-application accessibility audit is a separate
-remediation scope.
+remediation scope. Events, Transactions, Recurring, Observations, Imports and
+Merchants own dedicated feature stylesheets; the global file owns the
+application shell, filters and remaining dashboard-owned sections.
+`frontend/test/css-ownership.test.ts` verifies the imports and prevents those
+extracted selector families from returning to global CSS.
 
 ### Phase 4 — First vertical workflow pilot
 

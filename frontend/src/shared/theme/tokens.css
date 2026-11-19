@@ -28,4 +28,17 @@
   --ui-dialog-shadow: rgba(19, 17, 42, .25);
   --ui-panel-border: #e8e7ee;
   --ui-panel-shadow: rgba(28, 25, 52, .055);
+  --ui-font-panel-title: 18px;
+  --ui-font-panel-subtitle: 11px;
+  --ui-font-data-primary: 14px;
+  --ui-font-dense-primary: 13px;
+  --ui-font-data-secondary: 12px;
+  --ui-font-supporting: 11px;
+  --ui-font-column-heading: 12px;
+  --ui-font-dense-column-heading: 11px;
+  --ui-font-control: 11px;
+  --ui-font-badge: 10px;
+  --ui-weight-data: 650;
+  --ui-weight-amount: 700;
+  --ui-weight-heading: 750;
 }

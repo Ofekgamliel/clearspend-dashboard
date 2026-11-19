@@ -27,7 +27,7 @@ implemented consumers.
 | Link-like detail action | Categories, Transactions, Recurring | Open category, transaction and recurring detail views | Native action button, not navigation | Regular/text | `.category-view-details`, `.transactions-view-all`, panel-specific rules | Possible `UiButton` ghost/link-like action only if one repeated contract is proven | Native button semantics, focus, disabled | deferred |
 | Sort-header action | Transaction and recurring tables | Sort columns | Native button inside `th`; parent exposes `aria-sort` | Dense | Table-specific `th button` rules | Keep feature-owned until repeated table primitive is justified | Sort state/direction and keyboard | deferred |
 | Row/card action | Categories, Cards, Events, Observations, Recurring | Open details or select a row/card | Native button, or keyboard-enabled row in recurring detail | Content-specific | Feature card/row selectors | Feature-owned; visual similarity does not imply one behavior | Accessible name/state, Enter/Space where applicable | exception |
-| Standard dashboard panel frame | Income, Metrics, Trend, Cards, Categories, Recurring, Events, Observations, Transactions | Dashboard panels | Section/article semantics vary; headings are feature-owned | Standard; Income compact hierarchy | Remaining panel selectors in `style.css` and feature CSS; Trend frame removed | `UiPanel`; Trend is the read-only pilot | Heading level/label, slots, responsive visual E2E | pilot |
+| Standard dashboard panel frame | Income, Metrics, Trend, Cards, Categories, Recurring, Events, Observations, Transactions | Dashboard panels | Section/article semantics vary; headings are feature-owned | Standard; Income compact hierarchy | Recurring, Events, Observations and Transactions own feature stylesheets; Trend frame removed | `UiPanel`; Trend is the read-only pilot | Heading level/label, slots, responsive visual E2E | pilot |
 | Read/detail dialog | Categories, Events detail, Observations, Recurring, Transactions, Merchants, Import audit/manager | Cross-feature overlays | Custom teleported `role="dialog"`, `aria-modal`, labelled title, shared focus behavior and topmost Escape handling | Standard/insight/large/browser/analysis/management | Superseded feature frames and backdrops removed | `UiDialog`; feature retains loading, dirty/saving and persistence policy | Initial/trapped/restored focus, Escape/backdrop reason, nesting, scroll/inertness | migrated |
 | Focused create/edit dialog | Events create/edit, transaction category/adjustment | Focused editing workflows | Custom teleported `role="dialog"`, labelled title, shared focus directive and topmost Escape handling | Compact/medium/wide | Former Event and transaction editor frame selectors removed | `UiDialog`; compact Event and demonstrated medium/wide transaction tiers | Dialog contract tests plus Event/Transaction Playwright and snapshots | migrated |
 | Regular labelled input | Events, transaction editors | Text, date, month and numeric fields | Native input inside label; errors are currently form-level | Regular | Superseded workflow selectors removed | `UiField` + `UiInput` | ID/label/help/error association, attributes, `v-model` | migrated |
@@ -68,6 +68,10 @@ cards or unrelated controls in the same slice.
 
 ## Decisions and deferrals
 
+- CSS ownership is explicit: Events, Transactions, Recurring, Observations,
+  Imports and Merchants own dedicated feature stylesheets. The ownership
+  test verifies the remaining entry-point imports and prevents their extracted
+  selector families from returning to the global stylesheet.
 - `UiDialog` retains a custom teleported `role="dialog"` implementation. The
   application already has a tested nested-overlay focus stack and exact modal
   presentation; changing to native `dialog` would combine the component pilot
