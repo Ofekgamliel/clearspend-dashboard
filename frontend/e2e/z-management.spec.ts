@@ -10,6 +10,9 @@ test.describe.serial('merchant and recurring management', () => {
     await expect(dialog).toBeVisible();
     await dialog.getByPlaceholder('Search names and aliases…').fill('Synthetic Utilities');
     await dialog.locator('.merchant-list-item', { hasText: 'Synthetic Utilities' }).click();
+    const recurringAliases = dialog.locator('.merchant-recurring-aliases');
+    await expect(recurringAliases.locator('label')).toHaveCount(2);
+    expect(await recurringAliases.evaluate((element) => getComputedStyle(element).overflowY)).toBe('visible');
 
     await dialog.getByLabel('Display name').fill('Synthetic Home Services');
     const southAlias = dialog.locator('.merchant-alias-table tbody tr', { hasText: 'Synthetic Utility South' });
@@ -40,6 +43,11 @@ test.describe.serial('merchant and recurring management', () => {
     await dialog.locator('.merchant-list-item', { hasText: 'Synthetic Gym' }).click();
     const editor = dialog.locator('.merchant-recurring-editor');
     await expect(editor).toContainText('Recurring');
+    const panelBox = await dialog.locator('.merchant-manager-editor').boundingBox();
+    const actionBox = await editor.getByRole('button', { name: 'Save recurring settings' }).boundingBox();
+    expect(panelBox).not.toBeNull();
+    expect(actionBox).not.toBeNull();
+    expect(panelBox!.y + panelBox!.height - (actionBox!.y + actionBox!.height)).toBeLessThanOrEqual(30);
     await editor.getByLabel('Type').selectOption('Usage-based recurring');
     await editor.getByLabel('Cadence').selectOption('Quarterly');
     await editor.getByLabel('Lifecycle').selectOption('ended');

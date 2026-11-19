@@ -25,6 +25,10 @@ subject. Archived plans never override current code or maintained guidance.
   long-period patterns, grouping, evidence, and review policy.
 - [`UI_GUIDELINES.md`](UI_GUIDELINES.md) — stable interaction patterns,
   accessibility, Vue state ownership, and visual-regression expectations.
+- [`UI_COMPONENT_LIBRARY_EXECUTION_PLAN.md`](UI_COMPONENT_LIBRARY_EXECUTION_PLAN.md)
+  — authoritative phased plan for the internal Vue component library.
+- [`UI_COMPONENT_LIBRARY_INVENTORY.md`](UI_COMPONENT_LIBRARY_INVENTORY.md) —
+  maintained control inventory and workflow-migration checklist.
 
 ## Operations and repository safety
 

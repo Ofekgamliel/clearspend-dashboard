@@ -2,6 +2,7 @@
 import { computed, ref, watch } from 'vue';
 import type { DashboardResponse } from '../../api/contracts';
 import { formatCompact, formatDate, formatMoney, formatMonth } from '../../shared/format';
+import { UiPanel } from '../../shared/ui';
 import { axisValues, billingAxisLabel, buildBillingTrend, buildMonthlyTrend, CHART } from './model';
 
 const props = defineProps<{
@@ -60,14 +61,14 @@ watch(() => props.dashboard, () => { activeIndex.value = null; });
 </script>
 
 <template>
-  <article class="trend-panel" :aria-busy="loading">
-    <header class="trend-head">
-      <div><h2>{{ isMonth ? 'Purchase activity' : 'Income and spending' }}</h2><p>{{ subtitle }}</p></div>
+  <UiPanel class="trend-panel" aria-labelledby="trend-panel-title" :aria-busy="loading">
+    <template #header><header class="trend-head">
+      <div><h2 id="trend-panel-title">{{ isMonth ? 'Purchase activity' : 'Income and spending' }}</h2><p>{{ subtitle }}</p></div>
       <div class="trend-legend">
         <template v-if="isMonth"><span><i class="stack" />Categories by day</span><span><i class="refund" />Refunds</span><span><i class="cumulative" />Cumulative purchase value</span></template>
         <template v-else><span v-if="showIncome"><i class="income" />Income</span><span><i class="spending" />Net spending</span></template>
       </div>
-    </header>
+    </header></template>
 
     <div v-if="!dashboard.trend.length" class="trend-empty">{{ isMonth ? `No purchases made during ${dashboard.period.label}` : 'No spending data' }}</div>
     <div v-else ref="chartRoot" class="trend-chart" :class="{ 'dual-axis': isMonth }" @mouseleave="activeIndex = null">
@@ -108,5 +109,5 @@ watch(() => props.dashboard, () => { activeIndex.value = null; });
         <small v-if="billing.showIncome">Amount left {{ formatMoney(activeBilling.income - activeBilling.amount) }}</small>
       </div>
     </div>
-  </article>
+  </UiPanel>
 </template>

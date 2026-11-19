@@ -1,10 +1,10 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import { computed, ref, watch } from 'vue';
 import { getMerchantReference } from '../../api/merchants';
 import { saveTransactionCategory } from '../../api/transactions';
 import type { TransactionRow } from '../../api/contracts';
 import { formatDate, formatSourceAmount } from '../../shared/format';
-import { modalFocus as vModalFocus } from '../../shared/modalFocus';
+import { UiButton, UiDialog, UiField, UiSelect } from '../../shared/ui';
 
 const props = defineProps<{ transaction: TransactionRow | null }>();
 const emit = defineEmits<{
@@ -62,32 +62,23 @@ async function save(): Promise<void> {
   }
 }
 
-function handleKeydown(event: KeyboardEvent): void {
-  if (event.key === 'Escape' && props.transaction) close();
-}
-
 watch(() => props.transaction, (transaction) => {
   if (!transaction) return;
   selectedCategory.value = transaction.category;
   error.value = '';
   void loadCategories();
 });
-onMounted(() => document.addEventListener('keydown', handleKeydown));
-onBeforeUnmount(() => document.removeEventListener('keydown', handleKeydown));
 </script>
 
 <template>
-  <Teleport to="body">
-    <div v-if="transaction" class="transaction-editor-backdrop" @mousedown.self="close">
-      <section v-modal-focus class="transaction-category-editor" role="dialog" aria-modal="true" aria-labelledby="transaction-category-editor-title">
-        <button type="button" class="transaction-editor-close" aria-label="Close category correction" @click="close">×</button>
-        <header><h2 id="transaction-category-editor-title">Change transaction category</h2><p>This correction applies only to this transaction.</p></header>
+  <UiDialog :open="Boolean(transaction)" title-id="transaction-category-editor-title" close-label="Close category correction" size="medium" @request-close="close">
+    <template #header><h2 id="transaction-category-editor-title">Change transaction category</h2><p>This correction applies only to this transaction.</p></template>
+    <template v-if="transaction">
         <div class="transaction-editor-snapshot"><div><span>Merchant</span><strong>{{ transaction.merchant_display_name || transaction.merchant_raw }}</strong><small>{{ transaction.merchant_raw }}</small></div><div><span>Date</span><strong>{{ transaction.transaction_date ? formatDate(transaction.transaction_date) : '—' }}</strong></div><div><span>Card</span><strong>{{ transaction.provider.toUpperCase() }} •• {{ transaction.card_last4 }}</strong></div><div><span>Amount</span><strong>{{ formatSourceAmount(transaction.amount, transaction.charged_currency) }}</strong></div></div>
-        <div class="transaction-category-choice"><div><span>Current category</span><strong>{{ transaction.category }}</strong></div><b aria-hidden="true">→</b><label><span>New category</span><select v-model="selectedCategory" :disabled="loading || saving"><option v-for="category in choices" :key="category" :value="category">{{ category }}</option></select></label></div>
+        <div class="transaction-category-choice"><div><span>Current category</span><strong>{{ transaction.category }}</strong></div><b aria-hidden="true">→</b><UiField for-id="transaction-category" label="New category"><UiSelect id="transaction-category" v-model="selectedCategory" :disabled="loading || saving"><option v-for="category in choices" :key="category" :value="category">{{ category }}</option></UiSelect></UiField></div>
         <p class="transaction-category-explanation"><b>i</b><span>The merchant rule remains “{{ transaction.merchant_category || transaction.category }}” for other transactions and future imports. The original imported row is preserved.</span></p>
         <p v-if="error" class="transaction-editor-error" role="alert">{{ error }}</p>
-        <footer><button type="button" class="secondary" :disabled="saving" @click="close">Cancel</button><button type="button" class="primary" :disabled="loading || saving || !selectedCategory" @click="save">{{ saving ? 'Saving…' : 'Save correction' }}</button></footer>
-      </section>
-    </div>
-  </Teleport>
+    </template>
+    <template #footer><UiButton :disabled="saving" @click="close">Cancel</UiButton><UiButton variant="primary" :disabled="loading || !selectedCategory" :busy="saving" @click="save">{{ saving ? 'Saving…' : 'Save correction' }}</UiButton></template>
+  </UiDialog>
 </template>

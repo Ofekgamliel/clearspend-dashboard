@@ -1,5 +1,5 @@
 import type { CategoryRow, ReportingPeriod, TrendPoint } from '../../api/contracts';
-import { CATEGORY_COLORS } from '../categories/model.ts';
+import { CATEGORY_COLORS } from '../../shared/visualization/chartPalette.ts';
 
 export const CHART = { width: 720, height: 204, top: 14, bottom: 218 } as const;
 

@@ -60,7 +60,7 @@ test('recurring and observation modals match approved layouts', async ({ page })
   const observationCard = page.locator('.observation-card-preview').first();
   await expect(observationCard).toBeVisible();
   await observationCard.click();
-  const observation = page.locator('.observation-modal-preview');
+  const observation = page.getByRole('dialog').first();
   await expect(observation).toBeVisible();
   await expect(observation).toHaveScreenshot('modal-observation.png', screenshotOptions);
 });
@@ -70,7 +70,7 @@ test('event detail, edit, and create modals match approved layouts', async ({ pa
   await openDashboard(page);
 
   await page.locator('.event-card-preview').first().click();
-  const detail = page.locator('.event-modal-preview');
+  const detail = page.getByRole('dialog').first();
   await expect(detail).toBeVisible();
   await expect(detail).toHaveScreenshot('modal-event-detail.png', screenshotOptions);
   await detail.getByRole('button', { name: 'Edit event' }).click();

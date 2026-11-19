@@ -35,6 +35,36 @@ Local review prototypes derived from real dashboard data must remain ignored.
 - Dashboard changes require functional checks at desktop and narrow widths;
   visible changes require reviewed visual snapshots where the suite covers them.
 
+## Shared UI components
+
+- Generic cross-feature primitives live under `frontend/src/shared/ui/` only
+  after the maintained UI inventory demonstrates at least two independent uses.
+- Shared components own native semantics, accessibility relationships and their
+  visual contract. Features retain workflow state, validation, API calls and
+  financial meaning.
+- Use semantic variants and documented density tiers. Do not pass arbitrary
+  feature colors, radii or layout rules into a shared primitive.
+- Shared buttons use regular sizing for form and approval actions and compact
+  sizing for contextual header or inline actions. Their primary, secondary,
+  soft-accent, danger and ghost treatments derive from semantic theme tokens;
+  features must not supply arbitrary button colors or dimensions.
+- Shared dialogs use finite size tiers: compact for short forms, medium and wide
+  for the two established transaction-editor layouts, standard for constrained
+  detail lists, large for broad detail workflows, and browser for fixed-height
+  transaction exploration. Analysis is the wider fixed-height tier for dense
+  recurring/import data; insight is the constrained evidence/review tier; and
+  management is the split list/editor workspace. Features must not pass
+  arbitrary dialog dimensions.
+- Inputs and selects use regular density by default. Dense is reserved for
+  demonstrated compact management and table contexts; it must retain a visible
+  label or explicit accessible name and native keyboard behavior.
+- Shared components must not import feature modules. A feature-specific wrapper
+  may compose shared primitives.
+- Migrate one complete workflow slice at a time and remove only selectors whose
+  known consumers migrated.
+- Component contracts run through the ordinary `npm test` command. The
+  development gallery uses synthetic data and is excluded from production.
+
 ## Data presentation
 
 - Production UI values come from the local API; do not hardcode live values.

@@ -39,6 +39,12 @@ npm run typecheck
 npm run build
 ```
 
+`npm test` runs both the framework-independent frontend model tests and the
+Vitest/Vue Test Utils component-contract suite. Component tests cover shared
+semantics, slots, events, attributes, ARIA relationships, density and dialog
+behavior; Playwright remains responsible for complete workflows and focus
+integration.
+
 The production build writes generated assets to `dist/`. Review both source and
 generated changes; do not hand-edit generated bundles.
 
