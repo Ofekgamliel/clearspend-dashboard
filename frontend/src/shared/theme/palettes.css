@@ -1,0 +1,38 @@
+:root[data-clearspend-theme="clay"] {
+  color-scheme: light;
+  --theme-page-bg:#f6eee8;--theme-surface:#fffaf6;--theme-surface-muted:#fbf3ed;--theme-surface-subtle:#f2e7df;--theme-surface-hover:#f7ede6;--theme-line:#dfcfc3;--theme-text:#4b3b34;--theme-heading:#2e211c;--theme-muted:#76665e;--theme-subtle:#887970;--theme-primary:#9f402c;--theme-secondary:#33788d;--theme-tertiary:#ad681c;--theme-on-primary:#fff;--theme-success:#36724f;--theme-warning:#985f18;--theme-danger:#ad3d3d;--theme-overlay:rgba(43,28,22,.58);--theme-overlay-nested:rgba(43,28,22,.44);--theme-shadow:rgba(91,54,38,.08);--theme-dialog-shadow:rgba(62,35,25,.28);--theme-chart-1:#9f402c;--theme-chart-2:#33788d;--theme-chart-3:#ad681c;--theme-chart-4:#647da9;--theme-chart-5:#a45375;--theme-chart-6:#637d50;--theme-chart-7:#8253a0;--theme-chart-8:#bc5b42;--theme-chart-9:#806f64;--theme-chart-empty:#eadfd7;
+}
+
+:root[data-clearspend-theme="plum"] {
+  color-scheme: light;
+  --theme-page-bg:#f5eff5;--theme-surface:#fffaff;--theme-surface-muted:#faf2fa;--theme-surface-subtle:#f0e6f0;--theme-surface-hover:#f6ecf6;--theme-line:#dcccdc;--theme-text:#4a3b4a;--theme-heading:#2b1f2b;--theme-muted:#756575;--theme-subtle:#887888;--theme-primary:#733f73;--theme-secondary:#b96243;--theme-tertiary:#a87217;--theme-on-primary:#fff;--theme-success:#337252;--theme-warning:#996417;--theme-danger:#b13f54;--theme-overlay:rgba(39,24,39,.6);--theme-overlay-nested:rgba(39,24,39,.46);--theme-shadow:rgba(76,42,76,.085);--theme-dialog-shadow:rgba(53,29,53,.28);--theme-chart-1:#733f73;--theme-chart-2:#b96243;--theme-chart-3:#a87217;--theme-chart-4:#5476a4;--theme-chart-5:#95517d;--theme-chart-6:#568167;--theme-chart-7:#885ca6;--theme-chart-8:#ad4356;--theme-chart-9:#7e6d7e;--theme-chart-empty:#eadfea;
+}
+
+:root[data-clearspend-theme="rose"] {
+  color-scheme: light;
+  --theme-page-bg:#f8efed;--theme-surface:#fffaf8;--theme-surface-muted:#fcf3f1;--theme-surface-subtle:#f2e5e2;--theme-surface-hover:#f8ece9;--theme-line:#e3ceca;--theme-text:#4b3b3b;--theme-heading:#2e2020;--theme-muted:#796764;--theme-subtle:#8b7875;--theme-primary:#963650;--theme-secondary:#9e6d17;--theme-tertiary:#537da6;--theme-on-primary:#fff;--theme-success:#397251;--theme-warning:#8e6218;--theme-danger:#ac3744;--theme-overlay:rgba(43,27,29,.58);--theme-overlay-nested:rgba(43,27,29,.44);--theme-shadow:rgba(91,42,55,.08);--theme-dialog-shadow:rgba(57,30,38,.27);--theme-chart-1:#963650;--theme-chart-2:#9e6d17;--theme-chart-3:#537da6;--theme-chart-4:#47816c;--theme-chart-5:#b75e5b;--theme-chart-6:#74539a;--theme-chart-7:#37848f;--theme-chart-8:#a97034;--theme-chart-9:#846f6c;--theme-chart-empty:#eee0dd;
+}
+
+:root[data-clearspend-theme="graphite"] {
+  color-scheme: dark;
+  --theme-page-bg:#111315;--theme-surface:#1b1e21;--theme-surface-muted:#202428;--theme-surface-subtle:#25292d;--theme-surface-hover:#2b3034;--theme-line:#41474d;--theme-text:#d9dcdd;--theme-heading:#f0f2f2;--theme-muted:#aab0b3;--theme-subtle:#979ea2;--theme-primary:#e0a53b;--theme-secondary:#6ac1a2;--theme-tertiary:#e67755;--theme-on-primary:#211809;--theme-success:#73c89e;--theme-warning:#edba56;--theme-danger:#f08383;--theme-overlay:rgba(0,0,0,.72);--theme-overlay-nested:rgba(0,0,0,.58);--theme-shadow:rgba(0,0,0,.35);--theme-dialog-shadow:rgba(0,0,0,.5);--theme-chart-1:#e0a53b;--theme-chart-2:#6ac1a2;--theme-chart-3:#e67755;--theme-chart-4:#78a7dd;--theme-chart-5:#d28ebd;--theme-chart-6:#a897e8;--theme-chart-7:#65c1cc;--theme-chart-8:#d8c35b;--theme-chart-9:#a5afb4;--theme-chart-empty:#2d3236;
+}
+
+:root[data-clearspend-theme="navy"] {
+  color-scheme: dark;
+  --theme-page-bg:#0b1528;--theme-surface:#13213a;--theme-surface-muted:#172740;--theme-surface-subtle:#1d2d49;--theme-surface-hover:#243653;--theme-line:#3a4f70;--theme-text:#dce4f1;--theme-heading:#f2f6ff;--theme-muted:#aab8ce;--theme-subtle:#98a9c2;--theme-primary:#ff806c;--theme-secondary:#5ed2b1;--theme-tertiary:#f2c75b;--theme-on-primary:#2a0d09;--theme-success:#69d1a7;--theme-warning:#efc862;--theme-danger:#ff8e98;--theme-overlay:rgba(2,7,17,.74);--theme-overlay-nested:rgba(2,7,17,.6);--theme-shadow:rgba(0,0,0,.35);--theme-dialog-shadow:rgba(0,0,0,.5);--theme-chart-1:#ff806c;--theme-chart-2:#5ed2b1;--theme-chart-3:#f2c75b;--theme-chart-4:#78a7ff;--theme-chart-5:#d99bd7;--theme-chart-6:#ad9cff;--theme-chart-7:#68d0e8;--theme-chart-8:#f3a172;--theme-chart-9:#a9b7cc;--theme-chart-empty:#22334e;
+}
+
+:root[data-clearspend-theme="steel"] {
+  color-scheme: dark;
+  --theme-page-bg:#10151d;--theme-surface:#18212d;--theme-surface-muted:#1d2835;--theme-surface-subtle:#243140;--theme-surface-hover:#2b3a4a;--theme-line:#40536a;--theme-text:#dbe4ee;--theme-heading:#f3f8ff;--theme-muted:#a7b5c5;--theme-subtle:#94a5b7;--theme-primary:#67a8ff;--theme-secondary:#65d0c0;--theme-tertiary:#f0bd63;--theme-on-primary:#0c1c31;--theme-success:#6dd0a4;--theme-warning:#edbd66;--theme-danger:#fa8d98;--theme-overlay:rgba(2,7,13,.74);--theme-overlay-nested:rgba(2,7,13,.6);--theme-shadow:rgba(0,0,0,.35);--theme-dialog-shadow:rgba(0,0,0,.5);--theme-chart-1:#67a8ff;--theme-chart-2:#65d0c0;--theme-chart-3:#f0bd63;--theme-chart-4:#e78299;--theme-chart-5:#b194ed;--theme-chart-6:#7f9ee8;--theme-chart-7:#60c5df;--theme-chart-8:#e89469;--theme-chart-9:#a4b2c1;--theme-chart-empty:#293746;
+}
+
+:root[data-clearspend-theme="ruby"] {
+  color-scheme: dark;
+  --theme-page-bg:#130d16;--theme-surface:#211624;--theme-surface-muted:#281b2c;--theme-surface-subtle:#302135;--theme-surface-hover:#39283f;--theme-line:#55415b;--theme-text:#e6dce8;--theme-heading:#fff4ff;--theme-muted:#b8a7bc;--theme-subtle:#a593aa;--theme-primary:#ff6f91;--theme-secondary:#74c7ec;--theme-tertiary:#f2c45e;--theme-on-primary:#300b15;--theme-success:#70cc9c;--theme-warning:#efc163;--theme-danger:#ff8492;--theme-overlay:rgba(6,2,8,.75);--theme-overlay-nested:rgba(6,2,8,.61);--theme-shadow:rgba(0,0,0,.36);--theme-dialog-shadow:rgba(0,0,0,.52);--theme-chart-1:#ff6f91;--theme-chart-2:#74c7ec;--theme-chart-3:#f2c45e;--theme-chart-4:#7de0bf;--theme-chart-5:#b895f2;--theme-chart-6:#899fff;--theme-chart-7:#65d1dc;--theme-chart-8:#ee936c;--theme-chart-9:#ad9caf;--theme-chart-empty:#37283c;
+}
+
+@media (forced-colors: active) {
+  :root[data-clearspend-theme] { color-scheme: light dark; }
+}

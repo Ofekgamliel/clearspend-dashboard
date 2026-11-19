@@ -33,7 +33,7 @@ test('builds the preview donut from backend-owned shares', () => {
     { name: 'One', start: 0, end: 60, color: '#111111' },
     { name: 'Two', start: 60, end: 85, color: '#222222' },
   ]);
-  assert.match(model.gradient, /#ececf1 85% 100%/);
+  assert.match(model.gradient, /var\(--ui-chart-empty\) 85% 100%/);
   assert.equal(model.ariaLabel, 'One: 60%, Two: 25%');
 });
 

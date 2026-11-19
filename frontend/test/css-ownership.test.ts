@@ -41,3 +41,15 @@ test('control typography does not mix inherit into a font shorthand', () => {
 
   for (const path of controlStyles) assert.doesNotMatch(source(path), mixedInheritShorthand);
 });
+
+test('feature-owned presentation consumes semantic theme tokens instead of literal colors', () => {
+  const literalColor = /#[0-9a-f]{3,8}\b|rgba?\s*\(/i;
+  const themedSources = [
+    ...featureStyles.map(([, path]) => path),
+    '../src/features/events/EventsPanel.vue',
+    '../src/features/observations/model.ts',
+    '../src/features/trend/TrendPanel.vue',
+  ];
+
+  for (const path of themedSources) assert.doesNotMatch(source(path), literalColor, `${path} contains a fixed UI color`);
+});

@@ -3,7 +3,7 @@ import type {
   CategoryComparisonStatus,
   CategoryRow,
 } from '../../api/contracts';
-import { CATEGORY_COLORS } from '../../shared/visualization/chartPalette.ts';
+import { CATEGORY_COLORS, CHART_EMPTY_COLOR } from '../../shared/visualization/chartPalette.ts';
 
 export interface CategorySegment extends CategoryRow {
   color: string;
@@ -49,11 +49,11 @@ export function buildCategorySegments(
   const segments = categories.map((category, index) => {
     const start = Math.min(cursor, 100);
     cursor = Math.min(cursor + category.share, 100);
-    const color = colors[index % colors.length] ?? '#8f96a8';
+    const color = colors[index % colors.length] ?? 'var(--ui-chart-9)';
     gradientStops.push(`${color} ${start}% ${cursor}%`);
     return { ...category, color, start, end: cursor };
   });
-  if (cursor < 100) gradientStops.push(`#ececf1 ${cursor}% 100%`);
+  if (cursor < 100) gradientStops.push(`${CHART_EMPTY_COLOR} ${cursor}% 100%`);
   return {
     ariaLabel: categories
       .map((category) => `${category.category}: ${category.share}%`)

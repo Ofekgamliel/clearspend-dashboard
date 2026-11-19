@@ -29,6 +29,9 @@ subject. Archived plans never override current code or maintained guidance.
   — authoritative phased plan for the internal Vue component library.
 - [`UI_COMPONENT_LIBRARY_INVENTORY.md`](UI_COMPONENT_LIBRARY_INVENTORY.md) —
   maintained control inventory and workflow-migration checklist.
+- [`DASHBOARD_THEME_IMPLEMENTATION_PLAN.md`](DASHBOARD_THEME_IMPLEMENTATION_PLAN.md)
+  — phased plan for selectable dashboard palettes across shared components,
+  feature-owned styles, dialogs, and visualizations.
 
 ## Operations and repository safety
 

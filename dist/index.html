@@ -3,10 +3,28 @@
   <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="color-scheme" content="light">
+    <meta name="color-scheme" content="light dark">
+    <script>
+      (() => {
+        const key = 'clearspend-color-theme';
+        const schemes = { graphite: 'dark', navy: 'dark', steel: 'dark', ruby: 'dark' };
+        const themes = new Set(['current','clay','plum','rose','graphite','navy','steel','ruby']);
+        let theme = 'current';
+        try {
+          const stored = localStorage.getItem(key);
+          if (themes.has(stored)) theme = stored;
+          else if (stored) {
+            const preference = JSON.parse(stored);
+            if (preference?.version === 1 && themes.has(preference.theme)) theme = preference.theme;
+          }
+        } catch { /* Use the default theme when storage is unavailable or invalid. */ }
+        document.documentElement.dataset.clearspendTheme = theme;
+        document.documentElement.style.colorScheme = schemes[theme] || 'light';
+      })();
+    </script>
     <title>ClearSpend</title>
-    <script type="module" crossorigin src="/assets/index-C8yKIrul.js"></script>
-    <link rel="stylesheet" crossorigin href="/assets/index-CGhDBcNM.css">
+    <script type="module" crossorigin src="/assets/index-CIfw-TCw.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-0o9dVlPu.css">
   </head>
   <body>
     <div id="app"></div>

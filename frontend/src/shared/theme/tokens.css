@@ -1,33 +1,94 @@
 :root {
-  --ui-surface: #fff;
-  --ui-footer: #fbfbfd;
-  --ui-text: #3f4050;
-  --ui-heading: #292839;
-  --ui-label: #727382;
-  --ui-muted: #74727f;
-  --ui-subtle: #8d8c98;
-  --ui-border: #dedde6;
-  --ui-button-border: #dfdde7;
-  --ui-dialog-border: #e5e3ed;
-  --ui-icon-muted: #999aaa;
-  --ui-divider: #ecebf1;
-  --ui-primary: #6557e8;
-  --ui-on-primary: #fff;
+  color-scheme: light;
+
+  /* Palette foundation. Selectable palettes override only these values. */
+  --theme-page-bg: #f6f6fb;
+  --theme-surface: #fff;
+  --theme-surface-muted: #fafafd;
+  --theme-surface-subtle: #f7f6fa;
+  --theme-surface-hover: #f8f7fc;
+  --theme-line: #e2e0ea;
+  --theme-text: #3f4050;
+  --theme-heading: #292839;
+  --theme-muted: #74727f;
+  --theme-subtle: #8d8c98;
+  --theme-primary: #6557e8;
+  --theme-secondary: #41b98c;
+  --theme-tertiary: #e6a14b;
+  --theme-on-primary: #fff;
+  --theme-success: #16834b;
+  --theme-warning: #b87525;
+  --theme-danger: #c6535f;
+  --theme-overlay: rgba(18, 18, 32, .55);
+  --theme-overlay-nested: rgba(18, 18, 32, .42);
+  --theme-shadow: rgba(28, 25, 52, .065);
+  --theme-dialog-shadow: rgba(19, 17, 42, .25);
+  --theme-chart-1: #6658e8;
+  --theme-chart-2: #41b98c;
+  --theme-chart-3: #e6a14b;
+  --theme-chart-4: #e76b77;
+  --theme-chart-5: #5b8def;
+  --theme-chart-6: #a66dd4;
+  --theme-chart-7: #50a9b8;
+  --theme-chart-8: #d8834f;
+  --theme-chart-9: #8f96a8;
+  --theme-chart-empty: #ececf1;
+
+  /* Stable semantic contract consumed by shared components and features. */
+  --ui-page-bg: var(--theme-page-bg);
+  --ui-surface: var(--theme-surface);
+  --ui-surface-raised: var(--theme-surface);
+  --ui-surface-muted: var(--theme-surface-muted);
+  --ui-surface-subtle: var(--theme-surface-subtle);
+  --ui-surface-hover: var(--theme-surface-hover);
+  --ui-footer: color-mix(in srgb, var(--theme-surface) 86%, var(--theme-page-bg));
+  --ui-text: var(--theme-text);
+  --ui-heading: var(--theme-heading);
+  --ui-label: color-mix(in srgb, var(--theme-text) 78%, var(--theme-surface));
+  --ui-muted: var(--theme-muted);
+  --ui-subtle: var(--theme-subtle);
+  --ui-icon-muted: color-mix(in srgb, var(--theme-muted) 78%, var(--theme-surface));
+  --ui-border: color-mix(in srgb, var(--theme-line) 88%, var(--theme-text));
+  --ui-button-border: color-mix(in srgb, var(--theme-line) 92%, var(--theme-text));
+  --ui-dialog-border: color-mix(in srgb, var(--theme-line) 92%, var(--theme-surface));
+  --ui-divider: var(--theme-line);
+  --ui-panel-border: color-mix(in srgb, var(--theme-line) 78%, var(--theme-surface));
+  --ui-primary: var(--theme-primary);
+  --ui-primary-hover: color-mix(in srgb, var(--theme-primary) 86%, var(--theme-text));
+  --ui-secondary: var(--theme-secondary);
+  --ui-tertiary: var(--theme-tertiary);
+  --ui-on-primary: var(--theme-on-primary);
   --ui-accent-soft: color-mix(in srgb, var(--ui-primary) 7%, var(--ui-surface));
   --ui-accent-border: color-mix(in srgb, var(--ui-primary) 27%, var(--ui-surface));
   --ui-accent-text: var(--ui-primary);
   --ui-accent-soft-hover: color-mix(in srgb, var(--ui-primary) 12%, var(--ui-surface));
   --ui-accent-border-hover: color-mix(in srgb, var(--ui-primary) 42%, var(--ui-surface));
-  --ui-focus: #6658e8;
-  --ui-focus-border: #aaa2ef;
-  --ui-focus-soft: #efedff;
-  --ui-danger: #c6535f;
-  --ui-danger-border: #eac7c7;
-  --ui-overlay: rgba(18, 18, 32, .55);
-  --ui-overlay-nested: rgba(18, 18, 32, .42);
-  --ui-dialog-shadow: rgba(19, 17, 42, .25);
-  --ui-panel-border: #e8e7ee;
-  --ui-panel-shadow: rgba(28, 25, 52, .055);
+  --ui-focus: var(--theme-primary);
+  --ui-focus-border: color-mix(in srgb, var(--ui-primary) 52%, var(--ui-surface));
+  --ui-focus-soft: color-mix(in srgb, var(--ui-primary) 11%, var(--ui-surface));
+  --ui-success: var(--theme-success);
+  --ui-success-soft: color-mix(in srgb, var(--ui-success) 12%, var(--ui-surface));
+  --ui-warning: var(--theme-warning);
+  --ui-warning-soft: color-mix(in srgb, var(--ui-warning) 13%, var(--ui-surface));
+  --ui-danger: var(--theme-danger);
+  --ui-danger-soft: color-mix(in srgb, var(--ui-danger) 10%, var(--ui-surface));
+  --ui-danger-border: color-mix(in srgb, var(--ui-danger) 34%, var(--ui-surface));
+  --ui-overlay: var(--theme-overlay);
+  --ui-overlay-nested: var(--theme-overlay-nested);
+  --ui-dialog-shadow: var(--theme-dialog-shadow);
+  --ui-panel-shadow: var(--theme-shadow);
+  --ui-chart-1: var(--theme-chart-1);
+  --ui-chart-2: var(--theme-chart-2);
+  --ui-chart-3: var(--theme-chart-3);
+  --ui-chart-4: var(--theme-chart-4);
+  --ui-chart-5: var(--theme-chart-5);
+  --ui-chart-6: var(--theme-chart-6);
+  --ui-chart-7: var(--theme-chart-7);
+  --ui-chart-8: var(--theme-chart-8);
+  --ui-chart-9: var(--theme-chart-9);
+  --ui-chart-empty: var(--theme-chart-empty);
+
+  /* Typography remains independent from selectable color palettes. */
   --ui-font-panel-title: 18px;
   --ui-font-panel-subtitle: 11px;
   --ui-font-data-primary: 14px;
@@ -41,4 +102,12 @@
   --ui-weight-data: 650;
   --ui-weight-amount: 700;
   --ui-weight-heading: 750;
+}
+
+@media (forced-colors: active) {
+  :root {
+    --ui-focus: Highlight;
+    --ui-focus-border: Highlight;
+    --ui-focus-soft: Canvas;
+  }
 }
