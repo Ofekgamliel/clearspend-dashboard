@@ -20,7 +20,7 @@ import TransactionAdjustmentEditor from './TransactionAdjustmentEditor.vue';
 import TransactionCategoryEditor from './TransactionCategoryEditor.vue';
 import TransactionDetailTable from './TransactionDetailTable.vue';
 
-const props = defineProps<{ period: PeriodKey; month: string; card: string; periodLabel: string }>();
+const props = defineProps<{ period: PeriodKey; month: string; card: string }>();
 const emit = defineEmits<{ financialDataChange: [] }>();
 
 const modalOpen = ref(false);
@@ -192,7 +192,6 @@ defineExpose({ open, openActivity });
   <UiDialog :open="modalOpen" title-id="transactions-modal-title" close-label="Close transactions" size="browser" @request-close="close">
     <template #header><div class="transactions-modal-head">
           <h2 id="transactions-modal-title">{{ activityTitle }}</h2>
-          <p>{{ periodLabel }} · {{ card === 'all' ? 'All cards' : 'Selected card' }}</p>
           <label class="transactions-search"><span aria-hidden="true">⌕</span><input v-model="search" type="search" placeholder="Search every merchant, display name or category…" autocomplete="off"></label>
     </div></template>
         <div class="transactions-modal-summary">

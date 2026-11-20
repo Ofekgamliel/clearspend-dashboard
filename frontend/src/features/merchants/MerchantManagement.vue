@@ -123,7 +123,7 @@ defineExpose({ open });
 
 <template>
   <UiDialog :open="openState" title-id="merchant-manager-title" close-label="Close merchant management" size="management" @request-close="close">
-        <template #header><div class="merchant-manager-head"><h2 id="merchant-manager-title">Merchants</h2><span>Manage display identities, exact-alias categories, and recurring membership.</span></div></template>
+        <template #header><div class="merchant-manager-head"><h2 id="merchant-manager-title">Merchants</h2></div></template>
         <div v-if="payload" class="merchant-manager-summary"><span><strong>{{ formatInteger(payload.summary.display_identities) }}</strong>Display identities</span><span><strong>{{ formatInteger(payload.summary.mapped_aliases) }}</strong>Original aliases</span><span><strong>{{ formatInteger(payload.summary.transactions) }}</strong>Covered transactions</span><span><strong>{{ formatInteger(payload.summary.multiple_categories) }}</strong>Multiple categories</span><span><strong>{{ formatInteger(payload.summary.recurring) }}</strong>Recurring merchants</span></div>
         <div v-if="error && !payload" class="panel-state error-state"><span>{{ error }}</span><button type="button" @click="loadMerchants()">Try again</button></div>
         <div v-else class="merchant-manager-body" :aria-busy="loading">

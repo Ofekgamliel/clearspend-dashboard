@@ -21,6 +21,47 @@ test('production dashboard exposes no preview or debug labels', async ({ page })
   expect(accessibleLabels.filter((value) => forbidden.has(value))).toEqual([]);
 });
 
+test('dashboard and modal headers omit redundant explanatory copy', async ({ page }) => {
+  await page.goto('/');
+  await expect(page.locator('.categories-panel')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Card filtering help' })).toHaveCount(0);
+
+  await page.getByRole('button', { name: /View details/ }).click();
+  const categories = page.getByRole('dialog', { name: 'All categories' });
+  await expect(categories).toBeVisible();
+  await expect(categories).not.toContainText('Category breakdown');
+  await expect(categories.locator('.category-overview-head span')).toHaveCount(0);
+  await page.getByRole('button', { name: 'Close category overview' }).click();
+
+  await page.getByRole('button', { name: 'View all details →' }).click();
+  const recurring = page.getByRole('dialog', { name: 'Recurring & commitments' });
+  await expect(recurring).not.toContainText('PLANNED SPENDING');
+  await expect(recurring).not.toContainText('Reviewed recurring charges, scheduled obligations, and finite installments.');
+  await page.getByRole('button', { name: 'Close recurring details' }).click();
+
+  await page.getByRole('button', { name: /New event/ }).click();
+  const createEvent = page.getByRole('dialog', { name: 'Create new event' });
+  await expect(createEvent).not.toContainText('Create the event first, then assign individual transactions to it.');
+  await page.getByRole('button', { name: 'Close event creation' }).click();
+
+  await page.getByRole('button', { name: /View all transactions/ }).click();
+  const transactions = page.getByRole('dialog', { name: 'All transactions' });
+  await expect(transactions.locator('.transactions-modal-head > p')).toHaveCount(0);
+  await page.getByRole('button', { name: 'Close transactions' }).click();
+
+  await page.getByRole('button', { name: 'Manage data' }).click();
+  await page.getByRole('menuitem', { name: /Merchants/ }).click();
+  const merchants = page.getByRole('dialog', { name: 'Merchants' });
+  await expect(merchants).not.toContainText('Manage display identities, exact-alias categories, and recurring membership.');
+  await page.getByRole('button', { name: 'Close merchant management' }).click();
+
+  await page.getByRole('button', { name: 'Manage data' }).click();
+  await page.getByRole('menuitem', { name: /Import history/ }).click();
+  const importHistory = page.getByRole('dialog', { name: 'Import history' });
+  await expect(importHistory).not.toContainText('Data management');
+  await expect(importHistory).not.toContainText('Statement coverage, inserted rows and duplicates recorded by the local database.');
+});
+
 test('Hebrew transaction text and LTR currency values keep explicit direction', async ({ page }) => {
   await page.goto('/');
   await expect(page.locator('.transactions-panel')).toBeVisible();

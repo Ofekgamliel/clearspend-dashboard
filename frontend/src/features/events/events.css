@@ -1,5 +1,6 @@
 .events-panel-preview { width: 100%; margin: 14px 0 0; padding: 19px; border: 1px solid var(--ui-panel-border); border-radius: 14px; background: var(--ui-surface); box-shadow: 0 9px 30px var(--ui-panel-shadow); }
 .events-panel-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 15px; }
+.events-panel-preview.empty .events-panel-head { align-items: center; }
 .events-title-line { display: flex; align-items: center; gap: 13px; }
 .events-title-line h2 { margin: 0; font-size: var(--ui-font-panel-title); }
 .events-title-line > span { display: inline-flex; align-items: center; gap: 13px; color: var(--ui-subtle); font-size: var(--ui-font-supporting); font-weight: 650; }

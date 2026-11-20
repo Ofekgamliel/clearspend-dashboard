@@ -127,12 +127,12 @@ function openCategoryTransactions(payload: { category: string; routine: boolean 
       <section class="dashboard-analytics">
         <TrendPanel v-if="dashboard" :dashboard="dashboard" :income-hidden="incomeHidden" :loading="filtersLoading" />
         <CategoriesPanel :period="period" :month="month" :card="card" :refresh-key="dataRevision" @open-category="openCategoryTransactions" />
-        <CardsPanel v-if="dashboard" :cards="dashboard.cards" :selected-card="card" :period-label="dashboard.period.label" :loading="filtersLoading" @card-change="card = $event" />
+        <CardsPanel v-if="dashboard" :cards="dashboard.cards" :selected-card="card" :loading="filtersLoading" @card-change="card = $event" />
       </section>
       <ObservationsPanel :period="period" :month="month" :card="card" :income-hidden="incomeHidden" :refresh-key="dataRevision" @open-activity="openObservationActivity" />
       <RecurringPanel ref="recurringPanel" :period="period" :month="month" :card="card" :refresh-key="dataRevision" @financial-data-change="refreshData" @manage-recurring="openManagement('recurring', $event)" />
       <EventsPanel :period="period" :month="month" :card="card" :refresh-key="dataRevision" />
-      <TransactionsPanel v-if="dashboard" ref="transactionsPanel" :recent="dashboard.recent_transactions" :period="period" :month="month" :card="card" :period-label="dashboard.period.label" :loading="filtersLoading" @financial-data-change="refreshData" />
+      <TransactionsPanel v-if="dashboard" ref="transactionsPanel" :recent="dashboard.recent_transactions" :period="period" :month="month" :card="card" :loading="filtersLoading" @financial-data-change="refreshData" />
       <footer class="app-footer"><span>{{ latestImportLabel }}</span><span><i aria-hidden="true" /> Local database connected</span></footer>
       <MerchantManagement ref="merchantManager" @financial-data-change="refreshData" />
       <ImportManager ref="importManager" @imported="refreshData" />

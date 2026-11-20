@@ -217,14 +217,6 @@ button, input, select { font: inherit; }
 .cards-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
 .cards-head h2 { margin: 0; font-size: var(--ui-font-panel-title); letter-spacing: -.02em; }
 .cards-head p { margin: 5px 0 0; color: var(--ui-subtle); font-size: var(--ui-font-panel-subtitle); }
-.cards-help-wrap { position: relative; }
-.cards-help-button { min-width: 28px; height: 25px; padding: 0 5px; border: 0; border-radius: 7px; background: transparent; color: var(--ui-subtle); font-size: 12px; letter-spacing: 1px; cursor: pointer; }
-.cards-help-button:hover, .cards-help-button[aria-expanded="true"] { background: var(--ui-accent-soft); color: var(--ui-accent-text); }
-.cards-help-button:focus-visible { outline: 2px solid var(--ui-focus); outline-offset: 2px; }
-.cards-help-popover { position: absolute; z-index: 20; top: calc(100% + 6px); right: 0; width: 210px; padding: 10px 11px; border: 1px solid var(--ui-border); border-radius: 10px; background: var(--ui-surface-raised); box-shadow: 0 14px 35px var(--ui-dialog-shadow); }
-.cards-help-popover strong, .cards-help-popover span { display: block; }
-.cards-help-popover strong { font-size: 10px; }
-.cards-help-popover span { margin-top: 4px; color: var(--ui-muted); font-size: 10px; line-height: 1.45; }
 .cards-list { margin-top: 12px; }
 .payment-card { position: relative; width: 100%; display: grid; grid-template-columns: 37px minmax(0, 1fr) auto; align-items: center; gap: 11px; padding: 10px; border: 0; border-radius: 10px; background: transparent; color: inherit; text-align: left; cursor: pointer; transition: background .18s; }
 .payment-card:hover, .payment-card.selected { background: var(--ui-surface-hover); }
@@ -245,8 +237,6 @@ button, input, select { font: inherit; }
 .payment-bar i { display: block; height: 100%; border-radius: 2px; background: var(--ui-primary); }
 .cards-empty { margin: 24px 0 0; color: var(--ui-subtle); font-size: 10px; }
 
-.category-overview-eyebrow { margin: 0 0 4px; color: var(--ui-primary); font-size: 10px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
-.category-overview-head span { display: block; margin-top: 5px; color: var(--ui-subtle); font-size: var(--ui-font-supporting); }
 .category-overview-summary { display: flex; align-items: baseline; gap: 10px; padding: 12px 24px 10px; }
 .category-overview-summary strong { font-size: 12px; }
 .category-overview-summary span { flex: 1; color: var(--ui-subtle); font-size: 11px; }
