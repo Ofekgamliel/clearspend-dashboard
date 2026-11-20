@@ -2,11 +2,11 @@
 
 ## Purpose and maintenance
 
-This is the implementation checklist for
-[`UI_COMPONENT_LIBRARY_EXECUTION_PLAN.md`](UI_COMPONENT_LIBRARY_EXECUTION_PLAN.md).
-It records existing production controls, their semantics and their migration
-disposition. Update the relevant row in the same change that migrates a
-workflow or removes a selector.
+This maintained inventory records production controls, their semantics and
+their migration disposition. Update the relevant row in the same change that
+migrates a workflow or removes a selector. The completed implementation
+sequence is retained as historical context in
+[`archive/UI_COMPONENT_LIBRARY_EXECUTION_PLAN.md`](archive/UI_COMPONENT_LIBRARY_EXECUTION_PLAN.md).
 
 Status values are `pilot`, `planned`, `deferred`, `exception`, and `migrated`.
 An item remains feature-owned while its semantics are unresolved. Shared

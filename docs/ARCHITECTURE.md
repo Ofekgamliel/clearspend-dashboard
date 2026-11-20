@@ -125,6 +125,9 @@ data to those rules but must not silently create a second eligibility policy.
 - `shared/theme/` owns semantic component tokens, `shared/visualization/` owns
   cross-feature data-encoding palettes, and `shared/accessibility/` owns reused
   focus/accessibility mechanics. Shared modules must not import features.
+- Selectable palette identifiers, persistence, ownership and maintenance are
+  documented in [`DASHBOARD_THEMES.md`](DASHBOARD_THEMES.md). Themes may change
+  presentation values but must not change layout or financial behavior.
 - The transaction feature separates recent summary, complete browser, category
   correction, reimbursement editing, detail tables and feature CSS.
 - `api/client.ts` is the common transport. Contracts are split by domain under
