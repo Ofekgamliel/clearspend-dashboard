@@ -2,13 +2,10 @@
 
 ## Status
 
-In progress on `feature/dashboard-theme-system`. This document defines how ClearSpend will add selectable dashboard
-color schemes after the shared UI component migration. It does not authorize a
-merge or cherry-pick from `feature/dashboard-theme-layout`.
-
-Implementation should begin on a dedicated branch created from the completed
-`refactor/ui-component-library` work. The earlier theme branch is a visual and
-palette reference only.
+Completed and merged through PR #7 from `feature/dashboard-theme-system`.
+This archived plan records the implementation requirements and acceptance
+criteria. Current behavior and maintenance guidance live in
+[`../DASHBOARD_THEMES.md`](../DASHBOARD_THEMES.md).
 
 ## Objective
 

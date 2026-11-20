@@ -25,13 +25,10 @@ subject. Archived plans never override current code or maintained guidance.
   long-period patterns, grouping, evidence, and review policy.
 - [`UI_GUIDELINES.md`](UI_GUIDELINES.md) — stable interaction patterns,
   accessibility, Vue state ownership, and visual-regression expectations.
-- [`UI_COMPONENT_LIBRARY_EXECUTION_PLAN.md`](UI_COMPONENT_LIBRARY_EXECUTION_PLAN.md)
-  — authoritative phased plan for the internal Vue component library.
 - [`UI_COMPONENT_LIBRARY_INVENTORY.md`](UI_COMPONENT_LIBRARY_INVENTORY.md) —
   maintained control inventory and workflow-migration checklist.
-- [`DASHBOARD_THEME_IMPLEMENTATION_PLAN.md`](DASHBOARD_THEME_IMPLEMENTATION_PLAN.md)
-  — phased plan for selectable dashboard palettes across shared components,
-  feature-owned styles, dialogs, and visualizations.
+- [`DASHBOARD_THEMES.md`](DASHBOARD_THEMES.md) — supported palettes, theme
+  behavior, ownership, persistence, accessibility and maintenance workflow.
 
 ## Operations and repository safety
 
@@ -51,6 +48,8 @@ contracts:
 - [`archive/REFACTORING_BASELINE.md`](archive/REFACTORING_BASELINE.md)
 - [`archive/CLEARSPEND_REFACTORING_PLAN.md`](archive/CLEARSPEND_REFACTORING_PLAN.md)
 - [`archive/VUE_PRODUCTION_PARITY_CHECKLIST.md`](archive/VUE_PRODUCTION_PARITY_CHECKLIST.md)
+- [`archive/UI_COMPONENT_LIBRARY_EXECUTION_PLAN.md`](archive/UI_COMPONENT_LIBRARY_EXECUTION_PLAN.md)
+- [`archive/DASHBOARD_THEME_IMPLEMENTATION_PLAN.md`](archive/DASHBOARD_THEME_IMPLEMENTATION_PLAN.md)
 
 ## Documentation maintenance
 
@@ -65,6 +64,7 @@ Update only the document that owns the changed behavior:
 | Observation eligibility, evidence, grouping, review | `FINANCIAL_OBSERVATIONS.md` |
 | Schema or migration behavior | `DATABASE_MIGRATIONS.md` |
 | Interaction or accessibility contract | `UI_GUIDELINES.md` |
+| Supported palettes or theme behavior | `DASHBOARD_THEMES.md` |
 | Startup, backup, restore, or rollback | `OPERATIONS_AND_RECOVERY.md` |
 | Git, CI, generated assets, or privacy workflow | `GIT_WORKFLOW.md` |
 

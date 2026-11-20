@@ -35,6 +35,17 @@ Local review prototypes derived from real dashboard data must remain ignored.
 - Dashboard changes require functional checks at desktop and narrow widths;
   visible changes require reviewed visual snapshots where the suite covers them.
 
+## Selectable themes
+
+- Use the semantic `--ui-*` contract instead of literal palette colors in
+  shared components and feature presentation.
+- Keep palette definitions free of feature selectors. A theme changes colors,
+  not typography, spacing, dimensions, workflow behavior or financial data.
+- Preserve status meaning and chart readability with labels or other non-color
+  information, and review representative light and dark palettes.
+- Follow [`DASHBOARD_THEMES.md`](DASHBOARD_THEMES.md) for supported identifiers,
+  ownership, persistence and the theme-change checklist.
+
 ## Shared UI components
 
 - Generic cross-feature primitives live under `frontend/src/shared/ui/` only

@@ -2,11 +2,10 @@
 
 ## Status and purpose
 
-Status: implementation complete and awaiting the final commit. The alternate
-theme/layout work remains isolated on `feature/dashboard-theme-layout`. This
-branch completes the shared-component foundation, bounded workflow migrations,
-staged import migration, cleanup and verification without importing that
-alternate visual work.
+Status: completed and merged through PR #6. This archived plan records the
+implementation sequence and decisions; it is not current operational guidance.
+The selectable theme system was integrated later through PR #7 and is
+documented in [`../DASHBOARD_THEMES.md`](../DASHBOARD_THEMES.md).
 
 This file is the authoritative implementation sequence and checklist for this
 initiative. Review files are context only and do not create competing execution
@@ -18,9 +17,9 @@ accessibility and presentation rather than only global CSS overrides. This
 refactor must not change financial results, APIs, persisted data, imports,
 observation rules or feature ownership.
 
-Authoritative guidance remains in [`ARCHITECTURE.md`](ARCHITECTURE.md),
-[`UI_GUIDELINES.md`](UI_GUIDELINES.md), [`TESTING.md`](TESTING.md) and
-[`../AGENTS.md`](../AGENTS.md).
+Authoritative guidance remains in [`ARCHITECTURE.md`](../ARCHITECTURE.md),
+[`UI_GUIDELINES.md`](../UI_GUIDELINES.md), [`TESTING.md`](../TESTING.md) and
+[`AGENTS.md`](../../AGENTS.md).
 
 ## Executive decision
 
