@@ -119,7 +119,6 @@ watch(
     <header class="categories-head">
       <div>
         <h2 id="categories-title">Categories</h2>
-        <p v-if="response" class="period-label">{{ response.period.label }}</p>
       </div>
       <div class="category-head-actions">
         <div class="scope-toggle" role="group" aria-label="Category spending scope">
@@ -158,7 +157,7 @@ watch(
   </article>
 
   <UiDialog :open="overviewOpen && Boolean(response)" title-id="category-overview-title" close-label="Close category overview" size="standard" @request-close="closeOverview">
-    <template v-if="response" #header><div class="category-overview-head"><div class="category-overview-eyebrow">Category breakdown</div><h2 id="category-overview-title">All categories</h2><span>{{ response.period.label }} · {{ card === 'all' ? 'all cards' : 'selected card' }}<template v-if="scope === 'routine'"> · routine only</template></span></div></template>
+    <template v-if="response" #header><div class="category-overview-head"><h2 id="category-overview-title">All categories</h2></div></template>
     <template v-if="response">
         <div class="category-overview-summary"><strong>{{ response.categories.length }} categories</strong><span>Select a category to view its transactions</span><b>{{ formatMoney(response.total) }} total</b></div>
         <div class="category-overview-list">

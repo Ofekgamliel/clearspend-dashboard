@@ -116,7 +116,7 @@ export function observationCount(response: ObservationsResponse): string {
 
 export function observationScope(response: ObservationsResponse): string {
   const card = response.selectedCard === 'all' ? 'all cards' : 'selected card';
-  if (!response.historical) return `${formatShortMonth(response.selectedMonth)} · ${card} · grouped by observation type`;
+  if (!response.historical) return '';
   const range = `${formatShortMonth(response.observedStart)} – ${formatShortMonth(response.observedEnd)}`;
   return `${range}${response.period === 'all' ? ' · all imported history' : ''} · ${card} · lasting shifts that began during this period`;
 }

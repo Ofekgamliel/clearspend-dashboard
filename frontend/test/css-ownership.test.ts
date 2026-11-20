@@ -10,7 +10,7 @@ const featureStyles = [
   ['recurring', '../src/features/recurring/recurring.css', '.recurring-panel-preview'],
   ['observations', '../src/features/observations/observations.css', '.observations-panel-preview'],
   ['imports', '../src/features/imports/imports.css', '.import-manager-head'],
-  ['merchants', '../src/features/merchants/merchants.css', '.merchant-manager-head'],
+  ['merchants', '../src/features/merchants/merchants.css', '.merchant-manager-summary'],
 ] as const;
 
 test('feature stylesheets are present and imported by the application entry point', () => {

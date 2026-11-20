@@ -10,7 +10,6 @@ defineProps<{
   period: PeriodKey;
   month: string;
   card: string;
-  periodLabel: string;
   loading: boolean;
 }>();
 const emit = defineEmits<{ financialDataChange: [] }>();
@@ -32,7 +31,7 @@ defineExpose({ openActivity });
 <template>
   <article class="transactions-panel" aria-labelledby="transactions-title" :aria-busy="loading">
     <header class="transactions-head">
-      <div><h2 id="transactions-title">Recent transactions</h2><p>Five-column summary · open all transactions for full source details</p></div>
+      <div><h2 id="transactions-title">Recent transactions</h2></div>
       <button type="button" class="transactions-view-all" @click="browser?.open()">View all transactions →</button>
     </header>
     <div class="recent-table-wrap">
@@ -56,7 +55,6 @@ defineExpose({ openActivity });
     :period="period"
     :month="month"
     :card="card"
-    :period-label="periodLabel"
     @financial-data-change="emit('financialDataChange')"
   />
 </template>

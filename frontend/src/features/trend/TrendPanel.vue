@@ -25,7 +25,7 @@ const scopeLabel = computed(() => props.dashboard.selected_card === 'all' ? 'all
 const subtitle = computed(() => {
   if (isMonth.value) {
     const summary = props.dashboard.purchase_activity_summary;
-    return `Purchases made during ${props.dashboard.period.label} · installments counted once · ${scopeLabel.value} · ${formatMoney(summary?.total ?? 0)} total · billed charges ${formatMoney(summary?.billed_charges ?? 0)}`;
+    return `${formatMoney(summary?.total ?? 0)} total · billed charges ${formatMoney(summary?.billed_charges ?? 0)}`;
   }
   const note = props.incomeHidden ? ' · income hidden' : props.dashboard.selected_card !== 'all' ? ' · income comparison available for all cards' : '';
   return `Monthly spending · ${scopeLabel.value}${note}`;

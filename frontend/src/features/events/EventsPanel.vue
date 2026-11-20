@@ -199,7 +199,7 @@ defineExpose({ reload: loadEvents });
     </div>
   </UiDialog>
   <UiDialog :open="createOpen" title-id="event-create-title" close-label="Close event creation" size="compact" @request-close="closeCreate">
-    <template #header><h2 id="event-create-title">Create new event</h2><p>Create the event first, then assign individual transactions to it.</p></template>
+    <template #header><h2 id="event-create-title">Create new event</h2></template>
     <form id="event-create-form" class="event-create-fields" @submit.prevent="submitCreate">
       <UiField for-id="event-create-name" label="Name"><UiInput id="event-create-name" v-model="createForm.name" required placeholder="For example: Prague 2027" autofocus /></UiField>
       <UiField for-id="event-create-type" label="Type"><UiSelect id="event-create-type" v-model="createForm.event_type"><option value="trip">Personal trip</option><option value="business_trip">Business trip</option><option value="celebration">Celebration</option><option value="home">Home project</option><option value="other">Other</option></UiSelect></UiField>

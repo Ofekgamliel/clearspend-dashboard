@@ -89,7 +89,7 @@ watch([() => props.period, () => props.month, () => props.card, () => props.inco
 <template>
   <article class="observations-panel-preview" :class="{ compact: response && !response.findingCount }" aria-labelledby="observations-preview-title" :aria-busy="loading">
     <header class="observations-head-preview">
-      <div><div class="observations-title-line-preview"><h2 id="observations-preview-title">{{ response?.historical ? 'Financial patterns' : 'Financial observations' }}</h2><span v-if="response && !response.findingCount">{{ response.historical ? 'No lasting patterns' : 'No observations' }}</span></div><p v-if="response?.findingCount">{{ observationScope(response) }}</p><p v-else-if="!response">Checking the selected period against your local history…</p></div>
+      <div><div class="observations-title-line-preview"><h2 id="observations-preview-title">{{ response?.historical ? 'Financial patterns' : 'Financial observations' }}</h2><span v-if="response && !response.findingCount">{{ response.historical ? 'No lasting patterns' : 'No observations' }}</span></div><p v-if="response?.findingCount && response.historical">{{ observationScope(response) }}</p><p v-else-if="!response">Checking the selected period against your local history…</p></div>
       <strong v-if="response?.findingCount">{{ observationCount(response) }}</strong>
     </header>
     <div v-if="error && !response" class="observations-state-preview error-state"><span>{{ error }}</span><button type="button" @click="load()">Try again</button></div>
