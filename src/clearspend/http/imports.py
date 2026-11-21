@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import MutableMapping, Sequence
 
 from clearspend.database.connection import DatabaseTarget
+from clearspend.database.errors import DatabaseBusyError, DatabaseUnavailableError
 from clearspend.database.postgresql import PostgreSQLPool
 from clearspend.database.postgresql_backup import PostgreSQLBackupConfiguration
 from clearspend.http.multipart import UploadedFile
@@ -67,9 +68,15 @@ def process_import_uploads(
             database,
             [(item["filename"], item["path"]) for item in staged_uploads],
         )
-    except Exception as error:
+    except ValueError as error:
         upload_path.unlink(missing_ok=True)
         return {"error": str(error)}, 400
+    except (DatabaseBusyError, DatabaseUnavailableError):
+        upload_path.unlink(missing_ok=True)
+        raise
+    except Exception:
+        upload_path.unlink(missing_ok=True)
+        raise
     staged_imports[batch_id] = {
         "uploads": staged_uploads,
         "created_at": datetime.now().isoformat(),

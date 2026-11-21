@@ -45,6 +45,17 @@ def amount(value: Any) -> str | None:
     return format(result.quantize(Decimal("0.01")), "f")
 
 
+def decimal_value(value: Any) -> str | None:
+    """Normalize a decimal without discarding provider-supplied precision."""
+    if value in (None, ""):
+        return None
+    try:
+        result = Decimal(str(value).replace(",", "").strip())
+    except (InvalidOperation, AttributeError):
+        return None
+    return format(result, "f")
+
+
 def parse_date(value: Any) -> str | None:
     text = clean_text(value)
     if not text:

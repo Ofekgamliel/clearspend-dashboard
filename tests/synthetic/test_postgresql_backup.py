@@ -221,7 +221,7 @@ class PostgreSQLBackupTests(unittest.TestCase):
                 "encryption-secret",
             )
             commands: list[Sequence[str]] = []
-            answers = iter((b"empty\n", b"16:4\n"))
+            answers = iter((b"empty\n", b"16:5\n"))
 
             def run_command(
                 command: Sequence[str], environment: Mapping[str, str]

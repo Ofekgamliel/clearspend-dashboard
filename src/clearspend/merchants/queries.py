@@ -17,7 +17,7 @@ def mapping_payload(database: DatabaseTarget) -> dict:
         ).fetchone()
         review = [dict(row) for row in connection.execute(
             """SELECT MAX(merchant_raw) merchant_raw,merchant_normalized,COUNT(*) transactions,
-            ROUND(CAST(SUM(ABS(CAST(charged_amount AS DOUBLE PRECISION))) AS NUMERIC),2) amount
+            ROUND(CAST(SUM(ABS(CAST(charged_amount AS NUMERIC))) AS NUMERIC),2) amount
             FROM transactions WHERE user_category IS NULL AND provider_category IS NULL
             GROUP BY merchant_normalized ORDER BY transactions DESC,amount DESC LIMIT 1000"""
         )]
@@ -72,7 +72,7 @@ def merchants_payload(database: DatabaseTarget) -> dict:
                GROUP BY COALESCE(sample.user_category,sample.provider_category,'Needs review')
                ORDER BY COUNT(*) DESC LIMIT 1),'Needs review') category,
             m.subcategory,COUNT(*) transactions,
-            ROUND(CAST(SUM(ABS(CAST(t.charged_amount AS DOUBLE PRECISION))) AS NUMERIC),2) amount,
+            ROUND(CAST(SUM(ABS(CAST(t.charged_amount AS NUMERIC))) AS NUMERIC),2) amount,
             MAX(t.transaction_date) last_seen
             FROM transactions t
             LEFT JOIN merchant_display_mappings d ON d.merchant_normalized=t.merchant_normalized

@@ -41,8 +41,10 @@ The job creates synthetic Supabase-style API roles, provisions the private
 schema and restricted runtime role, applies every migration, verifies a second
 migration inspection, exercises representative reads and writes through
 `clearspend_app`, checks API-role denial, and proves reviewed-import commit and
-rollback. It uses synthetic credentials and data and must never point at the
-private Supabase project.
+rollback. It also verifies exact numeric column types and representative
+dashboard and observation calculations through the restricted role. It uses
+synthetic credentials and data and must never point at the private Supabase
+project.
 
 This isolated service validates PostgreSQL SQL, transactions, migrations, and
 permissions. Supabase TLS, Session-pooler behavior, and hosted-project settings

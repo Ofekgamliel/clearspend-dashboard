@@ -3,11 +3,13 @@ from __future__ import annotations
 import json
 import tempfile
 import unittest
+from decimal import Decimal
 from io import BytesIO
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
+from clearspend.database.errors import DatabaseUnavailableError
 from clearspend.http.handler import ClearSpendHandler
 from tests.synthetic.support import create_database
 
@@ -137,6 +139,37 @@ class HttpHandlerTests(unittest.TestCase):
         )
 
         self.assertEqual(status, 404)
+
+    def test_unexpected_errors_are_logged_without_exposing_details(self) -> None:
+        with patch(
+            "clearspend.http.handler.dispatch_json_get",
+            side_effect=RuntimeError("private schema and SQL details"),
+        ), self.assertLogs("clearspend.http.handler", level="ERROR"):
+            status, _, body = self.request("GET", "/api/dashboard")
+
+        self.assertEqual(status, 500)
+        self.assertEqual(json.loads(body), {"error": "Unexpected server error"})
+        self.assertNotIn(b"private schema", body)
+
+    def test_database_unavailable_has_a_safe_service_response(self) -> None:
+        with patch(
+            "clearspend.http.handler.dispatch_json_get",
+            side_effect=DatabaseUnavailableError("private endpoint details"),
+        ), self.assertLogs("clearspend.http.handler", level="ERROR"):
+            status, _, body = self.request("GET", "/api/dashboard")
+
+        self.assertEqual(status, 503)
+        self.assertEqual(json.loads(body), {"error": "Database is unavailable"})
+
+    def test_postgresql_decimals_keep_the_json_number_contract(self) -> None:
+        with patch(
+            "clearspend.http.handler.dispatch_json_get",
+            return_value=({"amount": Decimal("12.3456")}, 200),
+        ):
+            status, _, body = self.request("GET", "/api/dashboard")
+
+        self.assertEqual(status, 200)
+        self.assertEqual(json.loads(body), {"amount": 12.3456})
 
 
 if __name__ == "__main__":

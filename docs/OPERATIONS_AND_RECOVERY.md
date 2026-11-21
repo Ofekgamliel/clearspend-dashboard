@@ -23,8 +23,9 @@ Open `http://localhost:8765` and check
 reports `status: ok`, `database: true`, and the API compatibility identifier
 expected by the frontend.
 
-The retained SQLite file is an archival pre-PostgreSQL snapshot. Omitting
-`--postgresql-config` selects legacy SQLite mode, which must not be used for
+The retained SQLite file is an archival pre-PostgreSQL snapshot. Starting
+without a database selection fails. Archival inspection requires the explicit
+`--legacy-sqlite-database data/clearspend.db` option, which must not be used for
 normal reads, edits, or imports. PostgreSQL failure never triggers an automatic
 SQLite fallback.
 

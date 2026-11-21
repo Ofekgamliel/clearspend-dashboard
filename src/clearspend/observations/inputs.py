@@ -4,13 +4,17 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from clearspend.database.connection import DatabaseTarget
-from clearspend.observations.queries import observation_reviews_payload
-from clearspend.observations.historical_queries import historical_installments_payload
+from clearspend.database.connection import DatabaseTarget, database_connection
+from clearspend.database.postgresql import PostgreSQLPool
+from clearspend.observations.snapshot_queries import (
+    observation_household_history,
+    observation_installments_by_month,
+    observation_recurring_by_month,
+    observation_review_keys,
+    observation_scope_inputs,
+    observation_transaction_history,
+)
 from clearspend.observations.scope import ObservationScope, build_observation_scope
-from clearspend.recurring.queries import recurring_payload
-from clearspend.reporting.dashboard import dashboard_payload
-from clearspend.transactions.queries import transactions_payload
 
 
 @dataclass(frozen=True)
@@ -35,58 +39,69 @@ def load_observation_inputs(
     month: str = "",
     income_hidden: bool = False,
 ) -> ObservationInputSnapshot:
-    """Compose the same source payloads currently used by the browser engine."""
-    dashboard = dashboard_payload(database, period, card, month)
-    period_data = dashboard.get("period") or {}
-    scope = build_observation_scope(
-        period=period,
-        available_months=dashboard.get("available_months") or (),
-        selected_month=month,
-        period_start=period_data.get("start") or "",
-        period_end=period_data.get("end") or "",
-    )
-    history_rows = transactions_payload(
-        database, "all", card, complete_history=True,
-    ).get("transactions") or ()
-    grouped_transactions: dict[str, list[dict]] = {
-        current: [] for current in scope.history_months
+    """Load one consistent, bounded database snapshot for observation analysis."""
+    with database_connection(database) as connection:
+        try:
+            if isinstance(database, PostgreSQLPool):
+                connection.execute(
+                    "SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY"
+                )
+            else:
+                connection.execute("BEGIN")
+            available_months, start, end, label = observation_scope_inputs(
+                connection,
+                period,
+                month,
+            )
+            scope = build_observation_scope(
+                period=period,
+                available_months=available_months,
+                selected_month=month,
+                period_start=start or "",
+                period_end=end or "",
+            )
+            history_rows = observation_transaction_history(
+                connection,
+                card,
+                scope.scope_end,
+            )
+            grouped_transactions: dict[str, list[dict]] = {
+                current: [] for current in scope.history_months
+            }
+            for row in history_rows:
+                report_month = str(
+                    row.get("billing_month")
+                    or str(row.get("billing_date") or "")[:7]
+                    or str(row.get("transaction_date") or "")[:7]
+                )
+                if report_month in grouped_transactions:
+                    grouped_transactions[report_month].append(row)
+            transactions_by_month = {
+                current: tuple(rows) for current, rows in grouped_transactions.items()
+            }
+            recurring_by_month = observation_recurring_by_month(
+                connection,
+                scope.recurring_months,
+                card,
+            )
+            if card == "all":
+                household_history, partial_month = observation_household_history(
+                    connection
+                )
+            else:
+                household_history, partial_month = {}, ""
+            reviewed_finding_keys = observation_review_keys(connection)
+            installments_by_month = observation_installments_by_month(
+                connection,
+                scope.history_months,
+                card,
+            )
+        finally:
+            connection.rollback()
+    dashboard = {
+        "period": {"key": period, "start": start, "end": end, "label": label},
+        "available_months": list(reversed(available_months)),
     }
-    for row in history_rows:
-        report_month = str(
-            row.get("billing_month")
-            or str(row.get("billing_date") or "")[:7]
-            or str(row.get("transaction_date") or "")[:7]
-        )
-        if report_month in grouped_transactions:
-            grouped_transactions[report_month].append(row)
-    transactions_by_month = {
-        current: tuple(rows) for current, rows in grouped_transactions.items()
-    }
-    recurring_by_month = {
-        current: recurring_payload(database, "month", card, current)
-        for current in scope.recurring_months
-    }
-    household_dashboard = (
-        dashboard_payload(database, "all", "all") if card == "all" else None
-    )
-    household_history = {
-        str(row.get("bucket")): row
-        for row in (household_dashboard or {}).get("trend", ())
-        if row.get("bucket")
-    }
-    average_data = (
-        (household_dashboard or {}).get("income_summary", {}).get("averages", {})
-    )
-    partial_month = (
-        str((dashboard.get("available_months") or [""])[0])
-        if average_data.get("current_month_partial") else ""
-    )
-    reviews = observation_reviews_payload(database).get("reviews") or ()
-    installments_by_month = historical_installments_payload(
-        database,
-        scope.history_months,
-        card,
-    )
     return ObservationInputSnapshot(
         scope=scope,
         selected_card=card,
@@ -96,10 +111,6 @@ def load_observation_inputs(
         transactions_by_month=transactions_by_month,
         recurring_by_month=recurring_by_month,
         household_history=household_history,
-        reviewed_finding_keys=frozenset(
-            str(review.get("finding_key"))
-            for review in reviews
-            if review.get("finding_key")
-        ),
+        reviewed_finding_keys=reviewed_finding_keys,
         installments_by_month=installments_by_month,
     )

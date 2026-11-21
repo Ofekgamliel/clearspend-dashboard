@@ -17,7 +17,7 @@ def _plan_identity(row: dict) -> str:
             row.get("card_last4") or "",
             row.get("canonical_merchant_id") or "",
             row.get("transaction_date") or "",
-            row.get("original_amount") or "",
+            str(row.get("original_amount") or ""),
             row.get("original_currency") or "",
             int(row.get("installment_total") or 0),
         ],
@@ -56,12 +56,12 @@ def historical_installments_payload(
             COALESCE(d.display_name,t.merchant_raw) display_name,
             t.merchant_raw source_alias,t.transaction_date,t.original_amount,
             t.original_currency,t.installment_total,{REPORTING_MONTH_SQL} report_month,
-            CAST(t.charged_amount AS DOUBLE PRECISION) amount
+            CAST(t.charged_amount AS NUMERIC) amount
             FROM transactions t
             LEFT JOIN merchant_display_mappings d
               ON d.merchant_normalized=t.merchant_normalized
             WHERE t.installment_number IS NOT NULL
-              AND CAST(t.charged_amount AS DOUBLE PRECISION)>0
+              AND CAST(t.charged_amount AS NUMERIC)>0
               AND {REPORTING_MONTH_SQL} IN ({placeholders}){card_sql}
             ORDER BY report_month,t.id""",
             parameters,

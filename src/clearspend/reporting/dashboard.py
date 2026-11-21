@@ -28,8 +28,8 @@ def dashboard_payload(
         metrics = connection.execute(
             f"""SELECT
             COALESCE(SUM({personal_spending_sql()}),0) spent,
-            COALESCE(ABS(SUM(CASE WHEN CAST(t.charged_amount AS DOUBLE PRECISION) < 0
-              THEN CAST(t.charged_amount AS DOUBLE PRECISION) ELSE 0 END)),0) refunds,
+            COALESCE(ABS(SUM(CASE WHEN CAST(t.charged_amount AS NUMERIC) < 0
+              THEN CAST(t.charged_amount AS NUMERIC) ELSE 0 END)),0) refunds,
             COUNT(*) transactions,
             COUNT(DISTINCT {REPORTING_DATE_SQL}) active_days
             FROM transactions t WHERE {where}""",
@@ -40,7 +40,7 @@ def dashboard_payload(
         active_days = int(metrics["active_days"])
 
         income_row = connection.execute(
-            """SELECT COALESCE(SUM(CAST(amount AS DOUBLE PRECISION)),0) total,
+            """SELECT COALESCE(SUM(CAST(amount AS NUMERIC)),0) total,
             COUNT(*) entries
             FROM income_entries WHERE month BETWEEN ? AND ?""",
             ((start or "0000-00-00")[:7], (end or "9999-99-99")[:7]),
@@ -48,10 +48,10 @@ def dashboard_payload(
         all_card_spending = connection.execute(
             f"""SELECT
             COALESCE(SUM({personal_spending_sql()}),0) personal_spent,
-            COALESCE(SUM(CASE WHEN CAST(t.charged_amount AS DOUBLE PRECISION)>0
-              THEN CAST(t.charged_amount AS DOUBLE PRECISION) ELSE 0 END),0) charges,
-            COALESCE(ABS(SUM(CASE WHEN CAST(t.charged_amount AS DOUBLE PRECISION)<0
-              THEN CAST(t.charged_amount AS DOUBLE PRECISION) ELSE 0 END)),0) refunds
+            COALESCE(SUM(CASE WHEN CAST(t.charged_amount AS NUMERIC)>0
+              THEN CAST(t.charged_amount AS NUMERIC) ELSE 0 END),0) charges,
+            COALESCE(ABS(SUM(CASE WHEN CAST(t.charged_amount AS NUMERIC)<0
+              THEN CAST(t.charged_amount AS NUMERIC) ELSE 0 END)),0) refunds
             FROM transactions t WHERE {REPORTING_MONTH_SQL} BETWEEN ? AND ?""",
             period_parameters,
         ).fetchone()
@@ -77,8 +77,8 @@ def dashboard_payload(
         monthly_spending_rows = connection.execute(
             f"""SELECT {REPORTING_MONTH_SQL} AS report_month,
             SUM({personal_spending_sql()})
-            - ABS(SUM(CASE WHEN CAST(t.charged_amount AS DOUBLE PRECISION)<0
-              THEN CAST(t.charged_amount AS DOUBLE PRECISION) ELSE 0 END)) net
+            - ABS(SUM(CASE WHEN CAST(t.charged_amount AS NUMERIC)<0
+              THEN CAST(t.charged_amount AS NUMERIC) ELSE 0 END)) net
             FROM transactions t WHERE {REPORTING_MONTH_SQL} BETWEEN ? AND ? GROUP BY {REPORTING_MONTH_SQL}""",
             average_parameters,
         ).fetchall()
@@ -86,7 +86,7 @@ def dashboard_payload(
             row["report_month"]: float(row["net"]) for row in monthly_spending_rows
         }
         monthly_income_rows = connection.execute(
-            """SELECT month,SUM(CAST(amount AS DOUBLE PRECISION)) total FROM income_entries
+            """SELECT month,SUM(CAST(amount AS NUMERIC)) total FROM income_entries
             WHERE month BETWEEN ? AND ? GROUP BY month""",
             (average_parameters[0][:7], average_parameters[1][:7]),
         ).fetchall()
@@ -159,7 +159,7 @@ def dashboard_payload(
             f"""SELECT t.merchant_raw,COALESCE(o.category,t.user_category,t.provider_category,'Needs review') category,
             COALESCE(o.subcategory,t.user_subcategory) subcategory,t.provider,t.card_last4,
             t.transaction_date,t.billing_date,t.billing_month,t.billing_month_source,
-            CAST(t.charged_amount AS DOUBLE PRECISION) amount,
+            CAST(t.charged_amount AS NUMERIC) amount,
             {personal_spending_sql()} personal_amount,t.charged_currency,
             a.adjustment_type,a.reimbursed_amount,a.reimbursement_date
             FROM transactions t LEFT JOIN transaction_category_overrides o ON o.transaction_id=t.id
@@ -197,8 +197,8 @@ def dashboard_payload(
             trend_spending = [dict(row) for row in connection.execute(
                 f"""SELECT {REPORTING_MONTH_SQL} bucket,
                 ROUND(CAST(SUM({personal_spending_sql()})+
-                  SUM(CASE WHEN CAST(t.charged_amount AS DOUBLE PRECISION)<0
-                    THEN CAST(t.charged_amount AS DOUBLE PRECISION) ELSE 0 END)
+                  SUM(CASE WHEN CAST(t.charged_amount AS NUMERIC)<0
+                    THEN CAST(t.charged_amount AS NUMERIC) ELSE 0 END)
                   AS NUMERIC),2) amount
                 FROM transactions t WHERE {where} GROUP BY {REPORTING_MONTH_SQL} ORDER BY bucket""",
                 parameters,
@@ -206,7 +206,7 @@ def dashboard_payload(
             trend_income = {
                 row["month"]: float(row["total"])
                 for row in connection.execute(
-                    """SELECT month,SUM(CAST(amount AS DOUBLE PRECISION)) total
+                    """SELECT month,SUM(CAST(amount AS NUMERIC)) total
                     FROM income_entries
                     WHERE month BETWEEN ? AND ? GROUP BY month""",
                     ((start or "0000-00-00")[:7], (end or "9999-99-99")[:7]),

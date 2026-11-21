@@ -52,7 +52,7 @@ def save_transaction_adjustment(
         raise ValueError("Transaction is required")
     with database_transaction(database) as connection:
         row = connection.execute(
-            """SELECT merchant_raw,CAST(charged_amount AS DOUBLE PRECISION) amount
+            """SELECT merchant_raw,CAST(charged_amount AS NUMERIC) amount
             FROM transactions WHERE id=?""",
             (transaction_id,),
         ).fetchone()

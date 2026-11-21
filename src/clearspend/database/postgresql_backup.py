@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Callable, Mapping, Sequence, Tuple
 
 from clearspend.database.keychain import load_keychain_password
+from clearspend.database.postgresql_migrations import CURRENT_POSTGRESQL_SCHEMA_VERSION
 from clearspend.database.settings import PostgreSQLSettings
 
 
@@ -498,5 +499,7 @@ def restore_verified_postgresql_backup(
         ),
         database_environment,
     ).decode("utf-8", errors="replace").strip()
-    if verification != f"{len(EXPECTED_CLEARSPEND_TABLES)}:4":
+    if verification != (
+        f"{len(EXPECTED_CLEARSPEND_TABLES)}:{CURRENT_POSTGRESQL_SCHEMA_VERSION}"
+    ):
         raise PostgreSQLBackupError("PostgreSQL recovery contents are incomplete")

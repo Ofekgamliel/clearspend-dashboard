@@ -91,9 +91,10 @@ imports, searches, mappings, events, or other API-backed behavior.
 
 PostgreSQL is the authoritative runtime database. The server requires the
 ignored Frankfurt runtime configuration shown above and fails closed if it
-cannot connect or verify the schema. Omitting `--postgresql-config` selects the
-legacy SQLite mode; do not use that mode for normal operation or as an automatic
-fallback. The retained `data/clearspend.db` is an archival pre-cutover snapshot.
+cannot connect or verify the schema. Starting without an explicit database
+selection fails. Archival inspection must deliberately use
+`--legacy-sqlite-database data/clearspend.db`; that mode is not for normal use
+or an automatic fallback.
 
 ## Supported inputs
 

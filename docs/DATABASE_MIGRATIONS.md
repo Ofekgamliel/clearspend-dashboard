@@ -62,6 +62,8 @@ Current migrations are ordered modules under
    restricted merchant-category trigger.
 4. Exact import-to-transaction linkage used by duplicate and batch-decision
    workflows.
+5. Exact PostgreSQL `NUMERIC` storage for transaction amounts, exchange rates,
+   reimbursements, income, event budgets, and statement totals.
 
 The runner verifies required objects, ownership, grants, API-role denial, and
 the expected migration history after application.
@@ -112,7 +114,9 @@ The legacy SQLite runner remains for temporary synthetic tests and archival
 inspection:
 
 ```bash
-PYTHONPATH=src:. .venv/bin/python -m clearspend.server --migrate-database
+PYTHONPATH=src:. .venv/bin/python -m clearspend.server \
+  --legacy-sqlite-database data/clearspend.db \
+  --migrate-database
 ```
 
 It inspects the schema, rejects unsupported shapes, creates a verified SQLite

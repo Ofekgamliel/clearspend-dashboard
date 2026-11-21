@@ -37,7 +37,7 @@ def events_payload(
                 COALESCE(d.display_name,t.merchant_raw) merchant_display_name,
                 COALESCE(o.category,t.user_category,t.provider_category,'Needs review') category,
                 t.transaction_date,t.provider,t.card_last4,
-                CAST(t.charged_amount AS DOUBLE PRECISION) amount,
+                CAST(t.charged_amount AS NUMERIC) amount,
                 {personal_spending_sql()} personal_amount
                 FROM event_transactions et JOIN transactions t ON t.id=et.transaction_id
                 LEFT JOIN merchant_display_mappings d ON d.merchant_normalized=t.merchant_normalized

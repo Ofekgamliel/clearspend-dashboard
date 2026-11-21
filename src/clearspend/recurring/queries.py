@@ -30,7 +30,7 @@ def recurring_payload(
             t.merchant_raw source_alias,
             COALESCE(o.category,t.user_category,t.provider_category,'Needs review') category,
             {REPORTING_MONTH_SQL} report_month,
-            CAST(t.charged_amount AS DOUBLE PRECISION) amount,
+            CAST(t.charged_amount AS NUMERIC) amount,
             p.recurring_type,p.cadence,p.cadence_months,p.lifecycle_status,p.end_month
             FROM transactions t
             LEFT JOIN merchant_display_mappings d ON d.merchant_normalized=t.merchant_normalized
@@ -40,7 +40,7 @@ def recurring_payload(
             JOIN recurring_profiles p ON p.canonical_group_id=rpm.canonical_group_id
              AND p.verdict='recurring'
             LEFT JOIN transaction_category_overrides o ON o.transaction_id=t.id
-            WHERE CAST(t.charged_amount AS DOUBLE PRECISION)>0
+            WHERE CAST(t.charged_amount AS NUMERIC)>0
               AND t.installment_number IS NULL
               AND {REPORTING_MONTH_SQL}<=?{card_sql}
             ORDER BY report_month,t.id""",
@@ -111,11 +111,11 @@ def recurring_payload(
             COALESCE(o.category,t.user_category,t.provider_category,'Needs review') category,
             t.transaction_date,t.original_amount,t.installment_number,t.installment_total,
             {REPORTING_MONTH_SQL} report_month,
-            CAST(t.charged_amount AS DOUBLE PRECISION) amount
+            CAST(t.charged_amount AS NUMERIC) amount
             FROM transactions t
             LEFT JOIN merchant_display_mappings d ON d.merchant_normalized=t.merchant_normalized
             LEFT JOIN transaction_category_overrides o ON o.transaction_id=t.id
-            WHERE CAST(t.charged_amount AS DOUBLE PRECISION)>0
+            WHERE CAST(t.charged_amount AS NUMERIC)>0
               AND t.installment_number IS NOT NULL
               AND {REPORTING_MONTH_SQL}<=?{card_sql} ORDER BY report_month,t.id""",
             [end_month, *card_parameters],
@@ -184,8 +184,8 @@ def recurring_payload(
             ) if row["report_month"]
         }), 1)
         spending = float(connection.execute(
-            f"SELECT COALESCE(SUM(CASE WHEN CAST(t.charged_amount AS DOUBLE PRECISION)>0 "
-            f"THEN CAST(t.charged_amount AS DOUBLE PRECISION) ELSE 0 END),0) AS spending "
+            f"SELECT COALESCE(SUM(CASE WHEN CAST(t.charged_amount AS NUMERIC)>0 "
+            f"THEN CAST(t.charged_amount AS NUMERIC) ELSE 0 END),0) AS spending "
             f"FROM transactions t "
             f"WHERE {REPORTING_MONTH_SQL} BETWEEN ? AND ?{card_sql}",
             [start_month, end_month, *card_parameters],

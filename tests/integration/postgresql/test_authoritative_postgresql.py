@@ -22,11 +22,14 @@ from clearspend.database.postgresql_migration_runner import (
     inspect_postgresql_schema,
     migrate_postgresql,
 )
+from clearspend.database.postgresql_migrations import DEFAULT_POSTGRESQL_MIGRATIONS
 from clearspend.database.postgresql_provisioning import (
     API_ROLES,
     provision_postgresql,
 )
 from clearspend.database.settings import PostgreSQLSettings
+from clearspend.observations.payloads import observations_payload
+from clearspend.reporting.dashboard import dashboard_payload
 from clearspend.staging.service import commit_staged_statement_postgresql
 from clearspend.transactions.queries import transactions_payload
 from clearspend.transactions.service import (
@@ -86,7 +89,42 @@ class AuthoritativePostgreSQLIntegrationTests(unittest.TestCase):
             POSTGRES_RUNTIME_PASSWORD,
             salt_factory=lambda size: bytes(range(size)),
         )
+        cls.initial_migration = migrate_postgresql(
+            cls.admin_pool,
+            migrations=DEFAULT_POSTGRESQL_MIGRATIONS[:4],
+        )
+        with cls._admin_connection() as connection:
+            import_id = connection.execute(
+                """INSERT INTO clearspend.imports(
+                original_name,source_path,byte_hash,source_format,status,imported_at
+                ) VALUES(%s,%s,%s,%s,%s,%s) RETURNING id""",
+                (
+                    "legacy-numeric.xlsx", "legacy-numeric.xlsx", "legacy-numeric-hash",
+                    ".xlsx", "imported", "2030-01-15T10:00:00+00:00",
+                ),
+            ).fetchone()["id"]
+            connection.execute(
+                """INSERT INTO clearspend.transactions(
+                transaction_key,base_key,occurrence,provider,card_last4,source_sheet,
+                transaction_date,billing_month,billing_month_source,merchant_raw,
+                merchant_normalized,charged_amount,charged_currency,exchange_rate,
+                first_import_id,created_at
+                ) VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
+                (
+                    "legacy-numeric", "legacy-numeric", 1, "synthetic", "0001",
+                    "synthetic-sheet", "2030-01-10", "2030-01", "statement",
+                    "Synthetic Legacy Numeric", "synthetic legacy numeric", "0.10",
+                    "ILS", "4.123456", import_id, "2030-01-15T10:00:00+00:00",
+                ),
+            )
         cls.migration = migrate_postgresql(cls.admin_pool)
+        with cls._admin_connection() as connection:
+            cls.converted_legacy_values = connection.execute(
+                """SELECT charged_amount::TEXT charged_amount,
+                exchange_rate::TEXT exchange_rate
+                FROM clearspend.transactions WHERE transaction_key=%s""",
+                ("legacy-numeric",),
+            ).fetchone()
         cls.runtime_pool = LocalPostgreSQLPool(
             "clearspend_app",
             POSTGRES_RUNTIME_PASSWORD,
@@ -205,12 +243,36 @@ class AuthoritativePostgreSQLIntegrationTests(unittest.TestCase):
 
     def test_provisioning_and_all_migrations_are_real_and_repeatable(self) -> None:
         self.assertTrue(self.provisioning.role_created)
-        self.assertEqual(self.migration.applied_versions, (1, 2, 3, 4))
+        self.assertEqual(self.initial_migration.applied_versions, (1, 2, 3, 4))
+        self.assertEqual(self.migration.applied_versions, (5,))
+        self.assertEqual(
+            self.converted_legacy_values,
+            {"charged_amount": "0.10", "exchange_rate": "4.123456"},
+        )
         status = inspect_postgresql_schema(self.admin_pool)
-        self.assertEqual((status.state, status.version), ("versioned", 4))
+        self.assertEqual((status.state, status.version), ("versioned", 5))
         second = migrate_postgresql(self.admin_pool)
         self.assertEqual(second.applied_versions, ())
-        self.assertEqual(second.ending_version, 4)
+        self.assertEqual(second.ending_version, 5)
+
+        with self._admin_connection() as connection:
+            numeric_columns = connection.execute(
+                """SELECT table_name,column_name,data_type
+                FROM information_schema.columns
+                WHERE table_schema='clearspend' AND data_type='numeric'"""
+            ).fetchall()
+        self.assertEqual(
+            {(row["table_name"], row["column_name"]) for row in numeric_columns},
+            {
+                ("transactions", "charged_amount"),
+                ("transactions", "original_amount"),
+                ("transactions", "exchange_rate"),
+                ("transaction_spending_adjustments", "reimbursed_amount"),
+                ("income_entries", "amount"),
+                ("events", "budget"),
+                ("import_coverage", "official_total"),
+            },
+        )
 
     def test_runtime_role_reads_writes_and_cannot_create_schema_objects(self) -> None:
         transaction_id = self._seed_transaction()
@@ -245,6 +307,59 @@ class AuthoritativePostgreSQLIntegrationTests(unittest.TestCase):
             with self.assertRaises(InsufficientPrivilege):
                 connection.execute("CREATE TABLE clearspend.forbidden_ci_table(id INTEGER)")
             connection.rollback()
+
+    def test_numeric_values_preserve_dashboard_and_observation_contracts(self) -> None:
+        self._seed_transaction()
+        with database_transaction(self.runtime_pool) as connection:
+            import_id = connection.execute(
+                "SELECT id FROM imports ORDER BY id LIMIT 1"
+            ).fetchone()["id"]
+            for suffix, amount in (("decimal-a", "0.10"), ("decimal-b", "0.20")):
+                connection.execute(
+                    """INSERT INTO transactions(
+                    transaction_key,base_key,occurrence,provider,card_last4,
+                    source_sheet,transaction_date,billing_month,billing_month_source,
+                    merchant_raw,merchant_normalized,charged_amount,charged_currency,
+                    provider_category,first_import_id,created_at
+                    ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                    (
+                        suffix, suffix, 1, "synthetic", "0001", "synthetic-sheet",
+                        "2030-01-11", "2030-01", "statement", "Synthetic Decimal",
+                        "synthetic decimal", amount, "ILS", "Household", import_id,
+                        "2030-01-15T10:00:00+00:00",
+                    ),
+                )
+            income_import_id = connection.execute(
+                """INSERT INTO income_imports(
+                original_name,source_path,byte_hash,source_format,status,
+                parsed_rows,inserted_rows,imported_at
+                ) VALUES(?,?,?,?,?,?,?,?) RETURNING id""",
+                (
+                    "synthetic-income.xlsx", "synthetic-income.xlsx", "income-hash",
+                    ".xlsx", "imported", 1, 1, "2030-01-15T10:00:00+00:00",
+                ),
+            ).fetchone()["id"]
+            connection.execute(
+                """INSERT INTO income_entries(
+                month,source_name,amount,entry_key,first_import_id,created_at
+                ) VALUES(?,?,?,?,?,?)""",
+                (
+                    "2030-01", "Synthetic income", "1000.1234", "income-entry",
+                    income_import_id, "2030-01-15T10:00:00+00:00",
+                ),
+            )
+
+        dashboard = dashboard_payload(self.runtime_pool, "all", "all")
+        observations = observations_payload(
+            self.runtime_pool,
+            period="all",
+            card="all",
+        )
+
+        self.assertEqual(dashboard["metrics"]["spent"], 125.3)
+        self.assertEqual(dashboard["income_summary"]["income"], 1000.12)
+        self.assertEqual(observations["period"], "all")
+        self.assertEqual(observations["selectedCard"], "all")
 
     def test_supabase_api_roles_have_no_private_schema_access(self) -> None:
         with self._admin_connection() as connection:

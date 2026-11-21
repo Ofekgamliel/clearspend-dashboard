@@ -50,9 +50,9 @@ def review_reimbursement(
 def personal_spending_sql(alias: str = "t") -> str:
     """Portable SQL expression equivalent to :func:`personal_spending_amount`."""
     prefix = f"{alias}." if alias else ""
-    charge = f"CAST({prefix}charged_amount AS DOUBLE PRECISION)"
+    charge = f"CAST({prefix}charged_amount AS NUMERIC)"
     reimbursement = (
-        "COALESCE((SELECT CAST(adjustment.reimbursed_amount AS DOUBLE PRECISION) "
+        "COALESCE((SELECT CAST(adjustment.reimbursed_amount AS NUMERIC) "
         "FROM transaction_spending_adjustments adjustment "
         f"WHERE adjustment.transaction_id={prefix}id),0)"
     )

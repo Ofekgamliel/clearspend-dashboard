@@ -11,7 +11,7 @@ const quoted = (value: string) => JSON.stringify(value);
 const serverCommand = [
   `cd ${quoted(repository)}`,
   `PYTHONPATH=src:. ${quoted(python)} tests/synthetic/browser_seed.py ${quoted(database)}`,
-  `PYTHONPATH=src:. ${quoted(python)} -m clearspend.server --port 8785 --database ${quoted(database)} --static-dir ${quoted(path.join(repository, 'dist'))}`,
+  `PYTHONPATH=src:. ${quoted(python)} -m clearspend.server --port 8785 --legacy-sqlite-database ${quoted(database)} --static-dir ${quoted(path.join(repository, 'dist'))}`,
 ].join(' && ');
 
 export default defineConfig({

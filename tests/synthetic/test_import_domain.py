@@ -7,6 +7,7 @@ from clearspend.imports.domain import (
     ParsedStatement,
     Transaction,
     amount,
+    decimal_value,
     assign_occurrences,
     clean_text,
     normalize_merchant,
@@ -44,6 +45,8 @@ class ImportDomainTests(unittest.TestCase):
     def test_amount_date_statement_month_and_installment_parsing(self) -> None:
         self.assertEqual(amount("1,234.5"), "1234.50")
         self.assertIsNone(amount("not-an-amount"))
+        self.assertEqual(decimal_value("4.123456"), "4.123456")
+        self.assertIsNone(decimal_value("not-a-rate"))
         self.assertEqual(parse_date("10-04-2030"), "2030-04-10")
         self.assertEqual(parse_statement_month("April 2030"), "2030-04")
         self.assertEqual(

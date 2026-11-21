@@ -9,7 +9,7 @@ from clearspend.database.migration_runner import migrate_database
 from clearspend.database.postgresql import PostgreSQLPool
 from clearspend.database.postgresql_backup import PostgreSQLBackupConfiguration
 from clearspend.database.postgresql_migration_runner import inspect_postgresql_schema
-from clearspend.database.postgresql_migrations import DEFAULT_POSTGRESQL_MIGRATIONS
+from clearspend.database.postgresql_migrations import CURRENT_POSTGRESQL_SCHEMA_VERSION
 from clearspend.database.runtime_config import load_postgresql_runtime_configuration
 from clearspend.http.handler import ClearSpendHandler
 from clearspend.import_engine import ImportDatabase
@@ -41,7 +41,11 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Run the local ClearSpend dashboard")
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8765)
-    parser.add_argument("--database", type=Path)
+    parser.add_argument(
+        "--legacy-sqlite-database",
+        type=Path,
+        help="explicit archival SQLite database for compatibility or inspection",
+    )
     parser.add_argument("--postgresql-config", type=Path)
     parser.add_argument("--static-dir", type=Path)
     parser.add_argument(
@@ -50,17 +54,30 @@ def main() -> None:
         help="back up and migrate the SQLite database, then exit",
     )
     args = parser.parse_args()
-    if args.database is not None and args.postgresql_config is not None:
-        parser.error("Choose either --database or --postgresql-config")
+    if (
+        args.legacy_sqlite_database is not None
+        and args.postgresql_config is not None
+    ):
+        parser.error(
+            "Choose either --legacy-sqlite-database or --postgresql-config"
+        )
     if args.migrate_database and args.postgresql_config is not None:
         parser.error("PostgreSQL migrations are an explicit administrative operation")
+    if args.migrate_database and args.legacy_sqlite_database is None:
+        parser.error("--migrate-database requires --legacy-sqlite-database")
+    if (
+        args.legacy_sqlite_database is None
+        and args.postgresql_config is None
+    ):
+        parser.error(
+            "Choose --postgresql-config for normal use or "
+            "--legacy-sqlite-database for archival SQLite access"
+        )
 
     project_root = Path(__file__).resolve().parents[2]
     static_dir = (args.static_dir or project_root / "dist").resolve()
     if args.postgresql_config is None:
-        sqlite_path = (
-            args.database or project_root / "data" / "clearspend.db"
-        ).resolve()
+        sqlite_path = args.legacy_sqlite_database.resolve()
         if args.migrate_database:
             result = migrate_database(sqlite_path, sqlite_path.parent / "backups")
             print(f"Database schema version: {result.ending_version}")
@@ -92,7 +109,7 @@ def main() -> None:
             status = inspect_postgresql_schema(pool)
             if (
                 status.state != "versioned"
-                or status.version != len(DEFAULT_POSTGRESQL_MIGRATIONS)
+                or status.version != CURRENT_POSTGRESQL_SCHEMA_VERSION
             ):
                 raise RuntimeError("PostgreSQL schema is not current")
         except BaseException:

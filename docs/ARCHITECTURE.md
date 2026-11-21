@@ -165,14 +165,26 @@ The PostgreSQL runtime reads passwords from macOS Keychain, builds a
 opens a small bounded Psycopg pool. Connection metadata and certificates remain
 in an ignored local configuration file. The server constructs this pool only
 when `--postgresql-config` is passed. The production start command always
-supplies the active ignored configuration. Omitting it still selects legacy
-SQLite mode at the command-line level, but that mode is not authoritative and
-must not be used for normal operation. There is no automatic fallback between
-databases. Production startup verifies schema version 4 before binding, and
+supplies the active ignored configuration. Starting without an explicit backend
+fails. Archival SQLite access requires `--legacy-sqlite-database`; it is never
+selected by omission. There is no automatic fallback between databases.
+Production startup verifies schema version 5 before binding, and
 runtime health, dashboard, transaction, observation, calculation, and import
 workflows have passed through the restricted Session-pooler role. Keychain is
 the current supported secret provider for this local macOS application;
 provider abstraction is a deferred portability improvement.
+
+Observation assembly owns a dedicated read snapshot. It resolves coverage,
+loads transaction, recurring, installment, income, and review evidence in a
+fixed number of bulk reads on one connection, and uses a read-only repeatable
+PostgreSQL transaction. Adding historical months therefore does not add
+month-by-month database round trips, and one response cannot combine evidence
+from different committed database states.
+
+PostgreSQL migration 5 stores financial amounts and exchange rates as exact,
+unscaled `NUMERIC` values. Shared query SQL retains SQLite-compatible casts,
+but PostgreSQL aggregation stays decimal until the HTTP boundary converts
+database decimals to the established JSON-number contract.
 
 The current code uses feature query modules for database reads and feature service
 modules for writes. Do not introduce repository interfaces for every table

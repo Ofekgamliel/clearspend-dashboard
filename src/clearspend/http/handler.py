@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import logging
+from decimal import Decimal
 import mimetypes
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler
@@ -9,6 +11,7 @@ from typing import Protocol, cast
 from urllib.parse import parse_qs, urlparse
 
 from clearspend.database.connection import DatabaseTarget
+from clearspend.database.errors import DatabaseBusyError, DatabaseUnavailableError
 from clearspend.database.postgresql_backup import PostgreSQLBackupConfiguration
 from clearspend.http.api import (
     JSON_GET_PATHS,
@@ -29,6 +32,15 @@ class ClearSpendApplication(Protocol):
     staged_imports: dict[str, dict]
 
 
+logger = logging.getLogger(__name__)
+
+
+def _json_default(value: object) -> object:
+    if isinstance(value, Decimal):
+        return float(value)
+    raise TypeError(f"Object of type {type(value).__name__} is not JSON serializable")
+
+
 class ClearSpendHandler(BaseHTTPRequestHandler):
     server_version = "ClearSpend/0.1"
 
@@ -37,13 +49,26 @@ class ClearSpendHandler(BaseHTTPRequestHandler):
         return cast(ClearSpendApplication, self.server)
 
     def send_json(self, payload: object, status: int = 200) -> None:
-        body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+        body = json.dumps(
+            payload,
+            ensure_ascii=False,
+            default=_json_default,
+        ).encode("utf-8")
         self.send_response(status)
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Content-Length", str(len(body)))
         self.send_header("Cache-Control", "no-store")
         self.end_headers()
         self.wfile.write(body)
+
+    def send_unexpected_error(self, error: Exception) -> None:
+        logger.exception("ClearSpend request failed")
+        if isinstance(error, DatabaseBusyError):
+            self.send_json({"error": "Database is busy; try again shortly"}, 503)
+        elif isinstance(error, DatabaseUnavailableError):
+            self.send_json({"error": "Database is unavailable"}, 503)
+        else:
+            self.send_json({"error": "Unexpected server error"}, 500)
 
     def do_GET(self) -> None:
         parsed = urlparse(self.path)
@@ -58,7 +83,7 @@ class ClearSpendHandler(BaseHTTPRequestHandler):
             except ValueError as error:
                 self.send_json({"error": str(error)}, 400)
             except Exception as error:
-                self.send_json({"error": str(error)}, 500)
+                self.send_unexpected_error(error)
             return
         self.serve_static(parsed.path)
 
@@ -79,7 +104,7 @@ class ClearSpendHandler(BaseHTTPRequestHandler):
             except (TypeError, ValueError, json.JSONDecodeError) as error:
                 self.send_json({"error": str(error)}, 400)
             except Exception as error:
-                self.send_json({"error": str(error)}, 500)
+                self.send_unexpected_error(error)
             return
         if parsed_path in {"/api/import/commit", "/api/import/cancel"}:
             try:
@@ -101,7 +126,7 @@ class ClearSpendHandler(BaseHTTPRequestHandler):
             except (ValueError, json.JSONDecodeError) as error:
                 self.send_json({"error": str(error)}, 400)
             except Exception as error:
-                self.send_json({"error": str(error)}, 500)
+                self.send_unexpected_error(error)
             return
         if parsed_path != "/api/import/analyze":
             self.send_error(HTTPStatus.NOT_FOUND)
@@ -129,7 +154,7 @@ class ClearSpendHandler(BaseHTTPRequestHandler):
             )
             self.send_json(result, status)
         except Exception as error:
-            self.send_json({"error": str(error)}, 400)
+            self.send_unexpected_error(error)
 
     def serve_static(self, requested_path: str) -> None:
         relative = requested_path.lstrip("/") or "index.html"
