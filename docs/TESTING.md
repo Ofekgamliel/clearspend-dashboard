@@ -98,5 +98,11 @@ Before committing, also run `git diff --check`, inspect generated assets for
 private data, stage only named paths, and run `.githooks/pre-commit`. Passing CI
 does not replace review of financial semantics, privacy, or visual behavior.
 
+Real PostgreSQL execution in CI is a known deferred hardening item. Current CI
+must not connect to the private Supabase project. Until a disposable PostgreSQL
+service is added, tracked migration and PostgreSQL orchestration tests remain
+synthetic and production acceptance requires separately reviewed PostgreSQL
+verification.
+
 Do not hard-code test totals in living documentation. The suite grows; command
 success and CI configuration are the maintained evidence.

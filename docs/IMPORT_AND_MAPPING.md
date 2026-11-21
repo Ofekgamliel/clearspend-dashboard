@@ -36,12 +36,13 @@ remain staged so corrected decisions can be retried; cancel discards its
 temporary copy, and a server restart requires staging it again. An incomplete
 failed commit is never treated as a successful import.
 
-The authoritative PostgreSQL commit path serializes approved imports with an
-advisory transaction lock, creates and verifies the encrypted pre-import
-archive using the runtime role, and then performs all reviewed writes in the
-same caller-owned transaction. The off-device destination, retention policy,
-and recoverable archive-key procedure are configured and required for production
-operation.
+The authoritative PostgreSQL commit path acquires the same advisory transaction
+lock used by every dashboard mutation, creates and verifies the authenticated
+encrypted pre-import archive using the runtime role, and then performs all
+reviewed writes in the same caller-owned transaction. This prevents another
+feature write from committing between the recovery point and the import commit.
+The off-device destination, retention policy, and recoverable archive-key
+procedure are required for production operation.
 
 The staged UI is organized as Files, Checks, Merchants, Reconcile, and Approve.
 The final preview lists every row that will be inserted. Rows marked pending are

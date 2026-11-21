@@ -122,47 +122,35 @@ coverage, and observation assembly. PostgreSQL is authoritative; the SQLite
 adapter remains for compatibility tests and archival inspection, not as a
 production fallback.
 
-Staged reference, duplicate, merchant, and coverage analysis now accepts the
-shared database target. PostgreSQL migration 4 adds the private
-`import_transactions` linkage required by reviewed duplicate and batch-decision
-workflows. The import repository now also accepts a caller-owned transaction
-connection and uses portable identity-return and conflict SQL. A disposable
-PostgreSQL rehearsal through `clearspend_app` verified statement and income
-inserts, duplicate handling, linkage, metadata minimization, and connection
-ownership. The complete reviewed-write sequence is now portable and composed
-with a PostgreSQL advisory transaction lock plus the encrypted backup creator.
-A real TLS rehearsal through a bounded `clearspend_app` pool proved that the
-archive captured the pre-import state and the reviewed write committed only
-afterward. The server exposes this route only when it is explicitly started
-with a valid PostgreSQL runtime configuration; startup verifies the current
-schema before binding. The production cutover and its off-device backup,
-retention, and recoverable-key gates are complete.
+Staged reference, duplicate, merchant, and coverage analysis accepts the shared
+database target. PostgreSQL migration 4 owns the private `import_transactions`
+linkage required by reviewed duplicate and batch-decision workflows. The import
+repository accepts a caller-owned transaction and uses portable identity-return
+and conflict SQL. The server exposes PostgreSQL imports only when started with a
+valid runtime configuration, and startup verifies the current schema before
+binding.
 
-`database.postgresql_backup` owns creation of encrypted PostgreSQL logical
-archives. It streams `pg_dump` directly through AES-256-CBC encryption, loads
-the database and independent encryption credentials from Keychain, keeps both
-secrets out of process arguments, and accepts an archive only after decrypting
-it into `pg_restore --list` and finding every current ClearSpend table. The same
-module owns fail-closed restore orchestration: it refuses a target where the
-private schema already exists, decrypts directly into `pg_restore` with one
-transaction, and verifies all tables and migration rows afterward. A real
-application-owned rehearsal encrypted and restored the complete linked
-15-table synthetic fixture with exact hashes, migrations, sequences,
-minimization, and permissions intact; it also refused a second restore into the
-occupied target. The backup creator is called by the PostgreSQL approved-import
-boundary before the authoritative import transaction begins.
+All PostgreSQL feature-service transactions acquire one transaction-scoped
+advisory write lock. The reviewed-import boundary acquires the same lock before
+creating its pre-import backup and holds it through commit or rollback. This
+prevents merchant, event, recurring, observation-review, and transaction-
+correction writes from committing between the backup recovery point and the
+import commit.
 
-`database.postgresql_copy` owns the one-way authority-copy boundary. It opens
-the SQLite source in query-only URI mode, validates the current schema,
-integrity, and foreign keys, requires an empty migration-4 PostgreSQL target,
-and copies the 15 data tables in explicit dependency order inside one
-PostgreSQL transaction. It preserves identities, advances sequences, converts
-the two SQLite integer-boolean fields, and compares ordered row counts and
-SHA-256 content hashes before commit. Questionable metadata is controlled by a
-required `MigrationDataPolicy`; the approved constant keeps filenames, replaces
-full paths with those filenames, and drops stored errors and raw payloads.
-The copier is an offline migration component and is not reachable from server
-startup or HTTP routes.
+`database.postgresql_backup` owns encrypted PostgreSQL logical archives. It
+streams `pg_dump` through AES-256-CBC with PBKDF2, keeps database and archive
+credentials out of process arguments, and publishes only after structural
+verification. Each archive has a required PBKDF2-derived HMAC-SHA-256 integrity
+file. Restore verifies that keyed integrity metadata before decryption, refuses
+an occupied target, restores through one transaction, and verifies the table
+and migration inventory afterward. The backup creator runs inside the locked
+approved-import boundary before authoritative import writes begin.
+
+One-time SQLite-to-PostgreSQL copy, parity, benchmark, and hosted rehearsal
+utilities are not maintained production modules. Recovery and replacement
+environments use provisioning, migrations, and authenticated PostgreSQL
+backups. See
+[`POSTGRESQL_ARCHITECTURE_DECISION.md`](POSTGRESQL_ARCHITECTURE_DECISION.md).
 
 `imports.metadata_policy` applies the same decision to future persistence.
 SQLite selects its legacy policy and retains current local behavior.
@@ -172,8 +160,8 @@ are not stored, and raw payloads are discarded after normalized fields are
 prepared. The staged service passes the user-visible filename into this
 boundary so a randomized temporary upload name cannot become hosted metadata.
 
-The PostgreSQL runtime reads only a password from macOS
-Keychain, builds a `verify-full` TLS connection using an explicit CA file, and
+The PostgreSQL runtime reads passwords from macOS Keychain, builds a
+`verify-full` TLS connection using an explicit CA file, and
 opens a small bounded Psycopg pool. Connection metadata and certificates remain
 in an ignored local configuration file. The server constructs this pool only
 when `--postgresql-config` is passed. The production start command always
@@ -182,7 +170,9 @@ SQLite mode at the command-line level, but that mode is not authoritative and
 must not be used for normal operation. There is no automatic fallback between
 databases. Production startup verifies schema version 4 before binding, and
 runtime health, dashboard, transaction, observation, calculation, and import
-workflows have passed through the restricted Session-pooler role.
+workflows have passed through the restricted Session-pooler role. Keychain is
+the current supported secret provider for this local macOS application;
+provider abstraction is a deferred portability improvement.
 
 The current code uses feature query modules for database reads and feature service
 modules for writes. Do not introduce repository interfaces for every table

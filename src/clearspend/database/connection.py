@@ -14,6 +14,15 @@ from clearspend.database.sqlite import connect_sqlite
 
 
 DatabaseTarget = Union[DatabaseSource, PostgreSQLPool]
+POSTGRESQL_WRITE_LOCK_ID = 1_127_033_681
+
+
+def acquire_authoritative_write_lock(connection: Any) -> None:
+    """Serialize authoritative PostgreSQL writes with backup/import boundaries."""
+    connection.execute(
+        "SELECT pg_advisory_xact_lock(?)",
+        (POSTGRESQL_WRITE_LOCK_ID,),
+    )
 
 
 def connect_database(
@@ -62,6 +71,7 @@ def database_transaction(source: DatabaseTarget) -> Iterator[Any]:
     if isinstance(source, PostgreSQLPool):
         with source.connection() as connection:
             try:
+                acquire_authoritative_write_lock(connection)
                 yield connection
                 connection.commit()
             except BaseException:

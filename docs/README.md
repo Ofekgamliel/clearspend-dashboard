@@ -14,11 +14,9 @@ subject. Archived plans never override current code or maintained guidance.
   and change-specific acceptance checks.
 - [`DATABASE_MIGRATIONS.md`](DATABASE_MIGRATIONS.md) — schema inspection,
   versioning, explicit migrations, backups, and future migration requirements.
-- [`POSTGRES_MIGRATION_PLAN.md`](POSTGRES_MIGRATION_PLAN.md) — maintained record
-  of the completed Supabase PostgreSQL port, dual-engine parity work, and
-  maintenance-window authority cutover.
-- [`POSTGRES_CUTOVER_RUNBOOK.md`](POSTGRES_CUTOVER_RUNBOOK.md) — controlled
-  maintenance, verification, authority decision, and recovery procedure.
+- [`POSTGRESQL_ARCHITECTURE_DECISION.md`](POSTGRESQL_ARCHITECTURE_DECISION.md) —
+  maintained decision record for managed PostgreSQL, the private-schema
+  boundary, authority, backup, and deferred hardening choices.
 - [`PYTHON_39_COMPATIBILITY.md`](PYTHON_39_COMPATIBILITY.md) — concrete Python
   3.9 workarounds and the adjustments to revisit after a runtime upgrade.
 
@@ -71,6 +69,7 @@ Update only the document that owns the changed behavior:
 | Financial calculation or reporting scope | `REPORTING_RULES.md` |
 | Observation eligibility, evidence, grouping, review | `FINANCIAL_OBSERVATIONS.md` |
 | Schema or migration behavior | `DATABASE_MIGRATIONS.md` |
+| PostgreSQL authority or security boundary | `POSTGRESQL_ARCHITECTURE_DECISION.md` |
 | Python 3.9 compatibility workaround | `PYTHON_39_COMPATIBILITY.md` |
 | Interaction or accessibility contract | `UI_GUIDELINES.md` |
 | Startup, backup, restore, or rollback | `OPERATIONS_AND_RECOVERY.md` |

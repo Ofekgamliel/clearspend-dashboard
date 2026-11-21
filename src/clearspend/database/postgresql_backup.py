@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+import base64
+import hashlib
+import hmac
+import json
 import os
 import re
 import subprocess
@@ -39,6 +43,9 @@ PipelineRunner = Callable[
     bytes,
 ]
 CommandRunner = Callable[[Sequence[str], Mapping[str, str]], bytes]
+INTEGRITY_FORMAT = "clearspend-postgresql-backup-hmac-v1"
+INTEGRITY_KDF_ITERATIONS = 200_000
+INTEGRITY_SUFFIX = ".integrity"
 
 
 class PostgreSQLBackupError(RuntimeError):
@@ -187,6 +194,76 @@ def _encryption_environment(passphrase: str) -> dict[str, str]:
     return environment
 
 
+def _integrity_path(archive: Path) -> Path:
+    return archive.with_name(archive.name + INTEGRITY_SUFFIX)
+
+
+def _integrity_key(passphrase: str, salt: bytes) -> bytes:
+    return hashlib.pbkdf2_hmac(
+        "sha256",
+        passphrase.encode("utf-8"),
+        salt,
+        INTEGRITY_KDF_ITERATIONS,
+        dklen=32,
+    )
+
+
+def _archive_digest(archive: Path, key: bytes) -> str:
+    digest = hmac.new(key, b"clearspend-postgresql-backup\0", hashlib.sha256)
+    with archive.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _write_integrity_manifest(
+    archive: Path,
+    manifest: Path,
+    passphrase: str,
+) -> None:
+    salt = os.urandom(32)
+    payload = {
+        "format": INTEGRITY_FORMAT,
+        "kdf": "pbkdf2-hmac-sha256",
+        "iterations": INTEGRITY_KDF_ITERATIONS,
+        "salt": base64.b64encode(salt).decode("ascii"),
+        "hmac_sha256": _archive_digest(archive, _integrity_key(passphrase, salt)),
+    }
+    manifest.write_text(
+        json.dumps(payload, sort_keys=True, separators=(",", ":")) + "\n",
+        encoding="utf-8",
+    )
+    manifest.chmod(0o600)
+
+
+def _verify_integrity_manifest(archive: Path, passphrase: str) -> None:
+    manifest = _integrity_path(archive)
+    try:
+        payload = json.loads(manifest.read_text(encoding="utf-8"))
+        if not isinstance(payload, dict):
+            raise ValueError
+        if payload.get("format") != INTEGRITY_FORMAT:
+            raise ValueError
+        if payload.get("kdf") != "pbkdf2-hmac-sha256":
+            raise ValueError
+        if payload.get("iterations") != INTEGRITY_KDF_ITERATIONS:
+            raise ValueError
+        salt_text = payload.get("salt")
+        expected = payload.get("hmac_sha256")
+        if not isinstance(salt_text, str) or not isinstance(expected, str):
+            raise ValueError
+        salt = base64.b64decode(salt_text, validate=True)
+        if len(salt) != 32 or not re.fullmatch(r"[0-9a-f]{64}", expected):
+            raise ValueError
+        actual = _archive_digest(archive, _integrity_key(passphrase, salt))
+    except (OSError, UnicodeError, ValueError, json.JSONDecodeError) as error:
+        raise PostgreSQLBackupError(
+            "PostgreSQL backup integrity verification failed"
+        ) from error
+    if not hmac.compare_digest(actual, expected):
+        raise PostgreSQLBackupError("PostgreSQL backup integrity verification failed")
+
+
 def _pg_dump_command(executable: Path, settings: PostgreSQLSettings) -> Tuple[str, ...]:
     return (
         str(executable),
@@ -310,7 +387,12 @@ def create_verified_postgresql_backup(
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S-%fZ")
     destination = backup_directory / f"clearspend-{label}-{timestamp}.dump.enc"
     partial = destination.with_name(destination.name + ".partial")
-    if destination.exists() or partial.exists():
+    integrity = _integrity_path(destination)
+    integrity_partial = integrity.with_name(integrity.name + ".partial")
+    if any(
+        path.exists()
+        for path in (destination, partial, integrity, integrity_partial)
+    ):
         raise PostgreSQLBackupError("PostgreSQL backup destination already exists")
 
     database_environment = _database_environment(settings, database_password)
@@ -341,11 +423,15 @@ def create_verified_postgresql_backup(
             raise PostgreSQLBackupError(
                 "PostgreSQL backup is missing required ClearSpend tables"
             )
+        _write_integrity_manifest(partial, integrity_partial, encryption_passphrase)
         partial.replace(destination)
+        integrity_partial.replace(integrity)
         return destination
     except BaseException:
         partial.unlink(missing_ok=True)
         destination.unlink(missing_ok=True)
+        integrity_partial.unlink(missing_ok=True)
+        integrity.unlink(missing_ok=True)
         raise
 
 
@@ -376,6 +462,7 @@ def restore_verified_postgresql_backup(
         raise PostgreSQLBackupError(
             "PostgreSQL and backup-encryption credentials must be different"
         )
+    _verify_integrity_manifest(archive, encryption_passphrase)
     database_environment = _database_environment(target, database_password)
     encryption_environment = _encryption_environment(encryption_passphrase)
 

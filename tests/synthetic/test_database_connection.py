@@ -152,6 +152,11 @@ class DatabaseConnectionTests(unittest.TestCase):
                 raise RuntimeError("synthetic failure")
 
         self.assertEqual(pool.connection.call_count, 3)
+        self.assertEqual(connection.execute.call_count, 2)
+        connection.execute.assert_called_with(
+            "SELECT pg_advisory_xact_lock(?)",
+            (1_127_033_681,),
+        )
         connection.commit.assert_called_once_with()
         connection.rollback.assert_called_once_with()
 

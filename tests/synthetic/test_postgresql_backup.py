@@ -8,6 +8,7 @@ from typing import Mapping, Sequence
 from clearspend.database.postgresql_backup import (
     EXPECTED_CLEARSPEND_TABLES,
     PostgreSQLBackupError,
+    _write_integrity_manifest,
     create_verified_postgresql_backup,
     restore_verified_postgresql_backup,
 )
@@ -85,6 +86,9 @@ class PostgreSQLBackupTests(unittest.TestCase):
             self.assertTrue(destination.is_file())
             self.assertTrue(destination.name.endswith(".dump.enc"))
             self.assertEqual(destination.stat().st_mode & 0o777, 0o600)
+            integrity = destination.with_name(destination.name + ".integrity")
+            self.assertTrue(integrity.is_file())
+            self.assertEqual(integrity.stat().st_mode & 0o777, 0o600)
             self.assertEqual(len(pipeline.calls), 2)
             all_arguments = " ".join(
                 argument
@@ -211,6 +215,11 @@ class PostgreSQLBackupTests(unittest.TestCase):
             certificate.touch()
             archive = root / "synthetic.dump.enc"
             archive.write_bytes(b"synthetic-encrypted-archive")
+            _write_integrity_manifest(
+                archive,
+                archive.with_name(archive.name + ".integrity"),
+                "encryption-secret",
+            )
             commands: list[Sequence[str]] = []
             answers = iter((b"empty\n", b"16:4\n"))
 
@@ -248,6 +257,11 @@ class PostgreSQLBackupTests(unittest.TestCase):
             certificate.touch()
             archive = root / "synthetic.dump.enc"
             archive.write_bytes(b"synthetic-encrypted-archive")
+            _write_integrity_manifest(
+                archive,
+                archive.with_name(archive.name + ".integrity"),
+                "encryption-secret",
+            )
             pipeline = SyntheticPipeline()
 
             with self.assertRaisesRegex(PostgreSQLBackupError, "not empty"):
@@ -266,6 +280,62 @@ class PostgreSQLBackupTests(unittest.TestCase):
                 )
 
             self.assertEqual(pipeline.calls, [])
+
+    def test_restore_rejects_tampered_archive_before_target_access(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            certificate = root / "ca.crt"
+            certificate.touch()
+            archive = root / "synthetic.dump.enc"
+            archive.write_bytes(b"synthetic-encrypted-archive")
+            _write_integrity_manifest(
+                archive,
+                archive.with_name(archive.name + ".integrity"),
+                "encryption-secret",
+            )
+            archive.write_bytes(b"tampered-encrypted-archive")
+
+            with self.assertRaisesRegex(PostgreSQLBackupError, "integrity"):
+                restore_verified_postgresql_backup(
+                    archive,
+                    self.settings(certificate),
+                    encryption_keychain_service="clearspend-synthetic-backup",
+                    encryption_keychain_account="archive",
+                    password_loader=lambda service, account: (
+                        "database-secret"
+                        if account == "postgres"
+                        else "encryption-secret"
+                    ),
+                    pipeline_runner=SyntheticPipeline(),
+                    command_runner=lambda command, environment: self.fail(
+                        "target must not be accessed before integrity verification"
+                    ),
+                )
+
+    def test_restore_rejects_archive_without_integrity_manifest(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            certificate = root / "ca.crt"
+            certificate.touch()
+            archive = root / "legacy.dump.enc"
+            archive.write_bytes(b"legacy-encrypted-archive")
+
+            with self.assertRaisesRegex(PostgreSQLBackupError, "integrity"):
+                restore_verified_postgresql_backup(
+                    archive,
+                    self.settings(certificate),
+                    encryption_keychain_service="clearspend-synthetic-backup",
+                    encryption_keychain_account="archive",
+                    password_loader=lambda service, account: (
+                        "database-secret"
+                        if account == "postgres"
+                        else "encryption-secret"
+                    ),
+                    pipeline_runner=SyntheticPipeline(),
+                    command_runner=lambda command, environment: self.fail(
+                        "legacy archive must fail before target access"
+                    ),
+                )
 
 
 if __name__ == "__main__":

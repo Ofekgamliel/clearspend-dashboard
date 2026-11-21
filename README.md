@@ -2,9 +2,9 @@
 
 ClearSpend is a local-first personal finance dashboard for turning credit-card
 statements and income records into a private, searchable view of household
-spending. Its Vue 3 + TypeScript + Vite frontend, Python application server, and
-SQLite database all run on the same computer; personal financial data is not
-stored in this repository.
+spending. Its Vue 3 + TypeScript + Vite frontend and Python application server
+run on the same computer; authoritative financial state is stored in a private
+Supabase PostgreSQL database and is never stored in this repository.
 
 > ClearSpend is currently a single-user personal project. Its parsers and
 > reporting rules are tailored to the statement formats documented below.

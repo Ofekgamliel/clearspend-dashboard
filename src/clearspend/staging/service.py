@@ -5,7 +5,10 @@ from pathlib import Path
 from typing import Callable
 
 from clearspend.database.backup import create_verified_backup
-from clearspend.database.connection import connect_database
+from clearspend.database.connection import (
+    acquire_authoritative_write_lock,
+    connect_database,
+)
 from clearspend.database.postgresql import PostgreSQLPool
 from clearspend.database.postgresql_backup import (
     PostgreSQLBackupConfiguration,
@@ -21,9 +24,6 @@ from clearspend.staging.decisions import (
     merchants_requiring_review,
     reviewed_duplicate_matches,
 )
-
-
-POSTGRESQL_IMPORT_LOCK_ID = 1_127_033_681
 
 
 def _review_context(
@@ -179,10 +179,7 @@ def commit_staged_statement_postgresql(
     create_backup = backup_creator or create_verified_postgresql_backup
     with pool.connection() as connection:
         try:
-            connection.execute(
-                "SELECT pg_advisory_xact_lock(?)",
-                (POSTGRESQL_IMPORT_LOCK_ID,),
-            )
+            acquire_authoritative_write_lock(connection)
             backup_path = create_backup(
                 pool.settings,
                 backup.directory,
