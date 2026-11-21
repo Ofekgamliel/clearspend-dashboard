@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from collections import defaultdict
+
 from clearspend.database.connection import DatabaseTarget, database_connection
 
 
@@ -26,14 +28,25 @@ def mapping_payload(database: DatabaseTarget) -> dict:
             parsed_rows,inserted_rows,duplicate_rows,imported_at
             FROM imports ORDER BY id DESC LIMIT 8"""
         )]
+        coverage_by_import: dict[int, list[dict]] = defaultdict(list)
+        if imports:
+            import_ids = [int(imported["id"]) for imported in imports]
+            placeholders = ",".join("?" for _import_id in import_ids)
+            coverage_rows = connection.execute(
+                f"""SELECT import_id,card_last4,statement_month,statement_period,
+                statement_as_of_date,purchase_date_from,purchase_date_to,
+                billing_date_from,billing_date_to,finalized_rows,pending_rows,
+                outside_cycle_rows,official_total
+                FROM import_coverage WHERE import_id IN ({placeholders})
+                ORDER BY import_id,card_last4""",
+                import_ids,
+            ).fetchall()
+            for row in coverage_rows:
+                coverage = dict(row)
+                import_id = int(coverage.pop("import_id"))
+                coverage_by_import[import_id].append(coverage)
         for imported in imports:
-            imported["coverage"] = [dict(row) for row in connection.execute(
-                """SELECT card_last4,statement_month,statement_period,statement_as_of_date,
-                purchase_date_from,purchase_date_to,billing_date_from,billing_date_to,
-                finalized_rows,pending_rows,outside_cycle_rows,official_total
-                FROM import_coverage WHERE import_id=? ORDER BY card_last4""",
-                (imported["id"],),
-            )]
+            imported["coverage"] = coverage_by_import[int(imported["id"])]
         mappings = [dict(row) for row in connection.execute(
             """SELECT merchant_normalized,category,subcategory,updated_at
             FROM merchant_mappings ORDER BY updated_at DESC"""

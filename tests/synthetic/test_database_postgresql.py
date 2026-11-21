@@ -4,10 +4,11 @@ import subprocess
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import Mock, patch
+from unittest.mock import MagicMock, Mock, patch
 
 from psycopg.conninfo import conninfo_to_dict
-from psycopg import sql
+from psycopg import OperationalError, sql
+from psycopg.errors import QueryCanceled
 from psycopg_pool import PoolTimeout
 
 from clearspend.database.errors import DatabaseBusyError, DatabaseUnavailableError
@@ -191,6 +192,20 @@ class PostgreSQLInfrastructureTests(unittest.TestCase):
                 pool.close()
 
         pool_instance.connection.assert_called_once_with(timeout=15.0)
+
+    def test_connection_maps_runtime_disconnect_but_preserves_query_failure(self) -> None:
+        pool = PostgreSQLPool(self.settings(Path("synthetic-ca.crt")))
+        pool._pool = MagicMock()
+        connection_context = pool._pool.connection.return_value
+        connection_context.__enter__.return_value = Mock()
+
+        with self.assertRaisesRegex(DatabaseUnavailableError, "unavailable"):
+            with pool.connection():
+                raise OperationalError("synthetic socket disconnect")
+
+        with self.assertRaises(QueryCanceled):
+            with pool.connection():
+                raise QueryCanceled("synthetic statement timeout")
 
 
 if __name__ == "__main__":

@@ -4,6 +4,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Callable, Iterator, Optional, Sequence
 
+from psycopg import InterfaceError, OperationalError
 from psycopg.conninfo import make_conninfo
 from psycopg.rows import dict_row
 from psycopg_pool import ConnectionPool, PoolTimeout
@@ -14,6 +15,15 @@ from clearspend.database.settings import PostgreSQLSettings
 
 
 PasswordLoader = Callable[[str, str], str]
+_UNAVAILABLE_SQLSTATES = frozenset({"57P01", "57P02", "57P03"})
+
+
+def _is_postgresql_unavailable(error: Exception) -> bool:
+    """Recognize connection failures without hiding ordinary SQL failures."""
+    sqlstate = getattr(error, "sqlstate", None)
+    if isinstance(sqlstate, str):
+        return sqlstate.startswith("08") or sqlstate in _UNAVAILABLE_SQLSTATES
+    return isinstance(error, (InterfaceError, OperationalError))
 
 
 def _postgresql_query(sql: str) -> str:
@@ -127,6 +137,10 @@ class PostgreSQLPool:
                 yield PostgreSQLConnection(connection)
         except PoolTimeout as error:
             raise DatabaseBusyError("PostgreSQL connection pool is busy") from error
+        except Exception as error:
+            if _is_postgresql_unavailable(error):
+                raise DatabaseUnavailableError("PostgreSQL is unavailable") from error
+            raise
 
     def close(self) -> None:
         pool, self._pool = self._pool, None

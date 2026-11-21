@@ -76,35 +76,12 @@ class DatabaseConnectionTests(unittest.TestCase):
         self.assertEqual(settings, DatabaseSettings.sqlite(Path("synthetic.db")))
 
     def test_unavailable_postgresql_selection_never_falls_back_to_sqlite(self) -> None:
-        settings = PostgreSQLSettings(
-            host="db.synthetic.invalid",
-            port=5432,
-            database="postgres",
-            user="clearspend_app",
-            ssl_root_certificate=Path("synthetic-ca.crt"),
-            keychain_service="clearspend-synthetic",
-            keychain_account="clearspend_app",
-        )
-        with self.assertRaisesRegex(RuntimeError, "explicitly opened PostgreSQLPool"):
-            connect_database(DatabaseSettings.postgresql(settings))
+        with self.assertRaisesRegex(ValueError, "explicitly opened PostgreSQLPool"):
+            DatabaseSettings(DatabaseBackend.POSTGRESQL)
 
-    def test_backend_settings_reject_mixed_or_incomplete_configuration(self) -> None:
+    def test_sqlite_settings_require_a_path(self) -> None:
         with self.assertRaisesRegex(ValueError, "SQLite database path is required"):
             DatabaseSettings(DatabaseBackend.SQLITE)
-        with self.assertRaisesRegex(ValueError, "cannot contain a SQLite path"):
-            DatabaseSettings(
-                DatabaseBackend.POSTGRESQL,
-                Path("synthetic.db"),
-                PostgreSQLSettings(
-                    host="db.synthetic.invalid",
-                    port=5432,
-                    database="postgres",
-                    user="clearspend_app",
-                    ssl_root_certificate=Path("synthetic-ca.crt"),
-                    keychain_service="clearspend-synthetic",
-                    keychain_account="clearspend_app",
-                ),
-            )
 
     def test_database_transaction_commits_success_and_rolls_back_failure(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

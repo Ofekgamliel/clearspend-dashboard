@@ -19,6 +19,29 @@ from clearspend.imports.repository import ImportDatabase
 
 
 class ImportRepositoryTests(unittest.TestCase):
+    @staticmethod
+    def _transaction(
+        merchant: str,
+        *,
+        voucher_number: str | None = None,
+    ) -> Transaction:
+        transaction = Transaction(
+            provider="synthetic",
+            card_last4="0001",
+            source_sheet="synthetic-sheet",
+            transaction_date="2030-01-01",
+            billing_date="2030-02-01",
+            merchant_raw=merchant,
+            merchant_normalized=merchant.casefold(),
+            charged_amount="10.00",
+            charged_currency="ILS",
+            original_amount="10.00",
+            original_currency="ILS",
+            voucher_number=voucher_number,
+        )
+        transaction.establish_identity()
+        return transaction
+
     def test_compatibility_facade_exports_repository(self) -> None:
         self.assertIs(CompatibilityImportDatabase, ImportDatabase)
 
@@ -266,6 +289,94 @@ class ImportRepositoryTests(unittest.TestCase):
                 )
             finally:
                 database.close()
+
+    def test_statement_import_batches_remote_database_work(self) -> None:
+        class CountingConnection:
+            def __init__(self, connection):
+                self.connection = connection
+                self.execute_count = 0
+
+            def execute(self, *args, **kwargs):
+                self.execute_count += 1
+                return self.connection.execute(*args, **kwargs)
+
+            def __getattr__(self, name):
+                return getattr(self.connection, name)
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "synthetic.xlsx"
+            source.write_bytes(b"synthetic statement batch")
+            owner = ImportDatabase(root / "synthetic.db")
+            counted = CountingConnection(owner.connection)
+            database = ImportDatabase.from_connection(counted, DatabaseBackend.SQLITE)
+            transactions = [self._transaction(f"Synthetic Merchant {index}") for index in range(60)]
+            statement = ParsedStatement("synthetic", "0001", None, None, transactions)
+            try:
+                with patch(
+                    "clearspend.imports.repository.parse_statement",
+                    return_value=statement,
+                ):
+                    result = database.import_statement(source)
+            finally:
+                owner.close()
+
+        self.assertEqual(result["inserted"], 60)
+        self.assertEqual(result["duplicates"], 0)
+        self.assertLessEqual(counted.execute_count, 10)
+
+    def test_statement_import_preserves_voucher_and_reviewed_duplicate_rules(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            database = ImportDatabase(root / "synthetic.db")
+            first_source = root / "first.xlsx"
+            second_source = root / "second.xlsx"
+            reviewed_source = root / "reviewed.xlsx"
+            first_source.write_bytes(b"first statement")
+            second_source.write_bytes(b"second statement")
+            reviewed_source.write_bytes(b"reviewed statement")
+            first = self._transaction("Synthetic Merchant", voucher_number="voucher-one")
+            second = self._transaction("Synthetic Merchant", voucher_number="voucher-two")
+            reviewed = self._transaction("Reviewed Merchant")
+            try:
+                with patch(
+                    "clearspend.imports.repository.parse_statement",
+                    return_value=ParsedStatement("synthetic", "0001", None, None, [first]),
+                ):
+                    first_result = database.import_statement(first_source)
+                first_id = int(database.connection.execute(
+                    "SELECT id FROM transactions WHERE first_import_id=?",
+                    (first_result["import_id"],),
+                ).fetchone()["id"])
+                with patch(
+                    "clearspend.imports.repository.parse_statement",
+                    return_value=ParsedStatement("synthetic", "0001", None, None, [second]),
+                ):
+                    second_result = database.import_statement(second_source)
+                with patch(
+                    "clearspend.imports.repository.parse_statement",
+                    return_value=ParsedStatement("synthetic", "0001", None, None, [reviewed]),
+                ):
+                    reviewed_result = database.import_statement(
+                        reviewed_source,
+                        probable_duplicate_matches={reviewed.transaction_key: first_id},
+                    )
+                occurrences = [
+                    tuple(row) for row in database.connection.execute(
+                        """SELECT occurrence,voucher_number FROM transactions
+                        WHERE base_key=? ORDER BY occurrence""",
+                        (first.base_key,),
+                    )
+                ]
+            finally:
+                database.close()
+
+        self.assertEqual(second_result["inserted"], 1)
+        self.assertEqual(second_result["duplicates"], 0)
+        self.assertEqual(occurrences, [(1, "voucher-one"), (2, "voucher-two")])
+        self.assertEqual(reviewed_result["inserted"], 0)
+        self.assertEqual(reviewed_result["duplicates"], 1)
+        self.assertEqual(reviewed_result["reviewed_duplicates"], 1)
 
     @patch("clearspend.import_engine.ImportDatabase")
     def test_import_paths_always_closes_repository(self, database_type) -> None:

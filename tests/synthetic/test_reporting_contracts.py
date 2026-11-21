@@ -3,7 +3,9 @@ from __future__ import annotations
 import sqlite3
 import tempfile
 import unittest
+from contextlib import contextmanager
 from pathlib import Path
+from unittest.mock import patch
 
 from clearspend.events.service import create_event
 from clearspend.reporting.category_queries import categories_payload
@@ -211,6 +213,43 @@ class SyntheticReportingContractTests(unittest.TestCase):
         )
         self.assertEqual(payload["period"]["key"], "month")
         self.assertEqual(payload["metrics"]["spent"], 75)
+
+    def test_dashboard_uses_a_bounded_number_of_snapshot_queries(self) -> None:
+        class CountingConnection:
+            def __init__(self, connection):
+                self.connection = connection
+                self.execute_count = 0
+
+            def execute(self, *args, **kwargs):
+                self.execute_count += 1
+                return self.connection.execute(*args, **kwargs)
+
+        @contextmanager
+        def bound_connection(connection):
+            yield connection
+
+        connection = connect(self.database_path)
+        import_id = add_import(connection)
+        add_transaction(
+            connection,
+            import_id,
+            key="query-count-purchase",
+            merchant="Synthetic Store",
+            amount=75,
+            category="Household",
+        )
+        connection.commit()
+        counted = CountingConnection(connection)
+        try:
+            with patch(
+                "clearspend.reporting.dashboard.database_connection",
+                return_value=bound_connection(counted),
+            ):
+                dashboard_payload(self.database_path, "month", "all", "2030-01")
+        finally:
+            connection.close()
+
+        self.assertEqual(counted.execute_count, 13)
 
     def test_daily_average_uses_the_displayed_spending_total(self) -> None:
         connection = connect(self.database_path)

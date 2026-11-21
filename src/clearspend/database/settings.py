@@ -41,31 +41,20 @@ class PostgreSQLSettings:
 
 @dataclass(frozen=True)
 class DatabaseSettings:
-    """Backend selection without credentials or connection ownership."""
+    """Explicit settings for the supported archival SQLite connection path."""
 
     backend: DatabaseBackend
     sqlite_path: Path | None = None
-    postgresql_settings: PostgreSQLSettings | None = None
 
     def __post_init__(self) -> None:
-        if self.backend is DatabaseBackend.SQLITE and self.sqlite_path is None:
+        if self.backend is not DatabaseBackend.SQLITE:
+            raise ValueError("PostgreSQL requires an explicitly opened PostgreSQLPool")
+        if self.sqlite_path is None:
             raise ValueError("SQLite database path is required")
-        if self.backend is DatabaseBackend.SQLITE and self.postgresql_settings is not None:
-            raise ValueError("SQLite settings cannot contain PostgreSQL configuration")
-        if self.backend is DatabaseBackend.POSTGRESQL:
-            if self.sqlite_path is not None:
-                raise ValueError("PostgreSQL settings cannot contain a SQLite path")
-            if self.postgresql_settings is None:
-                raise ValueError("PostgreSQL connection settings are required")
 
     @classmethod
     def sqlite(cls, path: Path | str) -> DatabaseSettings:
         return cls(DatabaseBackend.SQLITE, Path(path))
-
-    @classmethod
-    def postgresql(cls, settings: PostgreSQLSettings) -> DatabaseSettings:
-        return cls(DatabaseBackend.POSTGRESQL, postgresql_settings=settings)
-
 
 DatabaseSource = Union[DatabaseSettings, Path, str]
 
