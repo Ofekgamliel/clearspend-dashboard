@@ -28,6 +28,7 @@ from clearspend.database.postgresql_provisioning import (
     provision_postgresql,
 )
 from clearspend.database.settings import PostgreSQLSettings
+from clearspend.events.queries import events_payload
 from clearspend.observations.payloads import observations_payload
 from clearspend.reporting.dashboard import dashboard_payload
 from clearspend.staging.service import commit_staged_statement_postgresql
@@ -364,6 +365,60 @@ class AuthoritativePostgreSQLIntegrationTests(unittest.TestCase):
         self.assertEqual(monthly_dashboard["purchase_activity_summary"]["total"], 125.3)
         self.assertEqual(observations["period"], "all")
         self.assertEqual(observations["selectedCard"], "all")
+
+    def test_events_bulk_load_memberships_through_runtime_role(self) -> None:
+        first_transaction_id = self._seed_transaction()
+        with database_transaction(self.runtime_pool) as connection:
+            import_id = connection.execute(
+                "SELECT id FROM imports ORDER BY id LIMIT 1"
+            ).fetchone()["id"]
+            second_transaction_id = connection.execute(
+                """INSERT INTO transactions(
+                transaction_key,base_key,occurrence,provider,card_last4,
+                source_sheet,transaction_date,billing_month,billing_month_source,
+                merchant_raw,merchant_normalized,charged_amount,charged_currency,
+                provider_category,first_import_id,created_at
+                ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) RETURNING id""",
+                (
+                    "second-event-transaction", "second-event-base", 1,
+                    "synthetic", "0002", "synthetic-sheet", "2030-01-11",
+                    "2030-01", "statement", "Second Synthetic Merchant",
+                    "second synthetic merchant", "75.00", "ILS", "Travel",
+                    import_id, "2030-01-15T10:00:00+00:00",
+                ),
+            ).fetchone()["id"]
+            for event_id, name, transaction_id in (
+                ("synthetic-event-a", "Synthetic Event A", first_transaction_id),
+                ("synthetic-event-b", "Synthetic Event B", second_transaction_id),
+            ):
+                connection.execute(
+                    """INSERT INTO events(
+                    id,name,event_type,start_date,end_date,status,created_at,updated_at
+                    ) VALUES(?,?,?,?,?,?,?,?)""",
+                    (
+                        event_id, name, "other", "2030-01-01", "2030-01-31",
+                        "completed", "2030-01-15T10:00:00+00:00",
+                        "2030-01-15T10:00:00+00:00",
+                    ),
+                )
+                connection.execute(
+                    """INSERT INTO event_transactions(transaction_id,event_id,assigned_at)
+                    VALUES(?,?,?)""",
+                    (
+                        transaction_id, event_id,
+                        "2030-01-15T10:00:00+00:00",
+                    ),
+                )
+
+        payload = events_payload(self.runtime_pool, "month", "all", "2030-01")
+
+        self.assertEqual([item["name"] for item in payload["events"]], [
+            "Synthetic Event A", "Synthetic Event B",
+        ])
+        self.assertEqual(
+            [item["total_amount"] for item in payload["events"]], [125.0, 75.0]
+        )
+        self.assertTrue(all(len(item["transactions"]) == 1 for item in payload["events"]))
 
     def test_supabase_api_roles_have_no_private_schema_access(self) -> None:
         with self._admin_connection() as connection:
