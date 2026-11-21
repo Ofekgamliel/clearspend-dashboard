@@ -350,6 +350,9 @@ class AuthoritativePostgreSQLIntegrationTests(unittest.TestCase):
             )
 
         dashboard = dashboard_payload(self.runtime_pool, "all", "all")
+        monthly_dashboard = dashboard_payload(
+            self.runtime_pool, "month", "all", "2030-01"
+        )
         observations = observations_payload(
             self.runtime_pool,
             period="all",
@@ -358,6 +361,7 @@ class AuthoritativePostgreSQLIntegrationTests(unittest.TestCase):
 
         self.assertEqual(dashboard["metrics"]["spent"], 125.3)
         self.assertEqual(dashboard["income_summary"]["income"], 1000.12)
+        self.assertEqual(monthly_dashboard["purchase_activity_summary"]["total"], 125.3)
         self.assertEqual(observations["period"], "all")
         self.assertEqual(observations["selectedCard"], "all")
 
