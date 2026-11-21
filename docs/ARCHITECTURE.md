@@ -26,7 +26,7 @@ income, dates, card suffixes, or statement-derived fixtures.
 | Backend | Python standard-library `ThreadingHTTPServer` with modular application packages under `src/clearspend/` |
 | Storage | Private Supabase PostgreSQL schema with explicit versioned migrations; local SQLite retained only for archival and compatibility use |
 | Production assets | Generated Vite output under tracked `dist/` |
-| Backend tests | `unittest` with synthetic temporary databases |
+| Backend tests | `unittest` with synthetic temporary SQLite databases and a disposable PostgreSQL CI service |
 | Frontend tests | Node tests, Vue type/unit tests, Playwright E2E and reviewed visual snapshots |
 
 Pinia, FastAPI, cloud storage, and separate services are not adopted. Add a new

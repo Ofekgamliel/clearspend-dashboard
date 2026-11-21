@@ -10,7 +10,8 @@ Commit reusable application material only:
 - Editable Vue source in `frontend/src/`
 - Generated production frontend assets in `dist/`, rebuilt from reviewed source
 - Application source in `src/`
-- Generic, reusable utilities explicitly allowed by `.gitignore`
+- Generic, reusable utilities and synthetic integration tests explicitly
+  allowed by `.gitignore`
 - Dependency declarations and project documentation
 - Privacy controls such as `.gitignore` and `.githooks/`
 
@@ -101,8 +102,9 @@ Run every command from the repository root.
    PYTHONPATH=src:. .venv/bin/python -m unittest discover -s tests -v
    ```
 
-   Only `tests/synthetic/` is committed. Statement-derived tests and fixtures
-   elsewhere under `tests/` remain private and intentionally ignored.
+   Only `tests/synthetic/`, `tests/integration/`, and `tests/frontend/` are
+   committed. They contain synthetic data only. Statement-derived tests and
+   fixtures elsewhere under `tests/` remain private and intentionally ignored.
 
 8. Commit with a specific description:
 

@@ -59,6 +59,7 @@ manually until an automated storage policy is approved.
   maintained application capabilities.
 - One-time copy, parity, benchmarking, and cutover rehearsal utilities are not
   part of the permanent production surface.
-- Real PostgreSQL execution in CI is deferred. Current CI uses synthetic tests;
-  future PostgreSQL CI must use a disposable isolated service and never the
-  private Supabase project.
+- CI provisions a disposable PostgreSQL service, applies every migration, and
+  verifies runtime writes, rollback, and permission boundaries with synthetic
+  data. It never connects to the private Supabase project. Supabase TLS,
+  Session-pooler, and project-configuration checks remain deployment checks.

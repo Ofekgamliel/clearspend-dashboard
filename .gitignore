@@ -20,6 +20,8 @@ dist/*-review.html
 tests/*
 !tests/synthetic/
 !tests/synthetic/**
+!tests/integration/
+!tests/integration/**
 !tests/frontend/
 !tests/frontend/**
 

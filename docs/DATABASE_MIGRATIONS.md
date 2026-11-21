@@ -124,11 +124,13 @@ temporary SQLite backup. It does not copy data to PostgreSQL.
 
 ## Test expectations
 
-Tracked tests use synthetic data and cover runner inspection, ordered
-application, statement generation, permissions, rollback, backup orchestration,
-and runtime compatibility. Real PostgreSQL CI execution is a known deferred
-hardening item; CI must never connect to the private Supabase project.
+Tracked tests cover runner inspection, ordered application, statement
+generation, permissions, rollback, backup orchestration, and runtime
+compatibility. A separate CI job provisions a disposable PostgreSQL 17 service,
+creates Supabase-style API roles, runs provisioning and all migrations, connects
+through `clearspend_app`, exercises representative feature reads and writes,
+proves approved-import commit and rollback, and checks access denial. It uses
+only synthetic data and never connects to the private Supabase project.
 
-When disposable PostgreSQL CI is introduced, it should exercise migrations,
-runtime permissions, representative feature writes, approved-import rollback,
-and backup/restore against an isolated service.
+Backup command orchestration remains covered synthetically. Supabase TLS,
+Session-pooler, and hosted-project configuration remain deployment checks.
