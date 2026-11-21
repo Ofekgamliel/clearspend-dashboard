@@ -8,9 +8,11 @@ financial behavior belongs in the domain documents linked from
 ## System overview
 
 ClearSpend is a local-first modular monolith for importing and understanding
-personal financial records. A Vue browser application, Python HTTP server, and
-one SQLite database run on the same computer. GitHub stores application code,
-never the user's financial state.
+personal financial records. The Vue browser application and Python HTTP server
+run on the same computer. Authoritative financial state is stored in a private
+Supabase PostgreSQL database; the retained local SQLite database is an archival
+pre-cutover snapshot. GitHub stores application code, never the user's financial
+state.
 
 The system is intentionally not a cloud service or collection of microservices.
 No production frontend asset may contain real transactions, merchants, amounts,
@@ -22,7 +24,7 @@ income, dates, card suffixes, or statement-derived fixtures.
 | --- | --- |
 | Frontend | Vue 3, TypeScript and Vite under `frontend/` |
 | Backend | Python standard-library `ThreadingHTTPServer` with modular application packages under `src/clearspend/` |
-| Storage | One local SQLite database with explicit versioned migrations |
+| Storage | Private Supabase PostgreSQL schema with explicit versioned migrations; local SQLite retained only for archival and compatibility use |
 | Production assets | Generated Vite output under tracked `dist/` |
 | Backend tests | `unittest` with synthetic temporary databases |
 | Frontend tests | Node tests, Vue type/unit tests, Playwright E2E and reviewed visual snapshots |
@@ -37,8 +39,9 @@ Vue feature component
   -> frontend/src/api client and typed contract
   -> src/clearspend/http request decoding and response mapping
   -> feature query or application service
-  -> pure financial rules and/or scoped SQLite access
-  -> data/clearspend.db
+  -> pure financial rules and/or scoped database access
+  -> restricted PostgreSQL pool
+  -> private Supabase PostgreSQL schema
 ```
 
 Statement imports have a deliberately stronger boundary:
@@ -48,7 +51,7 @@ one upload
   -> provider recognition and canonical parsing
   -> staged duplicate/coverage/merchant/reconciliation analysis
   -> explicit user decisions and complete insertion preview
-  -> revalidation + verified SQLite backup
+  -> revalidation + verified encrypted PostgreSQL backup
   -> one approved database transaction
   -> commit everything or roll everything back
 ```
@@ -56,7 +59,9 @@ one upload
 The real application starts with:
 
 ```bash
-PYTHONPATH=src:. .venv/bin/python -m clearspend.server --port 8765
+PYTHONPATH=src:. .venv/bin/python -m clearspend.server \
+  --postgresql-config data/postgresql-frankfurt-runtime.json \
+  --port 8765
 ```
 
 `python3 -m http.server` serves static files only and cannot provide database or
@@ -101,7 +106,85 @@ API behavior.
 | Observations | `observations/` | Pure qualification rules, input adapters, presentation, review policy and consolidated reads |
 | Database | `database/` | Connections, verified backups, current schema and explicit migration runner |
 
-The current code uses feature query modules for SQLite reads and feature service
+Database selection is represented by `database.settings.DatabaseSettings`.
+All existing path-based callers normalize to explicit SQLite settings, and
+`database.connection` dispatches connection creation to the SQLite adapter.
+Plain PostgreSQL settings fail explicitly because pooled runtime ownership is
+required; selection never falls back to SQLite. An explicitly opened
+`PostgreSQLPool` can use the shared connection and transaction context
+managers, which own release, commit, and rollback mechanics. Feature services
+still decide where a complete business transaction begins and ends. Feature
+packages continue to own their SQL. All application read and write workflows
+required for production have been ported and verified against PostgreSQL,
+including observation reviews, transaction browsing and corrections, merchant
+management, events, recurring profiles, reporting, income, staged imports,
+coverage, and observation assembly. PostgreSQL is authoritative; the SQLite
+adapter remains for compatibility tests and archival inspection, not as a
+production fallback.
+
+Staged reference, duplicate, merchant, and coverage analysis now accepts the
+shared database target. PostgreSQL migration 4 adds the private
+`import_transactions` linkage required by reviewed duplicate and batch-decision
+workflows. The import repository now also accepts a caller-owned transaction
+connection and uses portable identity-return and conflict SQL. A disposable
+PostgreSQL rehearsal through `clearspend_app` verified statement and income
+inserts, duplicate handling, linkage, metadata minimization, and connection
+ownership. The complete reviewed-write sequence is now portable and composed
+with a PostgreSQL advisory transaction lock plus the encrypted backup creator.
+A real TLS rehearsal through a bounded `clearspend_app` pool proved that the
+archive captured the pre-import state and the reviewed write committed only
+afterward. The server exposes this route only when it is explicitly started
+with a valid PostgreSQL runtime configuration; startup verifies the current
+schema before binding. The production cutover and its off-device backup,
+retention, and recoverable-key gates are complete.
+
+`database.postgresql_backup` owns creation of encrypted PostgreSQL logical
+archives. It streams `pg_dump` directly through AES-256-CBC encryption, loads
+the database and independent encryption credentials from Keychain, keeps both
+secrets out of process arguments, and accepts an archive only after decrypting
+it into `pg_restore --list` and finding every current ClearSpend table. The same
+module owns fail-closed restore orchestration: it refuses a target where the
+private schema already exists, decrypts directly into `pg_restore` with one
+transaction, and verifies all tables and migration rows afterward. A real
+application-owned rehearsal encrypted and restored the complete linked
+15-table synthetic fixture with exact hashes, migrations, sequences,
+minimization, and permissions intact; it also refused a second restore into the
+occupied target. The backup creator is called by the PostgreSQL approved-import
+boundary before the authoritative import transaction begins.
+
+`database.postgresql_copy` owns the one-way authority-copy boundary. It opens
+the SQLite source in query-only URI mode, validates the current schema,
+integrity, and foreign keys, requires an empty migration-4 PostgreSQL target,
+and copies the 15 data tables in explicit dependency order inside one
+PostgreSQL transaction. It preserves identities, advances sequences, converts
+the two SQLite integer-boolean fields, and compares ordered row counts and
+SHA-256 content hashes before commit. Questionable metadata is controlled by a
+required `MigrationDataPolicy`; the approved constant keeps filenames, replaces
+full paths with those filenames, and drops stored errors and raw payloads.
+The copier is an offline migration component and is not reachable from server
+startup or HTTP routes.
+
+`imports.metadata_policy` applies the same decision to future persistence.
+SQLite selects its legacy policy and retains current local behavior.
+PostgreSQL selects the minimized policy: the original filename remains,
+`source_path` receives that filename rather than a local path, detailed errors
+are not stored, and raw payloads are discarded after normalized fields are
+prepared. The staged service passes the user-visible filename into this
+boundary so a randomized temporary upload name cannot become hosted metadata.
+
+The PostgreSQL runtime reads only a password from macOS
+Keychain, builds a `verify-full` TLS connection using an explicit CA file, and
+opens a small bounded Psycopg pool. Connection metadata and certificates remain
+in an ignored local configuration file. The server constructs this pool only
+when `--postgresql-config` is passed. The production start command always
+supplies the active ignored configuration. Omitting it still selects legacy
+SQLite mode at the command-line level, but that mode is not authoritative and
+must not be used for normal operation. There is no automatic fallback between
+databases. Production startup verifies schema version 4 before binding, and
+runtime health, dashboard, transaction, observation, calculation, and import
+workflows have passed through the restricted Session-pooler role.
+
+The current code uses feature query modules for database reads and feature service
 modules for writes. Do not introduce repository interfaces for every table
 merely for naming consistency. A service coordinates the transaction boundary
 when several writes form one business operation; staged import is the clearest
@@ -170,7 +253,7 @@ constraints. Do not claim automated enforcement unless the check runs in CI.
 
 ## State and financial ownership
 
-SQLite is authoritative for imported transactions, mappings, display
+PostgreSQL is authoritative for imported transactions, mappings, display
 identities, transaction overrides, reimbursements, event membership, recurring
 profiles, import coverage and observation reviews. Python owns reporting totals,
 financial qualification, duplicate identity and approved write behavior.
@@ -186,21 +269,24 @@ are independent concepts. Do not merge them for implementation convenience.
 
 ## Database and write rules
 
-The default private database is `data/clearspend.db`. Its main persisted concepts
-are defined by the current schema, including `schema_migrations`, imports,
-transactions, mappings, overrides, adjustments, income, recurring profiles,
-events, import coverage and observation reviews.
+The authoritative private database is the Supabase PostgreSQL `clearspend`
+schema. Its main persisted concepts are defined by the current schema,
+including `schema_migrations`, imports, transactions, mappings, overrides,
+adjustments, income, recurring profiles, events, import coverage and
+observation reviews.
 
 Before a migration, bulk category/mapping rewrite, duplicate repair or other
 material mutation:
 
-1. Create and verify an SQLite-consistent backup.
+1. Create and verify an encrypted PostgreSQL logical backup.
 2. Record relevant before-counts and totals.
 3. Use one transaction when the operation must succeed as a unit.
 4. Preserve original provider evidence and reviewed decisions.
 5. Verify integrity, counts, totals and representative records afterward.
 
-See [`DATABASE_MIGRATIONS.md`](DATABASE_MIGRATIONS.md) and
+The retained `data/clearspend.db` and its final verified backup are archival
+pre-cutover snapshots. They are not rollback targets after normal PostgreSQL
+use began. See [`DATABASE_MIGRATIONS.md`](DATABASE_MIGRATIONS.md) and
 [`OPERATIONS_AND_RECOVERY.md`](OPERATIONS_AND_RECOVERY.md). Never silently
 rebuild or replace the live database.
 

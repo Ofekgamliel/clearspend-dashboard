@@ -69,6 +69,26 @@ def duplicate_rows() -> dict[str, tuple[dict, ...]]:
 
 
 class ObservationReadServiceTests(unittest.TestCase):
+    def test_empty_month_snapshot_returns_an_empty_view(self) -> None:
+        empty_scope = ObservationScope(
+            period="month",
+            selected_month="",
+            scope_start="",
+            scope_end="",
+            target_months=(),
+            history_months=(),
+            recurring_months=(),
+            observed_start="",
+            observed_end="",
+        )
+
+        view = observation_view_from_snapshot(snapshot(scope=empty_scope))
+
+        self.assertFalse(view.historical)
+        self.assertEqual(view.selected_month, "")
+        self.assertEqual(view.findings, ())
+        self.assertEqual(view.groups, ())
+
     def test_monthly_snapshot_uses_monthly_analysis_and_grouping(self) -> None:
         view = observation_view_from_snapshot(snapshot(
             transactions_by_month=duplicate_rows(),
@@ -185,6 +205,21 @@ class ObservationReadServiceTests(unittest.TestCase):
                 )
             finally:
                 verify.close()
+
+    def test_empty_database_payload_has_no_findings(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            database = Path(directory) / "synthetic.db"
+            create_database(database)
+
+            payload = observations_payload(
+                database, period="month", card="all",
+            )
+
+        self.assertEqual(payload["selectedMonth"], "")
+        self.assertEqual(payload["findingCount"], 0)
+        self.assertEqual(payload["typeCount"], 0)
+        self.assertEqual(payload["findings"], [])
+        self.assertEqual(payload["groups"], [])
 
 
 if __name__ == "__main__":

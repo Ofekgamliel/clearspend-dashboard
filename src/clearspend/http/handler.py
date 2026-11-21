@@ -8,6 +8,8 @@ from pathlib import Path
 from typing import Protocol, cast
 from urllib.parse import parse_qs, urlparse
 
+from clearspend.database.connection import DatabaseTarget
+from clearspend.database.postgresql_backup import PostgreSQLBackupConfiguration
 from clearspend.http.api import (
     JSON_GET_PATHS,
     JSON_POST_PATHS,
@@ -20,8 +22,10 @@ from clearspend.http.multipart import parse_multipart_files
 
 
 class ClearSpendApplication(Protocol):
-    database: Path
+    database: DatabaseTarget
     static_dir: Path
+    local_state_directory: Path
+    postgresql_backup: PostgreSQLBackupConfiguration | None
     staged_imports: dict[str, dict]
 
 
@@ -91,6 +95,7 @@ class ClearSpendHandler(BaseHTTPRequestHandler):
                         self.app.database,
                         self.app.staged_imports,
                         payload,
+                        postgresql_backup=self.app.postgresql_backup,
                     )
                 self.send_json(result, status)
             except (ValueError, json.JSONDecodeError) as error:
@@ -120,6 +125,7 @@ class ClearSpendHandler(BaseHTTPRequestHandler):
                 self.app.database,
                 self.app.staged_imports,
                 items,
+                local_state_directory=self.app.local_state_directory,
             )
             self.send_json(result, status)
         except Exception as error:

@@ -2,17 +2,16 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
-from clearspend.database.connection import connect_database
+from clearspend.database.connection import DatabaseTarget, database_connection
 from clearspend.events.rules import summarize_event_transactions
 from clearspend.reporting.personal_spending import personal_spending_sql
 from clearspend.reporting.queries import period_bounds
 
 
-def events_payload(database: Path, period: str, card: str, month: str = "") -> dict:
-    connection = connect_database(database)
-    try:
+def events_payload(
+    database: DatabaseTarget, period: str, card: str, month: str = "",
+) -> dict:
+    with database_connection(database) as connection:
         start, end, label = period_bounds(connection, period, month)
         event_rows = connection.execute(
             """SELECT id,name,event_type,destination,icon,start_date,end_date,status,budget,notes
@@ -38,7 +37,8 @@ def events_payload(database: Path, period: str, card: str, month: str = "") -> d
                 COALESCE(d.display_name,t.merchant_raw) merchant_display_name,
                 COALESCE(o.category,t.user_category,t.provider_category,'Needs review') category,
                 t.transaction_date,t.provider,t.card_last4,
-                CAST(t.charged_amount AS REAL) amount,{personal_spending_sql()} personal_amount
+                CAST(t.charged_amount AS DOUBLE PRECISION) amount,
+                {personal_spending_sql()} personal_amount
                 FROM event_transactions et JOIN transactions t ON t.id=et.transaction_id
                 LEFT JOIN merchant_display_mappings d ON d.merchant_normalized=t.merchant_normalized
                 LEFT JOIN transaction_category_overrides o ON o.transaction_id=t.id
@@ -67,5 +67,3 @@ def events_payload(database: Path, period: str, card: str, month: str = "") -> d
             "events": events,
             "available_events": available_events,
         }
-    finally:
-        connection.close()

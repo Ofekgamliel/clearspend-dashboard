@@ -1,24 +1,23 @@
 from __future__ import annotations
 
-from pathlib import Path
-
-from clearspend.database.connection import connect_database
+from clearspend.database.connection import DatabaseTarget, database_connection
 
 
-def mapping_payload(database: Path) -> dict:
+def mapping_payload(database: DatabaseTarget) -> dict:
     """Return mapping-review counts, unresolved merchants, and recent import context."""
-    connection = connect_database(database)
-    try:
+    with database_connection(database) as connection:
         totals = connection.execute(
             """SELECT COUNT(*) merchants,
             SUM(has_uncategorized) needs_review,
             SUM(CASE WHEN has_uncategorized=0 THEN 1 ELSE 0 END) categorized
-            FROM (SELECT merchant_normalized,MAX(user_category IS NULL AND provider_category IS NULL) has_uncategorized
+            FROM (SELECT merchant_normalized,
+                  MAX(CASE WHEN user_category IS NULL AND provider_category IS NULL THEN 1 ELSE 0 END)
+                  has_uncategorized
                   FROM transactions GROUP BY merchant_normalized)"""
         ).fetchone()
         review = [dict(row) for row in connection.execute(
-            """SELECT merchant_raw,merchant_normalized,COUNT(*) transactions,
-            ROUND(SUM(ABS(CAST(charged_amount AS REAL))),2) amount
+            """SELECT MAX(merchant_raw) merchant_raw,merchant_normalized,COUNT(*) transactions,
+            ROUND(CAST(SUM(ABS(CAST(charged_amount AS DOUBLE PRECISION))) AS NUMERIC),2) amount
             FROM transactions WHERE user_category IS NULL AND provider_category IS NULL
             GROUP BY merchant_normalized ORDER BY transactions DESC,amount DESC LIMIT 1000"""
         )]
@@ -39,8 +38,8 @@ def mapping_payload(database: Path) -> dict:
             """SELECT merchant_normalized,category,subcategory,updated_at
             FROM merchant_mappings ORDER BY updated_at DESC"""
         )]
-        categories = [row[0] for row in connection.execute(
-            """SELECT DISTINCT category FROM (
+        categories = [row["category"] for row in connection.execute(
+            """SELECT DISTINCT category AS category FROM (
                  SELECT user_category category FROM transactions WHERE user_category IS NOT NULL
                  UNION SELECT provider_category category FROM transactions WHERE provider_category IS NOT NULL
                ) WHERE category IS NOT NULL ORDER BY category"""
@@ -52,14 +51,11 @@ def mapping_payload(database: Path) -> dict:
             "mappings": mappings,
             "category_suggestions": categories,
         }
-    finally:
-        connection.close()
 
 
-def merchants_payload(database: Path) -> dict:
+def merchants_payload(database: DatabaseTarget) -> dict:
     """Return canonical display identities with their aliases and reviewed recurrence."""
-    connection = connect_database(database)
-    try:
+    with database_connection(database) as connection:
         aliases = [dict(row) for row in connection.execute(
             """SELECT t.merchant_normalized,
             COALESCE(d.canonical_group_id,t.merchant_normalized) canonical_group_id,
@@ -76,7 +72,7 @@ def merchants_payload(database: Path) -> dict:
                GROUP BY COALESCE(sample.user_category,sample.provider_category,'Needs review')
                ORDER BY COUNT(*) DESC LIMIT 1),'Needs review') category,
             m.subcategory,COUNT(*) transactions,
-            ROUND(SUM(ABS(CAST(t.charged_amount AS REAL))),2) amount,
+            ROUND(CAST(SUM(ABS(CAST(t.charged_amount AS DOUBLE PRECISION))) AS NUMERIC),2) amount,
             MAX(t.transaction_date) last_seen
             FROM transactions t
             LEFT JOIN merchant_display_mappings d ON d.merchant_normalized=t.merchant_normalized
@@ -137,8 +133,8 @@ def merchants_payload(database: Path) -> dict:
         merchants = sorted(
             grouped.values(), key=lambda item: (-item["transactions"], item["display_name"])
         )
-        categories = [row[0] for row in connection.execute(
-            """SELECT DISTINCT category FROM (
+        categories = [row["category"] for row in connection.execute(
+            """SELECT DISTINCT category AS category FROM (
                  SELECT category FROM merchant_mappings
                  UNION SELECT user_category category FROM transactions WHERE user_category IS NOT NULL
                  UNION SELECT provider_category category FROM transactions WHERE provider_category IS NOT NULL
@@ -159,5 +155,3 @@ def merchants_payload(database: Path) -> dict:
             "categories": categories,
             "merchants": merchants,
         }
-    finally:
-        connection.close()

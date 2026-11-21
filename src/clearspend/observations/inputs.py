@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from pathlib import Path
 
+from clearspend.database.connection import DatabaseTarget
 from clearspend.observations.queries import observation_reviews_payload
 from clearspend.observations.historical_queries import historical_installments_payload
 from clearspend.observations.scope import ObservationScope, build_observation_scope
@@ -28,7 +28,7 @@ class ObservationInputSnapshot:
 
 
 def load_observation_inputs(
-    database: Path,
+    database: DatabaseTarget,
     *,
     period: str,
     card: str,
@@ -45,11 +45,22 @@ def load_observation_inputs(
         period_start=period_data.get("start") or "",
         period_end=period_data.get("end") or "",
     )
+    history_rows = transactions_payload(
+        database, "all", card, complete_history=True,
+    ).get("transactions") or ()
+    grouped_transactions: dict[str, list[dict]] = {
+        current: [] for current in scope.history_months
+    }
+    for row in history_rows:
+        report_month = str(
+            row.get("billing_month")
+            or str(row.get("billing_date") or "")[:7]
+            or str(row.get("transaction_date") or "")[:7]
+        )
+        if report_month in grouped_transactions:
+            grouped_transactions[report_month].append(row)
     transactions_by_month = {
-        current: tuple(transactions_payload(
-            database, "month", card, month=current,
-        ).get("transactions") or ())
-        for current in scope.history_months
+        current: tuple(rows) for current, rows in grouped_transactions.items()
     }
     recurring_by_month = {
         current: recurring_payload(database, "month", card, current)

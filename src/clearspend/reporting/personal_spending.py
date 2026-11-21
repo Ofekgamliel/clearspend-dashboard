@@ -48,12 +48,16 @@ def review_reimbursement(
 
 
 def personal_spending_sql(alias: str = "t") -> str:
-    """SQLite expression equivalent to :func:`personal_spending_amount`."""
+    """Portable SQL expression equivalent to :func:`personal_spending_amount`."""
     prefix = f"{alias}." if alias else ""
+    charge = f"CAST({prefix}charged_amount AS DOUBLE PRECISION)"
+    reimbursement = (
+        "COALESCE((SELECT CAST(adjustment.reimbursed_amount AS DOUBLE PRECISION) "
+        "FROM transaction_spending_adjustments adjustment "
+        f"WHERE adjustment.transaction_id={prefix}id),0)"
+    )
+    remaining = f"{charge}-{reimbursement}"
     return (
-        f"CASE WHEN CAST({prefix}charged_amount AS REAL)>0 THEN "
-        f"MAX(CAST({prefix}charged_amount AS REAL)-COALESCE((SELECT "
-        "CAST(adjustment.reimbursed_amount AS REAL) FROM "
-        "transaction_spending_adjustments adjustment "
-        f"WHERE adjustment.transaction_id={prefix}id),0),0) ELSE 0 END"
+        f"CASE WHEN {charge}>0 THEN CASE WHEN {remaining}>0 "
+        f"THEN {remaining} ELSE 0 END ELSE 0 END"
     )

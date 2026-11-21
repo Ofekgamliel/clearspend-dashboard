@@ -2,9 +2,7 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
-from clearspend.database.connection import connect_database
+from clearspend.database.connection import DatabaseTarget, database_connection
 from clearspend.reporting.categories import (
     with_previous_month_comparison,
     with_spending_shares,
@@ -15,25 +13,24 @@ from clearspend.reporting.queries import filtered_where
 
 
 def categories_payload(
-    database: Path,
+    database: DatabaseTarget,
     period: str,
     card: str,
     month: str = "",
     event_scope: str = "all",
 ) -> dict:
-    connection = connect_database(database)
-    try:
+    with database_connection(database) as connection:
         where, parameters, period_data = filtered_where(
             connection, period, card, month, event_scope
         )
         total = float(connection.execute(
-            f"SELECT COALESCE(SUM({personal_spending_sql()}),0) "
+            f"SELECT COALESCE(SUM({personal_spending_sql()}),0) AS total "
             f"FROM transactions t WHERE {where}",
             parameters,
-        ).fetchone()[0])
+        ).fetchone()["total"])
         rows = with_spending_shares(connection.execute(
             f"""SELECT COALESCE(o.category,t.user_category,t.provider_category,'Needs review') category,
-            ROUND(SUM({personal_spending_sql()}),2) amount,
+            ROUND(CAST(SUM({personal_spending_sql()}) AS NUMERIC),2) amount,
             COUNT(*) transactions,
             COUNT(DISTINCT COALESCE(d.canonical_group_id,t.merchant_normalized)) merchants
             FROM transactions t LEFT JOIN merchant_display_mappings d
@@ -51,12 +48,13 @@ def categories_payload(
                 connection, "month", card, previous_month, event_scope
             )
             previous_count = int(connection.execute(
-                f"SELECT COUNT(*) FROM transactions t WHERE {previous_where}",
+                f"SELECT COUNT(*) AS transaction_count FROM transactions t "
+                f"WHERE {previous_where}",
                 previous_parameters,
-            ).fetchone()[0])
+            ).fetchone()["transaction_count"])
             previous_rows = connection.execute(
                 f"""SELECT COALESCE(o.category,t.user_category,t.provider_category,'Needs review') category,
-                ROUND(SUM({personal_spending_sql()}),2) amount
+                ROUND(CAST(SUM({personal_spending_sql()}) AS NUMERIC),2) amount
                 FROM transactions t
                 LEFT JOIN transaction_category_overrides o ON o.transaction_id=t.id
                 WHERE {previous_where}
@@ -83,5 +81,3 @@ def categories_payload(
             "categories": rows,
             "category_comparison": category_comparison,
         }
-    finally:
-        connection.close()

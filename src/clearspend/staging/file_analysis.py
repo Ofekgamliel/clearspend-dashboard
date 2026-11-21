@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 import hashlib
-import sqlite3
 from pathlib import Path
+from typing import Any
 
 from clearspend.staging.coverage import staged_statement_coverage
 from clearspend.staging.duplicates import possible_duplicate_matches
@@ -10,7 +10,7 @@ from clearspend.staging.rules import staged_transaction_summary, statement_recon
 
 
 def analyze_staged_income_file(
-    connection: sqlite3.Connection,
+    connection: Any,
     *,
     original_name: str,
     path: Path,
@@ -69,7 +69,7 @@ def analyze_staged_income_file(
 
 
 def analyze_staged_statement_file(
-    connection: sqlite3.Connection,
+    connection: Any,
     *,
     original_name: str,
     path: Path,

@@ -10,16 +10,13 @@ from pathlib import Path
 from typing import Any
 
 from clearspend.database.migration_runner import inspect_database, migrate_database
-from clearspend.server import (
-    categories_payload,
-    dashboard_payload,
-    events_payload,
-    mapping_payload,
-    merchants_payload,
-    observation_reviews_payload,
-    recurring_payload,
-    transactions_payload,
-)
+from clearspend.events.queries import events_payload
+from clearspend.merchants.queries import mapping_payload, merchants_payload
+from clearspend.observations.queries import observation_reviews_payload
+from clearspend.recurring.queries import recurring_payload
+from clearspend.reporting.category_queries import categories_payload
+from clearspend.reporting.dashboard import dashboard_payload
+from clearspend.transactions.queries import transactions_payload
 
 
 def file_digest(path: Path) -> str:

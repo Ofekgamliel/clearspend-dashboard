@@ -2,8 +2,7 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
+from clearspend.database.connection import DatabaseTarget
 from clearspend.observations.grouping import ObservationFinding, ObservationGroup
 from clearspend.observations.read_service import ObservationView
 
@@ -102,7 +101,7 @@ def observation_view_payload(view: ObservationView) -> dict:
 
 
 def observations_payload(
-    database: Path,
+    database: DatabaseTarget,
     *,
     period: str,
     card: str,

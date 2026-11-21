@@ -6,6 +6,8 @@ from io import BytesIO
 from pathlib import Path
 from unittest.mock import patch
 
+from clearspend.database.postgresql import PostgreSQLPool
+from clearspend.database.postgresql_backup import PostgreSQLBackupConfiguration
 from clearspend.http.imports import (
     cancel_staged_import,
     commit_staged_import,
@@ -183,6 +185,72 @@ class HttpImportTests(unittest.TestCase):
         self.assertEqual(payload["status"], "committed")
         self.assertFalse(upload_path.exists())
         self.assertNotIn("batch", self.staged_imports)
+
+    @patch("clearspend.http.imports.analyze_staged_files")
+    def test_postgresql_staging_uses_separate_local_state_directory(self, analyze) -> None:
+        analyze.return_value = {"files": [], "merchants": []}
+        pool = object.__new__(PostgreSQLPool)
+
+        payload, status = process_import_uploads(
+            pool,
+            self.staged_imports,
+            [UploadedFile("synthetic.xlsx", BytesIO(b"synthetic workbook"))],
+            local_state_directory=self.root,
+        )
+
+        self.assertEqual(status, 200)
+        upload = self.staged_imports[payload["batch_id"]]["uploads"][0]
+        self.assertEqual(upload["path"].parent, self.root / "staging")
+        analyze.assert_called_once()
+
+    @patch("clearspend.http.imports.commit_staged_statement_postgresql")
+    @patch("clearspend.http.imports.analyze_staged_files")
+    def test_postgresql_commit_requires_and_forwards_backup_configuration(
+        self,
+        analyze,
+        commit,
+    ) -> None:
+        upload_path = self.root / "staged.xlsx"
+        upload_path.write_bytes(b"synthetic")
+        self.staged_imports["batch"] = {
+            "uploads": [{"filename": "staged.xlsx", "path": upload_path}]
+        }
+        analyze.return_value = {
+            "files": [{
+                "filename": "staged.xlsx",
+                "kind": "statement",
+                "status": "ready",
+                "reconciliation": {"status": "matched"},
+            }]
+        }
+        commit.return_value = {"status": "committed", "results": []}
+        pool = object.__new__(PostgreSQLPool)
+        configuration = PostgreSQLBackupConfiguration(
+            self.root / "backups",
+            "synthetic-backup-service",
+            "archive",
+        )
+
+        with self.assertRaisesRegex(ValueError, "backup configuration"):
+            commit_staged_import(
+                pool,
+                self.staged_imports,
+                {"batch_id": "batch"},
+            )
+        self.assertTrue(upload_path.exists())
+
+        payload, status = commit_staged_import(
+            pool,
+            self.staged_imports,
+            {"batch_id": "batch"},
+            postgresql_backup=configuration,
+        )
+
+        self.assertEqual(status, 200)
+        self.assertEqual(payload["status"], "committed")
+        self.assertIs(commit.call_args.args[0], pool)
+        self.assertIs(commit.call_args.args[1], configuration)
+        self.assertFalse(upload_path.exists())
 
 
 if __name__ == "__main__":

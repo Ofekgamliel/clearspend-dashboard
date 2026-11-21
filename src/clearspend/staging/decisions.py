@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 import hashlib
-import sqlite3
 import re
+from typing import Any
 
 
 def merchant_decision_map(decisions: list[dict]) -> dict[str, dict]:
@@ -57,7 +57,7 @@ def reviewed_duplicate_matches(
 
 
 def apply_permanent_merchant_decisions(
-    connection: sqlite3.Connection,
+    connection: Any,
     decisions: dict[str, dict],
     now: str,
 ) -> None:
@@ -96,7 +96,7 @@ def apply_permanent_merchant_decisions(
 
 
 def apply_imported_transaction_decisions(
-    connection: sqlite3.Connection,
+    connection: Any,
     import_id: int,
     decisions: dict[str, dict],
     review_required_merchants: set[str],

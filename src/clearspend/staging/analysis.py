@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from clearspend.database.connection import connect_database
+from clearspend.database.connection import DatabaseTarget, database_connection
 from clearspend.import_engine import is_income_xlsx, parse_income_xlsx, parse_statement
 from clearspend.staging.coverage import staged_statement_coverage
 from clearspend.staging.duplicates import possible_duplicate_matches
@@ -19,10 +19,11 @@ from clearspend.staging.rules import staged_transaction_summary, statement_recon
 from tools.profile_samples import sha256_path
 
 
-def analyze_staged_files(database: Path, uploads: list[tuple[str, Path]]) -> dict:
+def analyze_staged_files(
+    database: DatabaseTarget, uploads: list[tuple[str, Path]],
+) -> dict:
     """Analyze uploads against existing data without writing to the database."""
-    connection = connect_database(database)
-    try:
+    with database_connection(database) as connection:
         categories, identities = staged_reference_data(connection)
         files: list[dict] = []
         merchant_groups: dict[str, dict] = {}
@@ -84,5 +85,3 @@ def analyze_staged_files(database: Path, uploads: list[tuple[str, Path]]) -> dic
             "pending_transactions": pending_transactions,
             "coverage_warnings": coverage_warnings,
         }
-    finally:
-        connection.close()

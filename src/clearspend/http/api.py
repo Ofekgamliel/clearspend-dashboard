@@ -1,8 +1,10 @@
 from __future__ import annotations
 
-from pathlib import Path
 from typing import Mapping, Sequence
 
+from clearspend.database.connection import DatabaseTarget, database_connection
+from clearspend.database.postgresql import PostgreSQLPool
+from clearspend.database.settings import DatabaseBackend, normalize_database_settings
 from clearspend.events.queries import events_payload
 from clearspend.events.service import create_event, save_event_settings, save_transaction_event
 from clearspend.merchants.queries import mapping_payload, merchants_payload
@@ -65,7 +67,7 @@ def _boolean_query(
 
 
 def dispatch_json_get(
-    database: Path,
+    database: DatabaseTarget,
     path: str,
     query: Mapping[str, Sequence[str]],
 ) -> tuple[dict, int]:
@@ -73,10 +75,24 @@ def dispatch_json_get(
     if path not in JSON_GET_PATHS:
         raise ValueError("Unknown JSON API route")
     if path == "/api/health":
+        if isinstance(database, PostgreSQLPool):
+            with database_connection(database) as connection:
+                database_available = bool(
+                    connection.execute("SELECT TRUE AS available").fetchone()[
+                        "available"
+                    ]
+                )
+        else:
+            settings = normalize_database_settings(database)
+            database_available = (
+                settings.backend is DatabaseBackend.SQLITE
+                and settings.sqlite_path is not None
+                and settings.sqlite_path.exists()
+            )
         return {
             "status": "ok",
             "mode": "local",
-            "database": database.exists(),
+            "database": database_available,
             "api_compatibility": API_COMPATIBILITY,
         }, 200
     if path == "/api/mapping":
@@ -120,7 +136,11 @@ def dispatch_json_get(
     return events_payload(database, period, card, month), 200
 
 
-def dispatch_json_post(database: Path, path: str, payload: dict) -> tuple[dict, int]:
+def dispatch_json_post(
+    database: DatabaseTarget,
+    path: str,
+    payload: dict,
+) -> tuple[dict, int]:
     """Dispatch a decoded standard JSON mutation to its application service."""
     if path not in JSON_POST_PATHS:
         raise ValueError("Unknown JSON API route")

@@ -4,9 +4,8 @@ from __future__ import annotations
 
 import re
 from datetime import datetime
-from pathlib import Path
 
-from clearspend.database.connection import connect_database
+from clearspend.database.connection import DatabaseTarget, database_transaction
 from clearspend.recurring.rules import (
     ALLOWED_RECURRING_TYPES,
     CADENCE_MONTHS,
@@ -15,7 +14,7 @@ from clearspend.recurring.rules import (
 
 
 def save_recurring_profile(
-    database: Path,
+    database: DatabaseTarget,
     canonical_group_id: str,
     recurring_type: str,
     cadence: str,
@@ -41,8 +40,7 @@ def save_recurring_profile(
         raise ValueError("End month must use YYYY-MM")
     if lifecycle_status != "ended":
         end_month = ""
-    connection = connect_database(database)
-    try:
+    with database_transaction(database) as connection:
         existing = connection.execute(
             "SELECT * FROM recurring_profiles WHERE canonical_group_id=? AND verdict='recurring'",
             (canonical_group_id,),
@@ -55,16 +53,13 @@ def save_recurring_profile(
             (recurring_type, cadence, CADENCE_MONTHS[cadence], lifecycle_status,
              end_month or None, datetime.now().isoformat(timespec="seconds"), canonical_group_id),
         )
-        connection.commit()
         return dict(connection.execute(
             "SELECT * FROM recurring_profiles WHERE canonical_group_id=?", (canonical_group_id,)
         ).fetchone())
-    finally:
-        connection.close()
 
 
 def manage_recurring_profile(
-    database: Path,
+    database: DatabaseTarget,
     canonical_group_id: str,
     verdict: str,
     recurring_type: str = "",
@@ -96,8 +91,7 @@ def manage_recurring_profile(
             raise ValueError("End month must use YYYY-MM")
         if lifecycle_status != "ended":
             end_month = ""
-    connection = connect_database(database)
-    try:
+    with database_transaction(database) as connection:
         merchant_rows = connection.execute(
             """SELECT DISTINCT t.merchant_normalized,
             COALESCE(d.display_name,t.merchant_raw) display_name
@@ -132,7 +126,7 @@ def manage_recurring_profile(
                     row["merchant_normalized"]
                     for row in connection.execute(
                         """SELECT merchant_normalized FROM recurring_profile_members
-                        WHERE canonical_group_id=? AND included=1""",
+                        WHERE canonical_group_id=? AND included=TRUE""",
                         (canonical_group_id,),
                     ).fetchall()
                 }
@@ -173,14 +167,11 @@ def manage_recurring_profile(
                 ) VALUES(?,?,?,?)
                 ON CONFLICT(canonical_group_id,merchant_normalized) DO UPDATE SET
                 included=excluded.included,updated_at=excluded.updated_at""",
-                (canonical_group_id, alias, int(alias in selected_aliases), now),
+                (canonical_group_id, alias, alias in selected_aliases, now),
             )
-        connection.commit()
         result = dict(connection.execute(
             "SELECT * FROM recurring_profiles WHERE canonical_group_id=?",
             (canonical_group_id,),
         ).fetchone())
         result["included_aliases"] = sorted(selected_aliases)
         return result
-    finally:
-        connection.close()

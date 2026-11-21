@@ -47,15 +47,19 @@ stored in this repository.
 
 ## Privacy model
 
-ClearSpend is designed to keep financial state local:
+ClearSpend keeps its browser and Python server local while storing its
+authoritative financial state in a private Supabase PostgreSQL database:
 
 - `data/`, statements, backups, merchant research, and private review files are
   ignored by Git.
 - The production frontend requests live values from the local API. Tracked HTML
   and JavaScript must never contain real transactions, income, card suffixes,
   merchants, or statement-derived fixtures.
-- A fresh clone contains the application only. Move the SQLite database through
-  a separate secure backup process, never through GitHub.
+- PostgreSQL connection metadata stays in an ignored local configuration file.
+  Database and archive passwords stay in macOS Keychain and never in Git.
+- A fresh clone contains the application only. Restore access through the
+  approved runtime configuration, certificate, Keychain items, and encrypted
+  PostgreSQL backups—never through GitHub.
 
 The repository hook and workflow provide guardrails, but reviewing the staged
 diff is still required before every commit. See [GIT_WORKFLOW.md](GIT_WORKFLOW.md).
@@ -67,7 +71,9 @@ Requirements: Python 3.10 or newer and a local browser.
 ```bash
 python3 -m venv .venv
 .venv/bin/python -m pip install -r requirements.txt
-PYTHONPATH=src:. .venv/bin/python -m clearspend.server --port 8765
+PYTHONPATH=src:. .venv/bin/python -m clearspend.server \
+  --postgresql-config data/postgresql-frankfurt-runtime.json \
+  --port 8765
 ```
 
 Open [http://localhost:8765](http://localhost:8765). Before troubleshooting dashboard data, verify
@@ -80,11 +86,14 @@ it again from the new branch. The frontend blocks data requests and shows a
 retryable restart message when it detects an incompatible stale server.
 
 Use the ClearSpend application server—not `python3 -m http.server`. A static
-server can render files from `dist/`, but it cannot access SQLite or provide
+server can render files from `dist/`, but it cannot access the database or provide
 imports, searches, mappings, events, or other API-backed behavior.
 
-The default database path is `data/clearspend.db`. If it does not exist, the
-application initializes an empty local database.
+PostgreSQL is the authoritative runtime database. The server requires the
+ignored Frankfurt runtime configuration shown above and fails closed if it
+cannot connect or verify the schema. Omitting `--postgresql-config` selects the
+legacy SQLite mode; do not use that mode for normal operation or as an automatic
+fallback. The retained `data/clearspend.db` is an archival pre-cutover snapshot.
 
 ## Supported inputs
 

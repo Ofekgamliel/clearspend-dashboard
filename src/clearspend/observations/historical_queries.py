@@ -3,10 +3,9 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
 from typing import Iterable
 
-from clearspend.database.connection import connect_database
+from clearspend.database.connection import DatabaseTarget, database_connection
 from clearspend.reporting.sql import REPORTING_MONTH_SQL
 
 
@@ -28,7 +27,7 @@ def _plan_identity(row: dict) -> str:
 
 
 def historical_installments_payload(
-    database: Path,
+    database: DatabaseTarget,
     months: Iterable[str],
     card: str,
 ) -> dict[str, dict]:
@@ -50,27 +49,23 @@ def historical_installments_payload(
         card_sql = " AND t.provider=? AND t.card_last4=?"
         parameters.extend([provider, last4])
 
-    connection = connect_database(database)
-    try:
+    with database_connection(database) as connection:
         rows = [dict(row) for row in connection.execute(
             f"""SELECT t.provider,t.card_last4,
             COALESCE(d.canonical_group_id,t.merchant_normalized) canonical_merchant_id,
             COALESCE(d.display_name,t.merchant_raw) display_name,
             t.merchant_raw source_alias,t.transaction_date,t.original_amount,
             t.original_currency,t.installment_total,{REPORTING_MONTH_SQL} report_month,
-            CAST(t.charged_amount AS REAL) amount
+            CAST(t.charged_amount AS DOUBLE PRECISION) amount
             FROM transactions t
             LEFT JOIN merchant_display_mappings d
               ON d.merchant_normalized=t.merchant_normalized
             WHERE t.installment_number IS NOT NULL
-              AND CAST(t.charged_amount AS REAL)>0
+              AND CAST(t.charged_amount AS DOUBLE PRECISION)>0
               AND {REPORTING_MONTH_SQL} IN ({placeholders}){card_sql}
             ORDER BY report_month,t.id""",
             parameters,
         )]
-    finally:
-        connection.close()
-
     result = {
         month: {"installment_billed": 0.0, "plans": {}}
         for month in selected_months

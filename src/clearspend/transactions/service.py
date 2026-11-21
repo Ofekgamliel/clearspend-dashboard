@@ -3,9 +3,8 @@
 from __future__ import annotations
 
 from datetime import date, datetime
-from pathlib import Path
 
-from clearspend.database.connection import connect_database
+from clearspend.database.connection import DatabaseTarget, database_transaction
 from clearspend.reporting.personal_spending import (
     personal_spending_amount,
     review_reimbursement,
@@ -13,14 +12,13 @@ from clearspend.reporting.personal_spending import (
 
 
 def save_transaction_category(
-    database: Path, transaction_id: int, category: str, subcategory: str,
+    database: DatabaseTarget, transaction_id: int, category: str, subcategory: str,
 ) -> dict:
     category = category.strip()
     subcategory = subcategory.strip()
     if transaction_id <= 0 or not category:
         raise ValueError("Transaction and category are required")
-    connection = connect_database(database)
-    try:
+    with database_transaction(database) as connection:
         row = connection.execute(
             "SELECT merchant_raw FROM transactions WHERE id=?", (transaction_id,)
         ).fetchone()
@@ -33,20 +31,17 @@ def save_transaction_category(
             category=excluded.category,subcategory=excluded.subcategory,updated_at=excluded.updated_at""",
             (transaction_id, category, subcategory or None, now),
         )
-        connection.commit()
         return {
             "status": "saved",
             "transaction_id": transaction_id,
-            "merchant_raw": row[0],
+            "merchant_raw": row["merchant_raw"],
             "category": category,
             "subcategory": subcategory or None,
         }
-    finally:
-        connection.close()
 
 
 def save_transaction_adjustment(
-    database: Path,
+    database: DatabaseTarget,
     transaction_id: int,
     reimbursed_amount: float,
     reimbursement_date: str,
@@ -55,10 +50,10 @@ def save_transaction_adjustment(
 ) -> dict:
     if transaction_id <= 0:
         raise ValueError("Transaction is required")
-    connection = connect_database(database)
-    try:
+    with database_transaction(database) as connection:
         row = connection.execute(
-            "SELECT merchant_raw,CAST(charged_amount AS REAL) amount FROM transactions WHERE id=?",
+            """SELECT merchant_raw,CAST(charged_amount AS DOUBLE PRECISION) amount
+            FROM transactions WHERE id=?""",
             (transaction_id,),
         ).fetchone()
         if not row:
@@ -71,7 +66,6 @@ def save_transaction_adjustment(
                 "DELETE FROM transaction_spending_adjustments WHERE transaction_id=?",
                 (transaction_id,),
             )
-            connection.commit()
             return {
                 "status": "removed", "transaction_id": transaction_id,
                 "merchant_raw": row["merchant_raw"],
@@ -103,12 +97,9 @@ def save_transaction_adjustment(
                 reimbursement_date or None, note or None, now,
             ),
         )
-        connection.commit()
         return {
             "status": "saved", "transaction_id": transaction_id,
             "merchant_raw": row["merchant_raw"], "adjustment_type": adjustment_type,
             "reimbursed_amount": reimbursed_amount,
             "personal_amount": reviewed.personal_amount,
         }
-    finally:
-        connection.close()

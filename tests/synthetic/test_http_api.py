@@ -2,8 +2,11 @@ from __future__ import annotations
 
 import tempfile
 import unittest
+from contextlib import contextmanager
 from pathlib import Path
+from unittest.mock import patch
 
+from clearspend.database.postgresql import PostgreSQLPool
 from clearspend.http.api import (
     JSON_GET_PATHS,
     JSON_POST_PATHS,
@@ -93,6 +96,29 @@ class HttpApiTests(unittest.TestCase):
         self.assertEqual(dashboard_status, 200)
         self.assertEqual(dashboard["period"]["key"], "month")
         self.assertEqual(dashboard["selected_card"], "all")
+
+    def test_postgresql_health_checks_the_open_pool(self) -> None:
+        class Result:
+            @staticmethod
+            def fetchone() -> dict:
+                return {"available": True}
+
+        class Connection:
+            @staticmethod
+            def execute(sql: str) -> Result:
+                self.assertEqual(sql, "SELECT TRUE AS available")
+                return Result()
+
+        @contextmanager
+        def connection(_database: PostgreSQLPool):
+            yield Connection()
+
+        pool = object.__new__(PostgreSQLPool)
+        with patch("clearspend.http.api.database_connection", connection):
+            health, status = dispatch_json_get(pool, "/api/health", {})
+
+        self.assertEqual(status, 200)
+        self.assertTrue(health["database"])
 
     def test_get_period_and_scope_validation_are_consistent(self) -> None:
         self.assertIn("/api/transactions", JSON_GET_PATHS)

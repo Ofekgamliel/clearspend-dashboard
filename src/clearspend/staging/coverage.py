@@ -1,12 +1,12 @@
 from __future__ import annotations
 
-import sqlite3
 from datetime import datetime
+from typing import Any
 
 from clearspend.imports.domain import parse_statement_month
 
 
-def staged_statement_coverage(connection: sqlite3.Connection, statement) -> tuple[list[dict], list[dict]]:
+def staged_statement_coverage(connection: Any, statement) -> tuple[list[dict], list[dict]]:
     """Describe statement coverage and compare it with prior imported periods."""
     groups: dict[str, list] = {}
     for item in statement.transactions:
@@ -14,9 +14,6 @@ def staged_statement_coverage(connection: sqlite3.Connection, statement) -> tupl
     statement_month = parse_statement_month(statement.date_range)
     coverage: list[dict] = []
     warnings: list[dict] = []
-    has_coverage_table = bool(connection.execute(
-        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='import_coverage'"
-    ).fetchone())
     for card_last4, rows in groups.items():
         purchase_dates = [item.transaction_date for item in rows if item.transaction_date]
         billing_dates = [item.billing_date for item in rows if item.billing_date]
@@ -37,8 +34,6 @@ def staged_statement_coverage(connection: sqlite3.Connection, statement) -> tupl
             "official_total": statement.official_total if len(groups) == 1 else None,
         }
         coverage.append(item)
-        if not has_coverage_table:
-            continue
         previous = connection.execute(
             """SELECT c.*,i.original_name,i.imported_at FROM import_coverage c
             JOIN imports i ON i.id=c.import_id
@@ -76,19 +71,31 @@ def staged_statement_coverage(connection: sqlite3.Connection, statement) -> tupl
 
 
 def save_import_coverage(
-    connection: sqlite3.Connection,
+    connection: Any,
     import_id: int,
     coverage_rows: list[dict],
 ) -> None:
     """Persist reviewed statement coverage for an imported statement."""
     for coverage in coverage_rows:
         connection.execute(
-            """INSERT OR REPLACE INTO import_coverage(
+            """INSERT INTO import_coverage(
             import_id,card_last4,statement_month,statement_period,
             statement_as_of_date,purchase_date_from,purchase_date_to,
             billing_date_from,billing_date_to,finalized_rows,pending_rows,
             outside_cycle_rows,official_total
-            ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)
+            ON CONFLICT(import_id,card_last4) DO UPDATE SET
+            statement_month=excluded.statement_month,
+            statement_period=excluded.statement_period,
+            statement_as_of_date=excluded.statement_as_of_date,
+            purchase_date_from=excluded.purchase_date_from,
+            purchase_date_to=excluded.purchase_date_to,
+            billing_date_from=excluded.billing_date_from,
+            billing_date_to=excluded.billing_date_to,
+            finalized_rows=excluded.finalized_rows,
+            pending_rows=excluded.pending_rows,
+            outside_cycle_rows=excluded.outside_cycle_rows,
+            official_total=excluded.official_total""",
             (
                 import_id, coverage["card_last4"], coverage["statement_month"],
                 coverage["statement_period"], coverage["statement_as_of_date"],
