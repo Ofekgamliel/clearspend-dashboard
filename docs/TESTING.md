@@ -90,6 +90,13 @@ Playwright starts the real local server on its dedicated test port and uses a
 temporary synthetic SQLite database. It must never open or replace
 `data/clearspend.db`.
 
+Dashboard loading workflows intercept synthetic API responses to hold and
+reorder requests deterministically. They verify that successful runtime health
+mounts progressive skeletons, independent feature requests start without
+waiting for the dashboard response, and old-scope financial values disappear
+while a replacement response is pending. These interaction tests are separate
+from real endpoint-duration measurements.
+
 Local macOS runs compare tracked screenshots. CI uses `npm run test:e2e:ci` to
 run the same workflows without pixel comparisons that are unstable across
 operating systems.

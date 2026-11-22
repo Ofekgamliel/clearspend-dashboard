@@ -1,0 +1,123 @@
+ClearSpend dashboard skeleton implementation review
+==================================================
+
+Scope
+-----
+
+This file records the remaining implementation findings for dashboard skeleton
+loading. It intentionally excludes branch ancestry, commit organization, and
+unrelated-file cleanup.
+
+
+1. Recurring details action — rechecked, no required change
+-----------------------------------------------------------
+
+RecurringPanel intentionally leaves “View all details” available while the
+summary panel is loading. The modal does not present the unmatched cached panel
+response: openModal assigns the currently displayable scoped panel response,
+and when none is available it calls loadModal for the currently selected
+period, month, and card. The modal then presents its own loading state until
+that response arrives.
+
+This behavior already existed before the skeleton implementation and is not a
+stale-data regression. Disabling the action is therefore not required for
+correctness or privacy.
+
+One optional optimization remains: selecting the action before loadPanel has
+finished can produce two concurrent requests to the same recurring endpoint.
+This is a small, user-triggered inefficiency rather than a merge-blocking
+problem. Avoid adding request-sharing complexity unless remote measurements
+show that this path matters.
+
+
+2. Give shared-dashboard failures a clear presentation contract
+----------------------------------------------------------------
+
+App.vue currently passes nullable data and a loading flag to dashboard-owned
+panels, but it does not pass the dashboard error mode or error message. After
+an initial or scope-change failure, the filter area contains the actual error
+and retry action while the panels show repeated generic “unavailable” states.
+Income and Trend can also show the generic failure message in more than one
+place inside the same panel.
+
+Recommended change:
+
+- Choose one explicit shared-dashboard blocking-error design.
+- Either render one prominent dashboard error and retry state in App.vue, or
+  give each dashboard-owned panel a consistent error contract.
+- Keep same-scope refresh failures non-blocking: retain matching content and
+  show a restrained refresh error with retry.
+- Do not repeat generic error messages within an individual panel.
+- Preserve the distinction between not loaded, loading, empty, blocking
+  failure, and refresh failure.
+
+Affected files include:
+
+- frontend/src/App.vue
+- frontend/src/features/income/IncomePanel.vue
+- frontend/src/features/metrics/MetricsGrid.vue
+- frontend/src/features/trend/TrendPanel.vue
+- frontend/src/features/cards/CardsPanel.vue
+- frontend/src/features/transactions/TransactionsPanel.vue
+
+
+3. Make the Income skeleton follow the narrow-screen layout
+------------------------------------------------------------
+
+The real Income metrics and averages collapse from three columns to one column
+below 700px. The new skeleton-specific grids remain three columns because the
+existing responsive selectors do not include them. This can make the loading
+layout cramped and structurally different from the content that replaces it.
+
+Recommended change:
+
+- Include the Income skeleton metric and average grids in the narrow-screen
+  one-column rules.
+- Apply the same padding, divider direction, and first-row treatment used by
+  the real Income content.
+- Confirm that the skeleton and loaded panel have similar height and spacing
+  at representative narrow widths.
+
+Affected file:
+
+- frontend/src/style.css
+
+
+4. Complete loading-state regression coverage
+-----------------------------------------------
+
+The current tests cover progressive initial loading, shared and feature-local
+scope changes, stale-data removal, failed scope changes, reduced motion, and
+late shared-dashboard responses. The following plan requirements remain
+unverified in the rendered application.
+
+Recommended additions:
+
+- Same-scope refresh retains matching content instead of replacing it with
+  skeletons.
+- Same-scope refresh failure retains content and exposes a working retry.
+- Independent Categories, Observations, Recurring, and Events refresh failures
+  follow the same non-blocking behavior.
+- A late response from an older independent-panel scope cannot replace the
+  newest selection.
+- Skeleton layouts remain usable at a representative narrow viewport.
+- Skeleton colors and contrast remain appropriate in at least one alternate
+  light theme and one dark theme.
+- Data-dependent actions are unavailable while their selected scope has no
+  matching response.
+
+Primary affected test file:
+
+- frontend/e2e/loading-states.spec.ts
+
+Component tests may also be added where they provide faster, more precise
+coverage of the panel state contract.
+
+
+Conclusion
+----------
+
+The central response-scope and stale-data protections are correctly designed.
+These changes are targeted completion work: they improve interaction safety,
+failure clarity, responsive fidelity, and regression confidence without
+changing financial calculations, API contracts, or database behavior.

@@ -3,12 +3,13 @@ import { computed, ref, watch } from 'vue';
 import { getRecurring, saveRecurringProfile } from '../../api/recurring';
 import type { InstallmentCommitment, PeriodKey, RecurringResponse, RecurringSeries } from '../../api/contracts';
 import { formatInteger, formatMoney, formatPercent, formatShortMonth } from '../../shared/format';
-import { UiButton, UiDialog } from '../../shared/ui';
+import { UiButton, UiDialog, UiSkeleton } from '../../shared/ui';
 import { burdenShares, nextRecurringSort, recurringCadenceOptions, recurringProfilePayload, recurringStatusClass, recurringStatusLabels, recurringTypeOptions, sortRecurring, type RecurringSort, type RecurringSortKey, type RecurringTab } from './model';
 
 const props = defineProps<{ period: PeriodKey; month: string; card: string; refreshKey: number }>();
 const emit = defineEmits<{ financialDataChange: []; manageRecurring: [canonicalGroupId?: string] }>();
-const panel = ref<RecurringResponse | null>(null);
+const panelCache = ref<RecurringResponse | null>(null);
+const panelScopeKey = ref<string | null>(null);
 const loading = ref(true);
 const error = ref('');
 const modalOpen = ref(false);
@@ -30,6 +31,8 @@ const lifecycleSaving = ref(false);
 let panelRequest = 0;
 let modalRequest = 0;
 
+const selectedPanelScopeKey = computed(() => JSON.stringify([props.period, props.month, props.card]));
+const panel = computed(() => panelScopeKey.value === selectedPanelScopeKey.value ? panelCache.value : null);
 const shares = computed(() => burdenShares(panel.value?.metrics.recurring_share ?? 0, panel.value?.metrics.installment_share ?? 0));
 const sortedSeries = computed(() => sortRecurring(modal.value?.series ?? [], seriesSort.value));
 const sortedCommitments = computed(() => sortRecurring(modal.value?.commitments ?? [], commitmentSort.value));
@@ -79,11 +82,15 @@ function sortIcon(sort: RecurringSort, key: RecurringSortKey): string {
 
 async function loadPanel(): Promise<void> {
   const current = ++panelRequest;
+  const requestScopeKey = selectedPanelScopeKey.value;
   loading.value = true;
   error.value = '';
   try {
     const response = await getRecurring({ period: props.period, month: props.month, card: props.card });
-    if (current === panelRequest) panel.value = response;
+    if (current === panelRequest) {
+      panelCache.value = response;
+      panelScopeKey.value = requestScopeKey;
+    }
   } catch (caught) {
     if (current === panelRequest) error.value = caught instanceof Error ? caught.message : 'Could not load recurring spending';
   } finally {
@@ -110,6 +117,7 @@ async function loadModal(): Promise<void> {
 }
 
 function openModal(tab: RecurringTab = 'series', item?: RecurringSeries | InstallmentCommitment): void {
+  if (!panel.value) return;
   modalPeriod.value = props.period;
   modalTab.value = tab;
   modal.value = panel.value;
@@ -182,7 +190,8 @@ async function saveLifecycle(): Promise<void> {
     lifecycleSaving.value = false;
   }
 }
-watch([() => props.period, () => props.month, () => props.card, () => props.refreshKey], loadPanel, { immediate: true });
+watch([() => props.period, () => props.month, () => props.card], () => { void loadPanel(); }, { immediate: true, flush: 'sync' });
+watch(() => props.refreshKey, () => { void loadPanel(); });
 watch(modalPeriod, () => { selectedSeries.value = ''; selectedCommitment.value = ''; void loadModal(); });
 watch(() => props.card, () => { if (modalOpen.value) void loadModal(); });
 watch(selectedSeriesItem, (item) => {
@@ -196,10 +205,11 @@ defineExpose({ openActivity, openManagement });
 <template>
   <article class="recurring-panel-preview" aria-labelledby="recurring-title" :aria-busy="loading">
     <header class="recurring-panel-head">
-      <div><h2 id="recurring-title">Recurring &amp; commitments</h2><p v-if="panel">Reviewed verdicts: {{ panel.verdict_summary.recurring }} recurring or obligations</p><p v-else>Loading reviewed recurring profiles…</p></div>
-      <button type="button" @click="openModal()">View all details →</button>
+      <div><h2 id="recurring-title">Recurring &amp; commitments</h2><p v-if="panel">Reviewed verdicts: {{ panel.verdict_summary.recurring }} recurring or obligations</p><p v-else-if="loading">Loading reviewed recurring profiles…</p></div>
+      <button type="button" :disabled="!panel" @click="openModal()">View all details →</button>
     </header>
     <div v-if="error && !panel" class="recurring-state error-state"><span>{{ error }}</span><button type="button" @click="loadPanel">Try again</button></div>
+    <div v-else-if="loading && !panel" class="recurring-skeleton" aria-hidden="true"><div class="recurring-summary-preview"><div v-for="index in 4" :key="index"><UiSkeleton shape="line" /><UiSkeleton shape="line" /><UiSkeleton shape="line" /></div></div><div class="recurring-preview-layout"><div class="recurring-preview-lists"><section v-for="column in 2" :key="column" class="recurring-list-card"><UiSkeleton class="recurring-skeleton-title" /><div v-for="index in 3" :key="index" class="recurring-preview-item"><span><UiSkeleton shape="line" /><UiSkeleton shape="line" /></span><span><UiSkeleton shape="line" /><UiSkeleton shape="line" /></span></div></section></div><aside class="recurring-composition"><UiSkeleton shape="line" /><UiSkeleton shape="line" /><UiSkeleton class="recurring-skeleton-bar" /><UiSkeleton v-for="index in 4" :key="index" shape="line" /></aside></div></div>
     <template v-else-if="panel">
       <div class="recurring-summary-preview">
         <div><span>Recurring billed</span><strong>{{ formatMoney(panel.metrics.recurring_billed) }}</strong><small>{{ panel.period.key === 'month' ? 'Recurring and scheduled · excludes installments' : `${panel.period.label} · excludes installments` }}</small></div>
@@ -215,7 +225,8 @@ defineExpose({ openActivity, openManagement });
         <aside class="recurring-composition"><h3>Spending composition</h3><p>Share of actual spending in the selected period. Expected future charges are never included.</p><div class="recurring-composition-bar" role="img" :aria-label="`Recurring ${shares.recurring.toFixed(1)}%, installments ${shares.installments.toFixed(1)}%, other ${shares.other.toFixed(1)}%`"><i :style="{ width: `${shares.recurring}%` }" /><i class="installment" :style="{ width: `${shares.installments}%` }" /><i class="other" :style="{ width: `${shares.other}%` }" /></div><div class="recurring-composition-legend"><span><i />Recurring &amp; scheduled <strong>{{ formatPercent(shares.recurring) }}</strong></span><span><i class="installment" />Installments <strong>{{ formatPercent(shares.installments) }}</strong></span><span><i class="other" />Other spending <strong>{{ formatPercent(shares.other) }}</strong></span></div><dl><dt>Recurring average</dt><dd>{{ formatMoney(panel.metrics.recurring_average) }}</dd><dt>Installment average</dt><dd>{{ formatMoney(panel.metrics.installment_average) }}</dd><dt>Needs attention</dt><dd>{{ panel.metrics.needs_attention }}</dd></dl></aside>
       </div>
     </template>
-    <div v-else class="recurring-state">Loading recurring spending…</div>
+    <div v-else class="recurring-state">Recurring spending is unavailable.</div>
+    <div v-if="error && panel" class="recurring-refresh-error refresh-error" role="alert">{{ error }} <button type="button" @click="loadPanel">Retry</button></div>
   </article>
 
   <UiDialog :open="modalOpen" title-id="recurring-modal-title" close-label="Close recurring details" size="analysis" @request-close="closeModal"><template #header><div class="recurring-modal-head-preview"><div><h2 id="recurring-modal-title">Recurring &amp; commitments</h2></div></div></template><nav class="recurring-modal-toolbar"><div><button v-for="value in (['month','year','all'] as PeriodKey[])" :key="value" type="button" :class="{ active: modalPeriod === value }" @click="modalPeriod = value">{{ value === 'month' ? 'Month' : value === 'year' ? 'Latest year' : 'All time' }}</button></div><div><button v-for="value in (['series','commitments','verdicts'] as RecurringTab[])" :key="value" type="button" :class="{ active: modalTab === value }" @click="modalTab = value">{{ value === 'series' ? 'Recurring & scheduled' : value === 'commitments' ? 'Installments' : 'Verdict summary' }}</button></div></nav><div class="recurring-modal-body-preview">

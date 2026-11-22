@@ -3,7 +3,7 @@ import { computed, ref, watch } from 'vue';
 import { getCategories } from '../../api/categories';
 import type { CategoriesResponse, CategoryRow, EventScope, PeriodKey } from '../../api/contracts';
 import { formatInteger, formatMoney, formatMonth, formatPercent } from '../../shared/format';
-import { UiDialog } from '../../shared/ui';
+import { UiDialog, UiSkeleton } from '../../shared/ui';
 import { buildCategorySegments, categoryComparisonModel, categorySegmentAtPoint, type CategorySegment } from './model';
 
 const scope = ref<EventScope>('all');
@@ -16,7 +16,8 @@ const props = defineProps<{
 const emit = defineEmits<{
   openCategory: [payload: { category: string; routine: boolean }];
 }>();
-const response = ref<CategoriesResponse | null>(null);
+const responseCache = ref<CategoriesResponse | null>(null);
+const responseScopeKey = ref<string | null>(null);
 const loading = ref(true);
 const error = ref('');
 const overviewOpen = ref(false);
@@ -24,10 +25,13 @@ const activeDonutSegment = ref<CategorySegment | null>(null);
 const donutTooltipPosition = ref({ left: '50%', top: '50%' });
 let requestId = 0;
 
+const selectedScopeKey = computed(() => JSON.stringify([props.period, props.month, props.card, scope.value]));
+const response = computed(() => responseScopeKey.value === selectedScopeKey.value ? responseCache.value : null);
 const donut = computed(() => buildCategorySegments(response.value?.categories ?? []));
 
 async function loadCategories(): Promise<void> {
   const currentRequest = ++requestId;
+  const requestScopeKey = selectedScopeKey.value;
   loading.value = true;
   error.value = '';
   try {
@@ -37,7 +41,10 @@ async function loadCategories(): Promise<void> {
       card: props.card,
       eventScope: scope.value,
     });
-    if (currentRequest === requestId) response.value = payload;
+    if (currentRequest === requestId) {
+      responseCache.value = payload;
+      responseScopeKey.value = requestScopeKey;
+    }
   } catch (caught) {
     if (currentRequest !== requestId) return;
     error.value = caught instanceof Error ? caught.message : 'Could not load categories';
@@ -108,14 +115,15 @@ function handleDonutKeydown(event: KeyboardEvent): void {
 }
 
 watch(
-  [scope, () => props.period, () => props.month, () => props.card, () => props.refreshKey],
-  loadCategories,
-  { immediate: true },
+  [scope, () => props.period, () => props.month, () => props.card],
+  () => { overviewOpen.value = false; void loadCategories(); },
+  { immediate: true, flush: 'sync' },
 );
+watch(() => props.refreshKey, () => { void loadCategories(); });
 </script>
 
 <template>
-  <article class="categories-panel" aria-labelledby="categories-title">
+  <article class="categories-panel" aria-labelledby="categories-title" :aria-busy="loading">
     <header class="categories-head">
       <div>
         <h2 id="categories-title">Categories</h2>
@@ -129,10 +137,10 @@ watch(
       </div>
     </header>
 
-    <div v-if="loading && !response" class="panel-state" role="status">Loading categories…</div>
-    <div v-else-if="error" class="panel-state error-state" role="alert">
+    <div v-if="loading && !response" class="categories-skeleton" aria-hidden="true"><UiSkeleton class="categories-donut-skeleton" shape="circle" /><div class="categories-list-skeleton"><div v-for="index in 5" :key="index"><UiSkeleton shape="circle" /><UiSkeleton shape="line" /><UiSkeleton shape="line" /><UiSkeleton shape="line" /></div></div></div>
+    <div v-else-if="error && !response" class="panel-state error-state" role="alert">
       <span>{{ error }}</span>
-      <button type="button" @click="loadCategories">Try again</button>
+      <button type="button" @click="loadCategories()">Try again</button>
     </div>
     <div v-else-if="!response?.categories.length" class="panel-state">No category spending is available for this period.</div>
     <div v-else class="categories-body" :aria-busy="loading">
@@ -152,8 +160,9 @@ watch(
           <span v-else class="comparison-badge unavailable">—</span>
         </button>
       </div>
-      <div v-if="loading" class="refresh-indicator" role="status">Updating…</div>
+      <div v-if="loading" class="refresh-indicator" aria-hidden="true">Updating…</div>
     </div>
+    <div v-if="error && response" class="refresh-indicator refresh-error" role="alert">{{ error }} <button type="button" @click="loadCategories()">Retry</button></div>
   </article>
 
   <UiDialog :open="overviewOpen && Boolean(response)" title-id="category-overview-title" close-label="Close category overview" size="standard" @request-close="closeOverview">

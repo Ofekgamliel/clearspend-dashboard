@@ -4,18 +4,33 @@ import { getRuntimeHealth, runtimeCompatibilityError } from '../../api/runtime';
 import type { DashboardResponse, PeriodKey } from '../../api/contracts';
 import { selectedMonth } from '../filters/model';
 
+export type DashboardLoadMode = 'idle' | 'initial' | 'scope-change' | 'refresh';
+export type DashboardErrorMode = 'blocking' | 'refresh' | null;
+
+export function dashboardScopeKey(period: PeriodKey, month: string, card: string): string {
+  return JSON.stringify([period, month, card]);
+}
+
 export function useDashboardData() {
   const period = ref<PeriodKey>('month');
   const month = ref('');
   const card = ref('all');
   const dashboard = ref<DashboardResponse | null>(null);
-  const loading = ref(true);
+  const responseScopeKey = ref<string | null>(null);
+  const loadMode = ref<DashboardLoadMode>('idle');
   const loadError = ref('');
+  const loadErrorMode = ref<DashboardErrorMode>(null);
   const runtimeChecking = ref(true);
   const runtimeReady = ref(false);
   const runtimeError = ref('');
   const revision = ref(0);
   let requestId = 0;
+
+  const selectedScopeKey = computed(() => dashboardScopeKey(period.value, month.value, card.value));
+  const displayDashboard = computed(() => (
+    responseScopeKey.value === selectedScopeKey.value ? dashboard.value : null
+  ));
+  const loading = computed(() => loadMode.value !== 'idle');
 
   const effectiveMonth = computed(() => selectedMonth(
     month.value,
@@ -23,20 +38,26 @@ export function useDashboardData() {
     dashboard.value?.available_months ?? [],
   ));
 
-  async function load(): Promise<void> {
+  async function load(mode: Exclude<DashboardLoadMode, 'idle'> = 'scope-change'): Promise<void> {
     const currentRequest = ++requestId;
-    loading.value = true;
+    const requestScopeKey = selectedScopeKey.value;
+    loadMode.value = mode;
     loadError.value = '';
+    loadErrorMode.value = null;
     try {
       const response = await getDashboard({ period: period.value, month: month.value, card: card.value });
       if (currentRequest !== requestId) return;
       dashboard.value = response;
+      responseScopeKey.value = requestScopeKey;
       if (card.value !== 'all' && !response.cards.some((item) => item.key === card.value)) card.value = 'all';
     } catch (caught) {
       if (currentRequest !== requestId) return;
       loadError.value = caught instanceof Error ? caught.message : 'Could not load dashboard filters';
+      loadErrorMode.value = mode === 'refresh' && responseScopeKey.value === requestScopeKey
+        ? 'refresh'
+        : 'blocking';
     } finally {
-      if (currentRequest === requestId) loading.value = false;
+      if (currentRequest === requestId) loadMode.value = 'idle';
     }
   }
 
@@ -48,14 +69,15 @@ export function useDashboardData() {
       const compatibilityError = runtimeCompatibilityError(await getRuntimeHealth());
       if (compatibilityError) throw new Error(compatibilityError);
       runtimeReady.value = true;
-      await load();
+      runtimeChecking.value = false;
+      void load('initial');
     } catch (caught) {
       const message = caught instanceof Error ? caught.message : '';
       runtimeError.value = /different builds|database is unavailable|server is not ready/i.test(message)
         ? message
         : 'Could not connect to the compatible local ClearSpend server. Start or restart it from this branch, then try again.';
     } finally {
-      runtimeChecking.value = false;
+      if (!runtimeReady.value) runtimeChecking.value = false;
     }
   }
 
@@ -66,10 +88,18 @@ export function useDashboardData() {
 
   function refresh(): void {
     revision.value += 1;
-    void load();
+    void load('refresh');
   }
 
-  watch([period, month, card], () => { if (runtimeReady.value) void load(); });
+  function retry(): void {
+    if (loadErrorMode.value === 'refresh') {
+      void load('refresh');
+      return;
+    }
+    void load(dashboard.value ? 'scope-change' : 'initial');
+  }
+
+  watch([period, month, card], () => { if (runtimeReady.value) void load('scope-change'); });
   onMounted(() => { void verifyRuntime(); });
 
   return {
@@ -77,8 +107,13 @@ export function useDashboardData() {
     month,
     card,
     dashboard,
+    displayDashboard,
     loading,
+    loadMode,
     loadError,
+    loadErrorMode,
+    selectedScopeKey,
+    responseScopeKey,
     runtimeChecking,
     runtimeReady,
     runtimeError,
@@ -88,5 +123,6 @@ export function useDashboardData() {
     verifyRuntime,
     changeMonth,
     refresh,
+    retry,
   };
 }

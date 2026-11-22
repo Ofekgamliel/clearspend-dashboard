@@ -4,6 +4,7 @@
 .transactions-head p { margin: 5px 0 0; color: var(--ui-subtle); font-size: var(--ui-font-panel-subtitle); }
 .transactions-view-all { padding: 3px 0; border: 0; background: transparent; color: var(--ui-accent-text); font-size: var(--ui-font-control); font-weight: 750; cursor: pointer; }
 .transactions-view-all:hover { color: var(--ui-primary-hover); }
+.transactions-view-all:disabled { color: var(--ui-subtle); cursor: not-allowed; }
 .transactions-view-all:focus-visible { outline: 2px solid var(--ui-focus); outline-offset: 3px; }
 .recent-table-wrap { margin-top: 11px; overflow-x: auto; }
 .recent-transactions-table { width: 100%; border-collapse: collapse; font-size: var(--ui-font-data-secondary); }
@@ -21,6 +22,9 @@
 .recent-merchant-icon.refund { background: var(--ui-success-soft); color: var(--ui-success); }
 .recent-card-mark { display: inline-grid; width: 17px; height: 13px; margin-right: 5px; place-items: center; border-radius: 3px; background: var(--ui-primary); color: var(--ui-on-primary); font-size: 10px; vertical-align: middle; }
 .recent-card-mark.max { background: var(--ui-heading); color: var(--ui-danger); }
+.transaction-skeleton-row td:first-child > .ui-skeleton { width: 30px; height: 30px; flex: 0 0 30px; }
+.transaction-skeleton-row td:first-child > span { width: 150px; display: grid; gap: 6px; }.transaction-skeleton-row td:first-child > span .ui-skeleton:first-child { width: 80%; }.transaction-skeleton-row td:first-child > span .ui-skeleton:last-child { width: 55%; }
+.transaction-skeleton-row td:not(:first-child) .ui-skeleton { width: min(100%,90px); margin-left: auto; }.transaction-skeleton-row td:nth-child(2) .ui-skeleton,.transaction-skeleton-row td:nth-child(3) .ui-skeleton,.transaction-skeleton-row td:nth-child(4) .ui-skeleton { margin-left: 0; }
 .transaction-category-pill { display: inline-flex; min-height: 20px; align-items: center; padding: 0 7px; border-radius: 7px; background: var(--ui-accent-soft); color: var(--ui-accent-text); font-size: 10px; font-weight: 700; white-space: nowrap; }
 .transaction-category-pill.review { background: var(--ui-warning-soft); color: var(--ui-warning); }
 

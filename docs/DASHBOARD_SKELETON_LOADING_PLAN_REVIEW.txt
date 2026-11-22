@@ -1,0 +1,201 @@
+ClearSpend dashboard skeleton-loading plan review
+=================================================
+
+Overall assessment
+------------------
+
+The plan is well scoped and fits the current Vue architecture. It correctly
+separates initial loading, reporting-scope changes, and same-scope refreshes;
+keeps financial calculations in Python; avoids a global loading store; and
+protects income privacy, accessibility, themes, empty states, and failures.
+
+The implementation should proceed after the corrections below are incorporated.
+
+
+Required corrections
+--------------------
+
+1. Decouple runtime health from dashboard loading
+
+The current verifyRuntime flow waits for the complete dashboard request before
+ending runtimeChecking. App.vue therefore continues showing the connection
+screen, and none of the dashboard or independently loaded panels mount while
+the first dashboard response is pending.
+
+After the health request succeeds:
+
+- Mark the runtime ready immediately.
+- End the connection-checking state.
+- Start the dashboard request as dashboard loading, not health checking.
+- Allow Categories, Events, Recurring, and Observations to mount and request
+  their data concurrently.
+
+Without this change, progressive skeleton loading cannot work on initial load.
+
+
+2. Track response scope, not only a loading mode
+
+A DashboardLoadMode value is useful but is not enough to establish whether the
+current response is safe to display. Store or derive a stable scope identity
+from period, month, and card, and associate the successful response with that
+identity.
+
+Render financial values only when the response identity matches the currently
+selected scope:
+
+- Initial load: no displayable response; show skeletons.
+- Period, month, or card change: the previous response is immediately stale;
+  show skeletons.
+- Same-scope refresh: the matching response remains safe to show with a subtle
+  updating state.
+- Older response: ignore it even if it finishes successfully.
+
+Request-ID protection remains mandatory.
+
+
+3. Include feature-specific scope changes
+
+The stale-data rule must cover more than the shared period, month, and card:
+
+- Categories: switching between All spending and Routine only is a scope
+  change. Old category values must disappear while the new scope loads.
+- Observations: changing incomeHidden is a privacy-sensitive scope change.
+  Old income-related observations must not remain visible after income is
+  hidden.
+
+Other features should explicitly identify any local control that changes the
+meaning of their response and treat it as a scope change rather than a refresh.
+
+
+4. Separate blocking errors from refresh errors
+
+The state model must distinguish two failure types:
+
+- Initial or scope-change failure: remove the skeleton and show the panel's
+  blocking error and retry state.
+- Same-scope refresh failure: retain the current matching content and show a
+  restrained refresh error with an appropriate retry action.
+
+A failed refresh must not turn valid existing content into an empty state or a
+full blocking error.
+
+
+5. Define how panels render before dashboard data exists
+
+App.vue currently mounts Income, Metrics, Trend, Cards, and Recent transactions
+only after a DashboardResponse exists. The plan must explicitly change this so
+their frames and skeleton layouts can render after health succeeds but before
+the first dashboard response arrives.
+
+A clean component contract is:
+
+- Pass nullable feature data plus an explicit loading mode.
+- During initial load and scope changes, pass no displayable financial data.
+- During a same-scope refresh, retain the matching data.
+- Let each feature own its real and skeleton layout branches.
+
+Do not construct fake DashboardResponse objects filled with zeroes or sample
+financial values merely to satisfy existing required props.
+
+
+6. Keep request cancellation optional
+
+AbortController may cancel browser response handling and reduce unnecessary
+client work, but aborting fetch does not guarantee that the Python handler or
+PostgreSQL query stops after the request reaches the server.
+
+Request IDs are the correctness mechanism. Implement cancellation only after
+the loading behavior works and measurement demonstrates a practical benefit.
+It should not block completion of the skeleton-loading work.
+
+
+Implementation refinements
+--------------------------
+
+- Own the one polite dashboard loading announcement in App.vue or the dashboard
+  composable. Individual panels should use aria-busy without creating competing
+  live-region announcements.
+- Keep known month and card navigation options stable in the header while panel
+  values load. Financial content should clear without making the filter layout
+  collapse.
+- UiSkeleton should own generic line, block, and circle presentation,
+  decorative semantics, animation, and reduced-motion behavior. Feature CSS
+  should own exact width, height, arrangement, and responsive layout.
+- Add the demonstrated consumers to UI_COMPONENT_LIBRARY_INVENTORY.md before
+  introducing UiSkeleton.
+- Define skeleton semantic tokens in shared/theme/tokens.css and derive them
+  from existing surface and border tokens. Avoid hard-coded gray values and
+  unnecessary per-theme overrides.
+- Keep one restrained animation. Do not introduce staggered animation or a
+  minimum display duration that slows fast responses.
+- For a delayed appearance intended to prevent flashes, hide stale scope data
+  immediately even while the skeleton itself is waiting to appear.
+- Keep the New event action available only if it remains fully independent of
+  the pending Events response.
+- Disable View all transactions and other data-dependent actions until their
+  selected scope and response are known to agree.
+
+
+Testing refinements
+-------------------
+
+- Add a test proving that dashboard and independent feature requests begin as
+  soon as health succeeds, without waiting for /api/dashboard to finish.
+- Test response identity as well as request ordering: a completed response for
+  an old period, month, card, category scope, or income-visibility state must
+  not become visible.
+- Test blocking-load failures separately from same-scope refresh failures.
+- Use Playwright request interception to simulate delayed, reordered, aborted,
+  and failed responses deterministically with synthetic data.
+- Verify that an initial load mounts skeleton frames and contains no financial
+  values in visible text or the accessibility tree.
+- Verify that a scope change removes the previous response immediately.
+- Verify that a same-scope refresh retains valid content and does not replace
+  the entire dashboard with skeletons.
+- Verify income hiding during an active observations request.
+- Verify reduced-motion behavior, keyboard focus stability, desktop and narrow
+  layout stability, and representative light and dark themes.
+- Keep real endpoint-duration measurement separate from deterministic loading
+  tests. Skeletons improve perceived responsiveness but do not prove database
+  performance.
+
+
+Decisions to retain from the plan
+---------------------------------
+
+- Do not introduce a global loading store.
+- Keep loading ownership in the dashboard composable and independent features.
+- Use one generic shared skeleton primitive with feature-owned layouts.
+- Never show old-scope values beneath an Updating label.
+- Retain safe same-scope content during ordinary refreshes.
+- Keep skeletons decorative and free of fabricated financial information.
+- Preserve explicit empty, error, retry, and disconnected-runtime states.
+- Protect hidden income in visible content, hidden DOM, tooltips, charts, and
+  the accessibility tree.
+- Implement dashboard-owned panels before independently loaded panels.
+- Leave dialog and management-workflow skeletons for a separately justified
+  future change.
+- Measure backend latency instead of treating skeletons as a performance fix.
+
+
+Recommended implementation order
+--------------------------------
+
+1. Correct health/dashboard sequencing and introduce response-scope identity.
+2. Add explicit initial, scope-change, refresh, success, and failure behavior.
+3. Add UiSkeleton, semantic tokens, inventory entry, and component tests.
+4. Implement dashboard-owned panel skeletons using nullable display data.
+5. Implement independent feature skeletons, including local scope identities.
+6. Add deterministic browser workflows and reviewed visual snapshots.
+7. Measure real endpoint latency.
+8. Consider AbortController only if measurements justify it.
+
+
+Conclusion
+----------
+
+The plan is not unnecessarily complicated. Its phased approach and privacy
+rules are appropriate for a remote authoritative database. The main gap is the
+current runtime-health sequencing: unless health completion is separated from
+dashboard loading, the application will continue showing the connection screen
+instead of a progressively resolving skeleton dashboard.

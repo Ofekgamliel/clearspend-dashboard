@@ -3,12 +3,13 @@ import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue';
 import { createEvent, getEvents, saveEvent } from '../../api/events';
 import type { EventSummary, EventsResponse, EventTransaction, PeriodKey } from '../../api/contracts';
 import { formatDate, formatMoney } from '../../shared/format';
-import { UiButton, UiDialog, UiField, UiIconButton, UiInput, UiSelect } from '../../shared/ui';
+import { UiButton, UiDialog, UiField, UiIconButton, UiInput, UiSelect, UiSkeleton } from '../../shared/ui';
 import { buildEventPanelItems, categoryTotals, eventFormError, eventIcon, isBusinessTrip, type EventGroupItem } from './model';
 
 const colors = Array.from({ length: 8 }, (_, index) => `var(--ui-chart-${index + 1})`);
 const props = defineProps<{ period: PeriodKey; month: string; card: string; refreshKey: number }>();
-const response = ref<EventsResponse | null>(null);
+const responseCache = ref<EventsResponse | null>(null);
+const responseScopeKey = ref<string | null>(null);
 const loading = ref(true);
 const error = ref('');
 const modalOpen = ref(false);
@@ -32,6 +33,8 @@ const editForm = reactive({
 let requestId = 0;
 let noticeTimer: ReturnType<typeof setTimeout> | undefined;
 
+const selectedScopeKey = computed(() => JSON.stringify([props.period, props.month, props.card]));
+const response = computed(() => responseScopeKey.value === selectedScopeKey.value ? responseCache.value : null);
 const items = computed(() => buildEventPanelItems(response.value?.events ?? [], props.period));
 const combinedSpending = computed(() => (response.value?.events ?? []).reduce((sum, event) => sum + Number(event.amount || 0), 0));
 const categories = computed(() => categoryTotals(activeEvent.value?.transactions ?? []));
@@ -45,11 +48,15 @@ const groupCards = computed(() => new Set(groupTransactions.value.map((item) => 
 
 async function loadEvents(): Promise<void> {
   const current = ++requestId;
+  const requestScopeKey = selectedScopeKey.value;
   loading.value = true;
   error.value = '';
   try {
     const payload = await getEvents({ period: props.period, month: props.month, card: props.card });
-    if (current === requestId) response.value = payload;
+    if (current === requestId) {
+      responseCache.value = payload;
+      responseScopeKey.value = requestScopeKey;
+    }
   } catch (caught) {
     if (current === requestId) error.value = caught instanceof Error ? caught.message : 'Could not load projects and events';
   } finally {
@@ -171,7 +178,8 @@ async function submitCreate(): Promise<void> {
   }
 }
 
-watch([() => props.period, () => props.month, () => props.card, () => props.refreshKey], loadEvents, { immediate: true });
+watch([() => props.period, () => props.month, () => props.card], () => { void loadEvents(); }, { immediate: true, flush: 'sync' });
+watch(() => props.refreshKey, () => { void loadEvents(); });
 watch([() => props.period, () => props.month, () => props.card], closeModal);
 onBeforeUnmount(() => clearTimeout(noticeTimer));
 defineExpose({ reload: loadEvents });
@@ -181,6 +189,7 @@ defineExpose({ reload: loadEvents });
   <article class="events-panel-preview" :class="{ empty: response && !response.events.length }" aria-labelledby="events-title" :aria-busy="loading">
     <header class="events-panel-head"><div><div class="events-title-line"><h2 id="events-title">Projects &amp; events</h2><span v-if="response && !response.events.length">No active projects</span></div><p v-if="response?.events.length">{{ response.events.length }} events · {{ formatMoney(combinedSpending) }}</p></div><button type="button" class="event-create-button-preview" @click="openCreate"><b>+</b> New event</button></header>
     <div v-if="error && !response" class="events-state error-state"><span>{{ error }}</span><button type="button" @click="loadEvents">Try again</button></div>
+    <div v-else-if="loading && !response" class="events-grid-preview events-skeleton" aria-hidden="true"><div v-for="index in 3" :key="index" class="event-card-preview"><UiSkeleton shape="circle" /><span><UiSkeleton shape="line" /><UiSkeleton shape="line" /></span><span><UiSkeleton shape="line" /><UiSkeleton shape="line" /></span></div></div>
     <div v-else-if="items.length" class="events-grid-preview">
       <button v-for="item in items" :key="item.kind === 'group' ? item.id : item.event.id" type="button" class="event-card-preview" :class="{ business: item.kind === 'group' || isBusinessTrip(item.event.event_type) }" @click="item.kind === 'group' ? openGroup(item) : openEvent(item.event)">
         <span class="event-card-icon-preview"><svg v-if="item.kind === 'group' || eventIcon(item.event) === 'briefcase'" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 7V5.8A1.8 1.8 0 0 1 10.8 4h2.4A1.8 1.8 0 0 1 15 5.8V7"/><rect x="3" y="7" width="18" height="13" rx="2"/><path d="M3 12.5c4.8 2 13.2 2 18 0"/><path d="M10 13h4"/></svg><template v-else>{{ eventIcon(item.event) }}</template><i v-if="item.kind === 'group' ? item.events.every(event => event.status === 'completed') : item.event.status === 'completed'">✓</i></span>
@@ -188,7 +197,8 @@ defineExpose({ reload: loadEvents });
         <span class="event-card-amount-preview"><strong>{{ formatMoney(item.kind === 'group' ? item.events.reduce((sum,event) => sum + Number(event.amount || 0),0) : item.event.amount) }}</strong><small>{{ period === 'month' ? 'THIS MONTH' : 'PERSONAL SPENDING' }}</small></span>
       </button>
     </div>
-    <div v-else-if="!response" class="events-state">Loading projects and events…</div>
+    <div v-else-if="!response" class="events-state">Projects and events are unavailable.</div>
+    <div v-if="error && response" class="events-refresh-error refresh-error" role="alert">{{ error }} <button type="button" @click="loadEvents">Retry</button></div>
   </article>
 
   <UiDialog :open="modalOpen" title-id="event-modal-title" close-label="Close event" size="large" @request-close="closeModal">
