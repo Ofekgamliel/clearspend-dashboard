@@ -15,7 +15,8 @@ class PostgreSQLRuntimeConfigurationTests(unittest.TestCase):
     def values(self) -> dict:
         return {
             "backend": "postgresql",
-            "host": "synthetic.pooler.invalid",
+            "expected_region": "eu-central-1",
+            "host": "aws-0-eu-central-1.pooler.supabase.com",
             "port": 5432,
             "database": "postgres",
             "user": "clearspend_app",
@@ -36,7 +37,11 @@ class PostgreSQLRuntimeConfigurationTests(unittest.TestCase):
 
             configuration = load_postgresql_runtime_configuration(path)
 
-        self.assertEqual(configuration.database.host, "synthetic.pooler.invalid")
+        self.assertEqual(
+            configuration.database.host,
+            "aws-0-eu-central-1.pooler.supabase.com",
+        )
+        self.assertEqual(configuration.expected_region, "eu-central-1")
         self.assertEqual(configuration.database.user, "clearspend_app")
         self.assertEqual(
             configuration.database.ssl_root_certificate,
@@ -74,6 +79,27 @@ class PostgreSQLRuntimeConfigurationTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeConfigurationError, "postgresql backend"):
                 load_postgresql_runtime_configuration(path)
 
+    def test_pooler_region_must_match_expected_region(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "runtime.json"
+            values = self.values()
+            values["host"] = "aws-0-ap-southeast-2.pooler.supabase.com"
+            path.write_text(json.dumps(values), encoding="utf-8")
+            with self.assertRaisesRegex(
+                RuntimeConfigurationError,
+                "host region does not match expected_region",
+            ):
+                load_postgresql_runtime_configuration(path)
+
+            values = self.values()
+            values["host"] = "db.example-project-ref.supabase.co"
+            path.write_text(json.dumps(values), encoding="utf-8")
+            with self.assertRaisesRegex(
+                RuntimeConfigurationError,
+                "region-qualified Supabase Session-pooler",
+            ):
+                load_postgresql_runtime_configuration(path)
+
     def test_configuration_file_must_be_valid_json_object(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "runtime.json"
@@ -105,6 +131,7 @@ class PostgreSQLRuntimeConfigurationTests(unittest.TestCase):
         configuration = load_postgresql_runtime_configuration(template)
 
         self.assertIn("example-project-ref", configuration.database.user)
+        self.assertEqual(configuration.expected_region, "eu-central-1")
         self.assertEqual(configuration.backup.psql_path, Path("psql"))
         self.assertNotIn("password", template.read_text(encoding="utf-8").casefold())
 

@@ -129,6 +129,8 @@ def main() -> None:
     )
     print(f"ClearSpend is running at http://{args.host}:{args.port}")
     print(f"Database backend: {database_label}")
+    if args.postgresql_config:
+        print(f"Database region: {configuration.expected_region}")
     try:
         server.serve_forever()
     except KeyboardInterrupt:
