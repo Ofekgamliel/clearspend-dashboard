@@ -10,6 +10,7 @@ def with_spending_shares(
     result: list[dict] = []
     for source in rows:
         row = dict(source)
+        row["amount"] = float(row["amount"])
         row["share"] = round(float(row["amount"]) / total * 100, 1) if total else 0
         result.append(row)
     return result

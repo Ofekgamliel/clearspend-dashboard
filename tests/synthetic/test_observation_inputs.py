@@ -2,9 +2,13 @@ from __future__ import annotations
 
 import tempfile
 import unittest
+from contextlib import contextmanager
 from pathlib import Path
+from unittest.mock import patch
 
 from clearspend.observations.inputs import load_observation_inputs
+from clearspend.recurring.queries import recurring_payload
+from clearspend.recurring.service import manage_recurring_profile
 from tests.synthetic.support import (
     add_import,
     add_income,
@@ -81,6 +85,37 @@ class ObservationInputSnapshotTests(unittest.TestCase):
             "month",
         )
 
+    def test_bulk_recurring_snapshot_preserves_monthly_series_contract(self) -> None:
+        connection = connect(self.database)
+        connection.execute(
+            "UPDATE transactions SET merchant_raw=?,merchant_normalized=?",
+            ("Synthetic Subscription", "synthetic subscription"),
+        )
+        connection.commit()
+        connection.close()
+        manage_recurring_profile(
+            self.database,
+            "synthetic subscription",
+            "recurring",
+            "Fixed recurring",
+            "Monthly",
+            "active",
+            "",
+        )
+
+        snapshot = load_observation_inputs(
+            self.database,
+            period="all",
+            card="all",
+        )
+
+        for month in snapshot.scope.recurring_months:
+            expected = recurring_payload(self.database, "month", "all", month)
+            self.assertEqual(
+                snapshot.recurring_by_month[month]["series"],
+                expected["series"],
+            )
+
     def test_all_card_snapshot_supplies_household_history_and_income_visibility(self) -> None:
         snapshot = load_observation_inputs(
             self.database,
@@ -137,6 +172,60 @@ class ObservationInputSnapshotTests(unittest.TestCase):
         self.assertEqual(
             snapshot.reviewed_finding_keys,
             frozenset({"UNUSUAL TRANSACTION:synthetic"}),
+        )
+
+    def test_long_period_snapshot_uses_a_fixed_number_of_bulk_reads(self) -> None:
+        connection = connect(self.database)
+        import_id = connection.execute("SELECT id FROM imports LIMIT 1").fetchone()["id"]
+        for number in range(3, 13):
+            add_transaction(
+                connection,
+                import_id,
+                key=f"month-{number}",
+                merchant=f"Synthetic month {number}",
+                amount=number * 10,
+                category="Food",
+                transaction_date=f"2030-{number:02d}-10",
+                billing_month=f"2030-{number:02d}",
+            )
+        connection.commit()
+
+        class CountingConnection:
+            def __init__(self, wrapped):
+                self.wrapped = wrapped
+                self.statements = []
+
+            def execute(self, sql, parameters=None):
+                self.statements.append(sql)
+                if parameters is None:
+                    return self.wrapped.execute(sql)
+                return self.wrapped.execute(sql, parameters)
+
+            def rollback(self):
+                self.wrapped.rollback()
+
+        counted = CountingConnection(connection)
+
+        @contextmanager
+        def existing_connection(_database):
+            yield counted
+
+        with patch(
+            "clearspend.observations.inputs.database_connection",
+            existing_connection,
+        ):
+            snapshot = load_observation_inputs(
+                self.database,
+                period="all",
+                card="all",
+            )
+
+        connection.close()
+        self.assertEqual(len(snapshot.scope.recurring_months), 12)
+        self.assertEqual(len(counted.statements), 7)
+        self.assertEqual(
+            sum("JOIN recurring_profile_members" in sql for sql in counted.statements),
+            1,
         )
 
 

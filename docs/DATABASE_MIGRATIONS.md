@@ -1,11 +1,14 @@
 # Database migrations
 
-This document defines the current ClearSpend schema-versioning mechanism and
-the requirements for future schema changes. A migration command is a separate,
-explicit operation; reading this document does not authorize changing the live
-database.
+This document defines ClearSpend's maintained schema-versioning mechanisms.
+Migration execution is an explicit administrative action; ordinary server
+startup only verifies compatibility.
 
-## Current implementation
+## Supported databases
+
+PostgreSQL is authoritative. The retained SQLite database is an archival
+pre-cutover snapshot and remains supported only for compatibility tests and
+inspection.
 
 Migration ownership is under `src/clearspend/database/`:
 
@@ -14,141 +17,124 @@ database/
 ├── backup.py
 ├── connection.py
 ├── migration_runner.py
+├── postgresql_backup.py
+├── postgresql_migration_runner.py
+├── postgresql_migrations/
+├── postgresql_provisioning.py
 ├── schema.py
 └── migrations/
-    └── v001_current_baseline.py
 ```
 
-`schema_migrations` records ordered versions, names, and application timestamps.
-Version 1 represents the current baseline schema. Importing Python modules does
-not migrate a database, and ordinary startup never upgrades a compatible
-non-empty database implicitly.
+One-time SQLite-to-PostgreSQL copy and parity tooling is not part of the
+maintained application. PostgreSQL recovery uses encrypted PostgreSQL backups,
+not the archival SQLite snapshot.
 
-Fresh or empty databases are initialized through the migration runner. Existing
-compatible unversioned databases remain readable, but registration as version 1
-is an explicit migration operation. An unknown, partial, or newer-than-supported
-schema is rejected rather than guessed or rebuilt.
+## PostgreSQL provisioning and migrations
 
-## Inspecting and migrating
+Provisioning is a separate administrative operation. It creates and verifies:
 
-Run the approved migration command from the repository root:
+- the private `clearspend` schema;
+- the restricted `clearspend_app` login;
+- administrative ownership of schema objects;
+- explicit runtime grants;
+- denial of schema access to Supabase API roles; and
+- the restricted runtime search path.
+
+The running application never receives the administrative `postgres`
+credential. Provisioning is retained because a replacement or recovery
+environment must be reproducible.
+
+The PostgreSQL migration runner:
+
+- accepts only an explicitly opened administrative pool;
+- requires provisioning to have completed;
+- rejects missing, non-contiguous, or newer versions;
+- applies, verifies, and records each migration transactionally;
+- grants the exact required privileges to `clearspend_app`; and
+- never runs implicitly during normal startup.
+
+Current migrations are ordered modules under
+`database/postgresql_migrations/`:
+
+1. Core imports, transactions, and observation reviews.
+2. Transaction browsing, corrections, income, events, and event membership.
+3. Merchant rules, import coverage, recurring profiles, membership, and the
+   restricted merchant-category trigger.
+4. Exact import-to-transaction linkage used by duplicate and batch-decision
+   workflows.
+5. Exact PostgreSQL `NUMERIC` storage for transaction amounts, exchange rates,
+   reimbursements, income, event budgets, and statement totals.
+
+The runner verifies required objects, ownership, grants, API-role denial, and
+the expected migration history after application.
+
+## Adding a PostgreSQL migration
+
+1. Add the next contiguous migration module.
+2. Keep it deterministic and transaction-safe.
+3. Create every object with an explicit owner and grant only the permissions
+   required by `clearspend_app`.
+4. Preserve provider evidence, transactions, mappings, overrides,
+   reimbursements, events, recurring decisions, reviews, coverage, and audit
+   history unless the approved change explicitly requires otherwise.
+5. Verify tables, columns, indexes, sequences, constraints, triggers,
+   ownership, runtime grants, and API-role denial.
+6. Test empty-schema application, a second inspection, deliberate failure,
+   rollback, and representative preserved data.
+7. Create and verify an authenticated encrypted PostgreSQL backup before
+   applying an approved migration to authoritative data.
+8. Run the migration with the server stopped, then restart and perform health
+   and representative workflow checks.
+
+Do not add opportunistic `ALTER TABLE` statements to startup and do not use
+automatic privilege inheritance as a substitute for explicit grants.
+
+## Backup and recovery boundary
+
+`database.postgresql_backup` streams a schema-scoped custom-format `pg_dump`
+through AES-256-CBC with PBKDF2 without creating a plaintext intermediate. It
+publishes two mode-`0600` files:
+
+- `*.dump.enc` — encrypted archive;
+- `*.dump.enc.integrity` — versioned PBKDF2-derived HMAC-SHA-256 metadata.
+
+Creation decrypts and lists the archive to verify all maintained tables before
+publication. Restore requires the matching integrity file, verifies the HMAC
+before decryption, refuses a target where the private schema already exists,
+restores in one transaction, and verifies the table and migration inventory.
+Both files are required for recovery and must be stored together; the archive
+passphrase remains separate in macOS Keychain.
+
+See [`OPERATIONS_AND_RECOVERY.md`](OPERATIONS_AND_RECOVERY.md) for the approved
+restore procedure.
+
+## SQLite compatibility migrations
+
+The legacy SQLite runner remains for temporary synthetic tests and archival
+inspection:
 
 ```bash
-PYTHONPATH=src:. .venv/bin/python -m clearspend.server --migrate-database
+PYTHONPATH=src:. .venv/bin/python -m clearspend.server \
+  --legacy-sqlite-database data/clearspend.db \
+  --migrate-database
 ```
 
-The command:
+It inspects the schema, rejects unsupported shapes, creates a verified SQLite
+backup when pending work exists, applies each migration transactionally, and
+verifies the final state. It is not the PostgreSQL production migration path.
 
-1. Inspects the current schema.
-2. Rejects unsupported shapes before changing them.
-3. Creates and verifies a timestamped SQLite backup when a non-empty database
-   has pending work.
-4. Applies each migration and its version record transactionally.
-5. Runs migration and final-schema verification.
-6. Exits without starting the web server.
+`tools/verify_migration_copy.py` verifies legacy SQLite migration behavior on a
+temporary SQLite backup. It does not copy data to PostgreSQL.
 
-If no migration is pending, it performs no backup and no schema write.
+## Test expectations
 
-The status of a particular private database must be established by inspection;
-tracked documentation must not assume whether that local database is versioned.
+Tracked tests cover runner inspection, ordered application, statement
+generation, permissions, rollback, backup orchestration, and runtime
+compatibility. A separate CI job provisions a disposable PostgreSQL 17 service,
+creates Supabase-style API roles, runs provisioning and all migrations, connects
+through `clearspend_app`, exercises representative feature reads and writes,
+proves approved-import commit and rollback, and checks access denial. It uses
+only synthetic data and never connects to the private Supabase project.
 
-## Copy-based verification
-
-Before approving a live cutover, migrate a SQLite-consistent temporary copy:
-
-```bash
-PYTHONPATH=src:. .venv/bin/python tools/verify_migration_copy.py data/clearspend.db
-```
-
-The utility opens the source read-only, creates the temporary copy with SQLite's
-backup API, migrates only that copy, and compares existing tables plus
-representative API payloads. It prints generic status and counts rather than
-private records.
-
-## Schema states
-
-`inspect_database(path)` reports one of these states:
-
-- `empty` — no initialized application schema.
-- `current_unversioned` — schema matches the supported baseline but has no
-  migration record.
-- `versioned` — supported migration metadata and schema are present.
-- `unsupported` — required objects are missing, inconsistent, or newer than the
-  running application understands.
-
-An unsupported state is a stop condition. Do not add opportunistic `ALTER
-TABLE`, silent backfills, or automatic database replacement to server startup.
-
-## Migration representation
-
-Each migration is a small ordered Python module under
-`database/migrations/` with fixed metadata and explicit apply/verify functions:
-
-```python
-VERSION = 2
-NAME = "descriptive_change"
-
-def apply(connection): ...
-def verify(connection): ...
-```
-
-Versions are unique, contiguous positive integers. A version record is written
-only after application and verification succeed. Migration modules may use
-database helpers but must not import HTTP or frontend code.
-
-Use Python migration modules rather than raw SQL files when a safe change needs
-data validation, a deterministic backfill, or post-change verification.
-
-## Adding a future migration
-
-1. Describe the stored-data change and compatibility impact.
-2. Add the next contiguous migration module.
-3. Keep the migration deterministic and safe to retry after rollback.
-4. Preserve transactions, provider evidence, mappings, overrides,
-   reimbursements, events, recurring decisions, reviews, coverage and audit
-   records unless the approved change explicitly says otherwise.
-5. Add synthetic tests for the old supported shape, successful upgrade,
-   idempotent second run, verification failure and rollback.
-6. Verify a private database copy before considering the live database.
-7. Update the schema inventory and affected API contracts only when their
-   maintained semantics change.
-
-Do not create an empty placeholder migration or example production version.
-
-## Required test coverage
-
-Migration coverage must include:
-
-1. Empty database creation at the current version.
-2. Compatible unversioned baseline registration without row changes.
-3. No-op behavior when run a second time.
-4. Rejection of unknown or partial schemas without modification.
-5. Verified backup before pending work on a non-empty database.
-6. Rollback of schema, data, and version state after deliberate failure.
-7. Verification of required tables, columns, indexes and triggers.
-8. Preservation of representative financial and reviewed records.
-
-Tests use temporary synthetic databases. See [`TESTING.md`](TESTING.md).
-
-## Backup, failure, and recovery
-
-A pending migration for a non-empty database requires a backup directory.
-Backups use SQLite's backup API and integrity verification; they are not raw
-copies of a potentially active database with unresolved WAL state.
-
-Each migration applies inside a transaction where SQLite permits. A failure
-rolls back that migration and leaves the verified pre-migration backup in place.
-The runner reports the backup path but never restores or deletes files
-automatically.
-
-Before a live migration:
-
-- stop imports and other writes;
-- record relevant table counts and dashboard totals;
-- migrate and verify a copy;
-- preserve the live pre-migration backup;
-- run integrity, version, count, total and representative-decision checks after
-  the approved migration.
-
-Restoring a backup replaces financial state and requires separate explicit
-approval. Follow [`OPERATIONS_AND_RECOVERY.md`](OPERATIONS_AND_RECOVERY.md).
+Backup command orchestration remains covered synthetically. Supabase TLS,
+Session-pooler, and hosted-project configuration remain deployment checks.

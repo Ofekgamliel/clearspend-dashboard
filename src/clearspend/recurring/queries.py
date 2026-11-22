@@ -3,19 +3,17 @@
 from __future__ import annotations
 
 from datetime import date
-from pathlib import Path
 
-from clearspend.database.connection import connect_database
+from clearspend.database.connection import DatabaseTarget, database_connection
 from clearspend.recurring.rules import assess_recurring_series, median, month_history
 from clearspend.reporting.queries import period_bounds
 from clearspend.reporting.sql import REPORTING_MONTH_SQL
 
 
 def recurring_payload(
-    database: Path, period: str, card: str, month: str = "",
+    database: DatabaseTarget, period: str, card: str, month: str = "",
 ) -> dict:
-    connection = connect_database(database)
-    try:
+    with database_connection(database) as connection:
         start, end, label = period_bounds(connection, period, month)
         start_month = (start or "0000-00")[:7]
         end_month = (end or date.today().isoformat())[:7]
@@ -31,17 +29,19 @@ def recurring_payload(
             COALESCE(d.display_name,p.display_name,t.merchant_raw) display_name,
             t.merchant_raw source_alias,
             COALESCE(o.category,t.user_category,t.provider_category,'Needs review') category,
-            {REPORTING_MONTH_SQL} report_month,CAST(t.charged_amount AS REAL) amount,
+            {REPORTING_MONTH_SQL} report_month,
+            CAST(t.charged_amount AS NUMERIC) amount,
             p.recurring_type,p.cadence,p.cadence_months,p.lifecycle_status,p.end_month
             FROM transactions t
             LEFT JOIN merchant_display_mappings d ON d.merchant_normalized=t.merchant_normalized
             JOIN recurring_profile_members rpm
               ON rpm.canonical_group_id=COALESCE(d.canonical_group_id,t.merchant_normalized)
-             AND rpm.merchant_normalized=t.merchant_normalized AND rpm.included=1
+             AND rpm.merchant_normalized=t.merchant_normalized AND rpm.included=TRUE
             JOIN recurring_profiles p ON p.canonical_group_id=rpm.canonical_group_id
              AND p.verdict='recurring'
             LEFT JOIN transaction_category_overrides o ON o.transaction_id=t.id
-            WHERE CAST(t.charged_amount AS REAL)>0 AND t.installment_number IS NULL
+            WHERE CAST(t.charged_amount AS NUMERIC)>0
+              AND t.installment_number IS NULL
               AND {REPORTING_MONTH_SQL}<=?{card_sql}
             ORDER BY report_month,t.id""",
             [end_month, *card_parameters],
@@ -110,11 +110,13 @@ def recurring_payload(
             COALESCE(d.display_name,t.merchant_raw) display_name,t.merchant_raw source_alias,
             COALESCE(o.category,t.user_category,t.provider_category,'Needs review') category,
             t.transaction_date,t.original_amount,t.installment_number,t.installment_total,
-            {REPORTING_MONTH_SQL} report_month,CAST(t.charged_amount AS REAL) amount
+            {REPORTING_MONTH_SQL} report_month,
+            CAST(t.charged_amount AS NUMERIC) amount
             FROM transactions t
             LEFT JOIN merchant_display_mappings d ON d.merchant_normalized=t.merchant_normalized
             LEFT JOIN transaction_category_overrides o ON o.transaction_id=t.id
-            WHERE CAST(t.charged_amount AS REAL)>0 AND t.installment_number IS NOT NULL
+            WHERE CAST(t.charged_amount AS NUMERIC)>0
+              AND t.installment_number IS NOT NULL
               AND {REPORTING_MONTH_SQL}<=?{card_sql} ORDER BY report_month,t.id""",
             [end_month, *card_parameters],
         ).fetchall()
@@ -182,11 +184,12 @@ def recurring_payload(
             ) if row["report_month"]
         }), 1)
         spending = float(connection.execute(
-            f"SELECT COALESCE(SUM(CASE WHEN CAST(t.charged_amount AS REAL)>0 "
-            f"THEN CAST(t.charged_amount AS REAL) ELSE 0 END),0) FROM transactions t "
+            f"SELECT COALESCE(SUM(CASE WHEN CAST(t.charged_amount AS NUMERIC)>0 "
+            f"THEN CAST(t.charged_amount AS NUMERIC) ELSE 0 END),0) AS spending "
+            f"FROM transactions t "
             f"WHERE {REPORTING_MONTH_SQL} BETWEEN ? AND ?{card_sql}",
             [start_month, end_month, *card_parameters],
-        ).fetchone()[0])
+        ).fetchone()["spending"])
         verdicts = connection.execute(
             """SELECT SUM(review_count) reviewed,
             SUM(CASE WHEN verdict='recurring' THEN review_count ELSE 0 END) recurring,
@@ -226,5 +229,3 @@ def recurring_payload(
                 "unresolved": 0,
             },
         }
-    finally:
-        connection.close()

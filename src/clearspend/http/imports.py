@@ -7,9 +7,16 @@ from datetime import datetime
 from pathlib import Path
 from typing import MutableMapping, Sequence
 
+from clearspend.database.connection import DatabaseTarget
+from clearspend.database.errors import DatabaseBusyError, DatabaseUnavailableError
+from clearspend.database.postgresql import PostgreSQLPool
+from clearspend.database.postgresql_backup import PostgreSQLBackupConfiguration
 from clearspend.http.multipart import UploadedFile
 from clearspend.staging.analysis import analyze_staged_files
-from clearspend.staging.service import commit_staged_statement
+from clearspend.staging.service import (
+    commit_staged_statement,
+    commit_staged_statement_postgresql,
+)
 
 
 StagedImportStore = MutableMapping[str, dict]
@@ -32,9 +39,11 @@ def _persist_upload(upload_dir: Path, item: UploadedFile) -> tuple[str, Path]:
 
 
 def process_import_uploads(
-    database: Path,
+    database: DatabaseTarget,
     staged_imports: StagedImportStore,
     items: Sequence[UploadedFile],
+    *,
+    local_state_directory: Path | None = None,
 ) -> tuple[dict, int]:
     """Persist and analyze exactly one statement without changing live data."""
     if len(items) != 1:
@@ -46,7 +55,11 @@ def process_import_uploads(
         return {"error": "Use one XLSX or PDF statement"}, 400
 
     batch_id = uuid.uuid4().hex
-    upload_dir = database.parent / "staging"
+    if local_state_directory is None:
+        if not isinstance(database, Path):
+            raise ValueError("A local staging directory is required")
+        local_state_directory = database.parent
+    upload_dir = local_state_directory / "staging"
     upload_dir.mkdir(parents=True, exist_ok=True)
     filename, upload_path = _persist_upload(upload_dir, item)
     staged_uploads = [{"filename": filename, "path": upload_path}]
@@ -55,9 +68,15 @@ def process_import_uploads(
             database,
             [(item["filename"], item["path"]) for item in staged_uploads],
         )
-    except Exception as error:
+    except ValueError as error:
         upload_path.unlink(missing_ok=True)
         return {"error": str(error)}, 400
+    except (DatabaseBusyError, DatabaseUnavailableError):
+        upload_path.unlink(missing_ok=True)
+        raise
+    except Exception:
+        upload_path.unlink(missing_ok=True)
+        raise
     staged_imports[batch_id] = {
         "uploads": staged_uploads,
         "created_at": datetime.now().isoformat(),
@@ -68,9 +87,11 @@ def process_import_uploads(
 
 
 def commit_staged_import(
-    database: Path,
+    database: DatabaseTarget,
     staged_imports: StagedImportStore,
     payload: dict,
+    *,
+    postgresql_backup: PostgreSQLBackupConfiguration | None = None,
 ) -> tuple[dict, int]:
     """Validate and commit a staged import session, then remove its temporary files."""
     batch_id = str(payload.get("batch_id", ""))
@@ -105,13 +126,27 @@ def commit_staged_import(
     if missing_reconciliation:
         missing = ", ".join(sorted(missing_reconciliation))
         raise ValueError(f"Confirm the statement total before importing: {missing}")
-    result = commit_staged_statement(
-        database,
-        batch,
-        decisions,
-        duplicate_decisions,
-        analysis,
-    )
+    if isinstance(database, PostgreSQLPool):
+        if postgresql_backup is None:
+            raise ValueError("PostgreSQL import backup configuration is required")
+        result = commit_staged_statement_postgresql(
+            database,
+            postgresql_backup,
+            batch,
+            decisions,
+            duplicate_decisions,
+            analysis,
+        )
+    else:
+        if not isinstance(database, Path):
+            raise ValueError("SQLite import commit requires a database path")
+        result = commit_staged_statement(
+            database,
+            batch,
+            decisions,
+            duplicate_decisions,
+            analysis,
+        )
     for item in batch["uploads"]:
         item["path"].unlink(missing_ok=True)
     staged_imports.pop(batch_id, None)

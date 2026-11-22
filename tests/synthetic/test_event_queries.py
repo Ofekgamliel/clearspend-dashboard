@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import tempfile
 import unittest
+from contextlib import contextmanager
 from pathlib import Path
+from unittest.mock import patch
 
 from clearspend.events.queries import events_payload
 from clearspend.events.service import create_event, save_event_settings, save_transaction_event
@@ -17,6 +19,28 @@ class EventQueryTests(unittest.TestCase):
 
     def tearDown(self) -> None:
         self.temporary_directory.cleanup()
+
+    def counted_payload(self, period: str = "all") -> tuple[dict, int]:
+        connection = connect(self.database)
+        statements: list[str] = []
+
+        class CountingConnection:
+            def execute(self, sql: str, parameters=()):
+                statements.append(sql)
+                return connection.execute(sql, parameters)
+
+        @contextmanager
+        def counted_connection(_database):
+            try:
+                yield CountingConnection()
+            finally:
+                connection.close()
+
+        with patch(
+            "clearspend.events.queries.database_connection", counted_connection,
+        ):
+            payload = events_payload(self.database, period, "all")
+        return payload, len(statements)
 
     def test_event_payload_separates_selected_month_from_lifetime_membership(self) -> None:
         event = create_event(
@@ -90,3 +114,34 @@ class EventQueryTests(unittest.TestCase):
         self.assertEqual(
             [event["id"] for event in payload["available_events"]], [active["id"]]
         )
+
+    def test_query_count_is_fixed_when_relevant_event_count_grows(self) -> None:
+        event = create_event(
+            self.database, "First synthetic event", "other",
+            "2030-01-01", "2030-01-01", "", "completed",
+        )["event"]
+        connection = connect(self.database)
+        try:
+            import_id = add_import(connection)
+            transaction_id = add_transaction(
+                connection, import_id, key="event-query-count",
+                merchant="Synthetic activity", amount=25, category="Leisure",
+            )
+            connection.commit()
+        finally:
+            connection.close()
+        save_transaction_event(self.database, transaction_id, event["id"])
+
+        _single_payload, single_count = self.counted_payload()
+        for number in range(5):
+            create_event(
+                self.database, f"Additional synthetic event {number}", "other",
+                "2030-01-01", "2030-01-01", "", "completed",
+            )
+        many_payload, many_count = self.counted_payload()
+
+        self.assertEqual(single_count, 4)
+        self.assertEqual(many_count, 4)
+        self.assertEqual(len(many_payload["events"]), 6)
+        self.assertNotIn("budget", many_payload["available_events"][0])
+        self.assertNotIn("notes", many_payload["available_events"][0])

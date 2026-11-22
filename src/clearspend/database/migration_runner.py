@@ -71,25 +71,30 @@ def _validate_migrations(migrations: Sequence[ModuleType]) -> tuple[ModuleType, 
     return ordered
 
 
+def inspect_database_connection(connection: sqlite3.Connection) -> SchemaStatus:
+    """Inspect an existing connection without changing its ownership or mode."""
+    tables = _table_names(connection)
+    version = _current_version(connection)
+    if not tables:
+        return SchemaStatus("empty", 0, ())
+    if version > len(DEFAULT_MIGRATIONS):
+        return SchemaStatus(
+            "unsupported",
+            version,
+            (f"Schema version {version} is newer than this application supports",),
+        )
+    problems = tuple(v001_current_baseline.verify(connection))
+    if problems:
+        return SchemaStatus("unsupported", version, problems)
+    return SchemaStatus("versioned" if version else "current_unversioned", version, ())
+
+
 def inspect_database(path: Path) -> SchemaStatus:
     if not path.exists() or path.stat().st_size == 0:
         return SchemaStatus("empty", 0, ())
     connection = _connect(path)
     try:
-        tables = _table_names(connection)
-        version = _current_version(connection)
-        if not tables:
-            return SchemaStatus("empty", 0, ())
-        if version > len(DEFAULT_MIGRATIONS):
-            return SchemaStatus(
-                "unsupported",
-                version,
-                (f"Schema version {version} is newer than this application supports",),
-            )
-        problems = tuple(v001_current_baseline.verify(connection))
-        if problems:
-            return SchemaStatus("unsupported", version, problems)
-        return SchemaStatus("versioned" if version else "current_unversioned", version, ())
+        return inspect_database_connection(connection)
     finally:
         connection.close()
 

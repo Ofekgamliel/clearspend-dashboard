@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-import sqlite3
 from collections import Counter
 from collections.abc import Iterable
+from typing import Any
 
 
 def add_staged_merchant_transactions(
@@ -46,7 +46,7 @@ def add_staged_merchant_transactions(
 
 
 def resolve_staged_merchants(
-    connection: sqlite3.Connection,
+    connection: Any,
     groups: dict[str, dict],
 ) -> list[dict]:
     """Apply database-first category and display identity suggestions to merchant groups."""

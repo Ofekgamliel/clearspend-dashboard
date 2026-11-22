@@ -3,16 +3,18 @@ from __future__ import annotations
 import sqlite3
 import tempfile
 import unittest
+from contextlib import contextmanager
 from pathlib import Path
+from unittest.mock import patch
 
-from clearspend.server import (
-    categories_payload,
-    create_event,
+from clearspend.events.service import create_event
+from clearspend.reporting.category_queries import categories_payload
+from clearspend.reporting.dashboard import dashboard_payload
+from clearspend.transactions.queries import transactions_payload
+from clearspend.transactions.service import (
     save_transaction_adjustment,
     save_transaction_category,
-    transactions_payload,
 )
-from clearspend.reporting.dashboard import dashboard_payload
 from tests.synthetic.support import add_import, add_income, add_transaction, connect, create_database
 
 
@@ -24,6 +26,19 @@ class SyntheticReportingContractTests(unittest.TestCase):
 
     def tearDown(self) -> None:
         self.temporary_directory.cleanup()
+
+    def test_empty_month_dashboard_preserves_the_no_data_contract(self) -> None:
+        payload = dashboard_payload(self.database_path, "month", "all")
+
+        self.assertEqual(payload["period"], {
+            "key": "month",
+            "start": None,
+            "end": None,
+            "label": "No transactions",
+        })
+        self.assertEqual(payload["metrics"]["transactions"], 0)
+        self.assertEqual(payload["trend"], [])
+        self.assertIsNone(payload["purchase_activity_summary"])
 
     def test_reimbursement_preserves_charge_and_reduces_personal_spending(self) -> None:
         connection = connect(self.database_path)
@@ -198,6 +213,79 @@ class SyntheticReportingContractTests(unittest.TestCase):
         )
         self.assertEqual(payload["period"]["key"], "month")
         self.assertEqual(payload["metrics"]["spent"], 75)
+
+    def test_dashboard_uses_a_bounded_number_of_snapshot_queries(self) -> None:
+        class CountingConnection:
+            def __init__(self, connection):
+                self.connection = connection
+                self.execute_count = 0
+
+            def execute(self, *args, **kwargs):
+                self.execute_count += 1
+                return self.connection.execute(*args, **kwargs)
+
+        @contextmanager
+        def bound_connection(connection):
+            yield connection
+
+        connection = connect(self.database_path)
+        import_id = add_import(connection)
+        add_transaction(
+            connection,
+            import_id,
+            key="query-count-purchase",
+            merchant="Synthetic Store",
+            amount=75,
+            category="Household",
+        )
+        connection.commit()
+        counted = CountingConnection(connection)
+        try:
+            with patch(
+                "clearspend.reporting.dashboard.database_connection",
+                return_value=bound_connection(counted),
+            ):
+                dashboard_payload(self.database_path, "month", "all", "2030-01")
+        finally:
+            connection.close()
+
+        self.assertEqual(counted.execute_count, 13)
+
+    def test_daily_average_uses_the_displayed_spending_total(self) -> None:
+        connection = connect(self.database_path)
+        try:
+            import_id = add_import(connection)
+            add_transaction(
+                connection,
+                import_id,
+                key="rounding-day-one",
+                merchant="Synthetic Store One",
+                amount=10.01,
+                category="Household",
+                transaction_date="2030-01-10",
+            )
+            add_transaction(
+                connection,
+                import_id,
+                key="rounding-day-two",
+                merchant="Synthetic Store Two",
+                amount=10.02,
+                category="Household",
+                transaction_date="2030-01-11",
+            )
+            connection.commit()
+        finally:
+            connection.close()
+
+        metrics = dashboard_payload(
+            self.database_path, "month", "all", "2030-01"
+        )["metrics"]
+
+        self.assertEqual(metrics["active_days"], 2)
+        self.assertEqual(
+            metrics["daily_average"],
+            round(metrics["spent"] / metrics["active_days"], 2),
+        )
 
 
 if __name__ == "__main__":

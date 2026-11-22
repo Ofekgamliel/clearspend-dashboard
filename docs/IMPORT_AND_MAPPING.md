@@ -36,6 +36,14 @@ remain staged so corrected decisions can be retried; cancel discards its
 temporary copy, and a server restart requires staging it again. An incomplete
 failed commit is never treated as a successful import.
 
+The authoritative PostgreSQL commit path acquires the same advisory transaction
+lock used by every dashboard mutation, creates and verifies the authenticated
+encrypted pre-import archive using the runtime role, and then performs all
+reviewed writes in the same caller-owned transaction. This prevents another
+feature write from committing between the recovery point and the import commit.
+The off-device destination, retention policy, and recoverable archive-key
+procedure are required for production operation.
+
 The staged UI is organized as Files, Checks, Merchants, Reconcile, and Approve.
 The final preview lists every row that will be inserted. Rows marked pending are
 not final charges and are excluded from the approved transaction set; they may
@@ -101,6 +109,15 @@ timestamp, provider, card suffix, normalized statement month, provider period,
 provider as-of date when available, purchase/billing date ranges, finalized and
 pending counts, outside-cycle count, and official total when available.
 
+PostgreSQL persistence keeps that original filename but does not retain the
+local or temporary filesystem path. The safe stored source reference is the
+original filename itself. Detailed parser exceptions may be returned to the
+current local request for correction, but PostgreSQL does not persist them in
+the import audit. Temporary staging paths and staging-only metadata are never
+durable hosted data. The import repository applies this policy automatically
+when it is bound to a caller-owned PostgreSQL transaction; callers do not select
+individual redaction fields.
+
 Use coverage to warn about older periods, missing statement months, and date
 overlap. Coverage overlap is evidence for review, not proof of duplication;
 exact file, semantic content, and transaction identity remain authoritative.
@@ -109,7 +126,7 @@ exact file, semantic content, and transaction identity remain authoritative.
 
 Use the following order for every imported merchant:
 
-1. Exact normalized merchant mapping already approved in the local database.
+1. Exact normalized merchant mapping already approved in the authoritative database.
 2. Previously approved alias or unambiguous canonical merchant-family decision.
 3. Reliable provider category as supporting evidence.
 4. Online merchant research only when explicitly requested and no approved local
@@ -121,7 +138,8 @@ database mapping automatically.
 
 If online research is authorized, send only the merchant name needed for the
 lookup. Never send card details, transaction amounts, dates, income, notes, or a
-complete transaction history. Store user-approved results locally.
+complete transaction history. Store approved mapping decisions in the
+authoritative database; keep private research artifacts in ignored local files.
 
 When present, `data/category-policy.json` is a local source of user-approved
 classification policy. Do not overwrite it or publish it without review.
@@ -202,6 +220,10 @@ privacy limits above.
 
 ## Provider-specific information
 
-Normalize shared fields while preserving provider-specific details in the raw
-source payload. Additional fields may be important for future auditing and must
-not be discarded simply because another provider does not supply them.
+Normalize shared fields while retaining provider-specific details during parse
+and staged review. The legacy SQLite database continues to store its existing
+raw source payloads, but PostgreSQL does not persist a complete raw payload once
+the approved normalized transaction has been written. Any provider evidence
+required for duplicate detection, reporting, or future auditing must therefore
+have an explicit normalized field before PostgreSQL import commit;
+it must not depend on an opaque raw-payload fallback.

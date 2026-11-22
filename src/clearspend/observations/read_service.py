@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from pathlib import Path
 
+from clearspend.database.connection import DatabaseTarget
 from clearspend.observations.grouping import (
     ObservationFinding,
     ObservationGroup,
@@ -55,6 +55,16 @@ def observation_view_from_snapshot(
     snapshot: ObservationInputSnapshot,
 ) -> ObservationView:
     """Analyze one assembled snapshot through the correct period boundary."""
+    if not snapshot.scope.target_months:
+        return ObservationView(
+            period=snapshot.scope.period,
+            selected_card=snapshot.selected_card,
+            selected_month=snapshot.scope.selected_month,
+            observed_start=snapshot.scope.observed_start,
+            observed_end=snapshot.scope.observed_end,
+            findings=(),
+            groups=(),
+        )
     reviewed = tuple(snapshot.reviewed_finding_keys)
     if snapshot.scope.historical:
         dataset = historical_dataset_from_snapshot(snapshot)
@@ -79,7 +89,7 @@ def observation_view_from_snapshot(
 
 
 def load_observation_view(
-    database: Path,
+    database: DatabaseTarget,
     *,
     period: str,
     card: str,

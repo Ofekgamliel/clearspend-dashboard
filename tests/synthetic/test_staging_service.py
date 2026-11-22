@@ -1,14 +1,21 @@
 from __future__ import annotations
 
+import sqlite3
 import tempfile
 import unittest
-import sqlite3
+from contextlib import contextmanager
 from pathlib import Path
 from unittest.mock import patch
 
 from clearspend.database.backup import DatabaseBackupError
+from clearspend.database.postgresql_backup import PostgreSQLBackupConfiguration
+from clearspend.database.settings import DatabaseBackend
 from clearspend.import_engine import ImportDatabase
-from clearspend.staging.service import commit_staged_statement
+from clearspend.staging.service import (
+    commit_staged_statement,
+    commit_staged_statement_postgresql,
+    persist_reviewed_statement_in_transaction,
+)
 from tests.synthetic.support import add_import, add_transaction, connect, create_database
 
 
@@ -39,6 +46,104 @@ class StagingServiceTests(unittest.TestCase):
             )
         finally:
             connection.close()
+
+    def test_postgresql_commit_locks_backs_up_persists_and_commits_in_order(self) -> None:
+        events: list[str] = []
+
+        class Connection:
+            def execute(self, sql, parameters=None):
+                events.append("lock")
+
+            def commit(self):
+                events.append("commit")
+
+            def rollback(self):
+                events.append("rollback")
+
+        class Pool:
+            settings = object()
+
+            @contextmanager
+            def connection(self):
+                yield Connection()
+
+        configuration = PostgreSQLBackupConfiguration(
+            Path("synthetic-backups"),
+            "synthetic-keychain-service",
+            "synthetic-keychain-account",
+        )
+
+        def create_backup(*args, **kwargs):
+            events.append("backup")
+            return Path("synthetic-backup.dump.enc")
+
+        def persist(*args, **kwargs):
+            events.append("persist")
+            return [{"status": "imported"}]
+
+        with patch(
+            "clearspend.staging.service.create_verified_postgresql_backup",
+            side_effect=create_backup,
+        ), patch(
+            "clearspend.staging.service._persist_reviewed_statement",
+            side_effect=persist,
+        ):
+            result = commit_staged_statement_postgresql(
+                Pool(),  # type: ignore[arg-type]
+                configuration,
+                self.staged_upload(),
+                [],
+                [],
+                self.analysis(),
+            )
+
+        self.assertEqual(events, ["lock", "backup", "persist", "commit"])
+        self.assertEqual(result["status"], "committed")
+        self.assertEqual(result["backup"], "synthetic-backup.dump.enc")
+
+    def test_postgresql_backup_failure_rolls_back_before_persistence(self) -> None:
+        events: list[str] = []
+
+        class Connection:
+            def execute(self, sql, parameters=None):
+                events.append("lock")
+
+            def commit(self):
+                events.append("commit")
+
+            def rollback(self):
+                events.append("rollback")
+
+        class Pool:
+            settings = object()
+
+            @contextmanager
+            def connection(self):
+                yield Connection()
+
+        configuration = PostgreSQLBackupConfiguration(
+            Path("synthetic-backups"),
+            "synthetic-keychain-service",
+            "synthetic-keychain-account",
+        )
+        with patch(
+            "clearspend.staging.service.create_verified_postgresql_backup",
+            side_effect=RuntimeError("synthetic backup failure"),
+        ), patch(
+            "clearspend.staging.service._persist_reviewed_statement",
+        ) as persist:
+            with self.assertRaisesRegex(RuntimeError, "synthetic backup failure"):
+                commit_staged_statement_postgresql(
+                    Pool(),  # type: ignore[arg-type]
+                    configuration,
+                    self.staged_upload(),
+                    [],
+                    [],
+                    self.analysis(),
+                )
+
+        self.assertEqual(events, ["lock", "rollback"])
+        persist.assert_not_called()
 
     def staged_upload(self) -> dict:
         path = Path(self.temporary_directory.name) / "staged.xlsx"
@@ -129,6 +234,7 @@ class StagingServiceTests(unittest.TestCase):
 
         self.assertEqual(self.database_counts(), before)
         self.assertFalse(import_file.call_args.kwargs["commit"])
+        self.assertEqual(import_file.call_args.kwargs["original_name"], "staged.xlsx")
 
     def test_failure_during_coverage_rolls_back_import_audit(self) -> None:
         def write_import(database: ImportDatabase, *args, **kwargs) -> dict:
@@ -230,11 +336,70 @@ class StagingServiceTests(unittest.TestCase):
         self.assertEqual(result["status"], "committed")
         self.assertTrue(Path(result["backup"]).is_file())
         self.assertFalse(import_file.call_args.kwargs["commit"])
+        self.assertEqual(import_file.call_args.kwargs["original_name"], "staged.xlsx")
         connection = sqlite3.connect(self.database)
         try:
             self.assertEqual(
                 connection.execute("SELECT COUNT(*) FROM income_imports").fetchone()[0],
                 1,
+            )
+        finally:
+            connection.close()
+
+    def test_portable_persistence_leaves_commit_and_rollback_to_caller(self) -> None:
+        def write_income_import(database: ImportDatabase, *args, **kwargs) -> dict:
+            row = database.connection.execute(
+                """INSERT INTO income_imports(
+                original_name,source_path,byte_hash,source_format,status,
+                parsed_rows,inserted_rows,imported_at
+                ) VALUES(?,?,?,?,?,?,?,?) RETURNING id""",
+                (
+                    "staged.xlsx",
+                    "staged.xlsx",
+                    "portable-income-hash",
+                    ".xlsx",
+                    "imported",
+                    0,
+                    0,
+                    "2030-01-15T10:00:00",
+                ),
+            ).fetchone()
+            return {
+                "import_id": row["id"],
+                "status": "imported",
+                "kind": "income",
+                "inserted": 0,
+            }
+
+        connection = connect(self.database)
+        try:
+            with patch.object(
+                ImportDatabase,
+                "import_file",
+                autospec=True,
+                side_effect=write_income_import,
+            ):
+                results = persist_reviewed_statement_in_transaction(
+                    connection,
+                    DatabaseBackend.SQLITE,
+                    self.staged_upload(),
+                    [],
+                    [],
+                    self.analysis(),
+                )
+            observer = connect(self.database)
+            try:
+                self.assertEqual(
+                    observer.execute("SELECT COUNT(*) FROM income_imports").fetchone()[0],
+                    0,
+                )
+            finally:
+                observer.close()
+            self.assertEqual(results[0]["import_id"], 1)
+            connection.rollback()
+            self.assertEqual(
+                connection.execute("SELECT COUNT(*) FROM income_imports").fetchone()[0],
+                0,
             )
         finally:
             connection.close()

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import unittest
+from decimal import Decimal
 
 from clearspend.reporting.purchase_activity import PurchaseActivityRow, build_purchase_activity
 
@@ -39,6 +40,20 @@ class PurchaseActivityTests(unittest.TestCase):
         self.assertEqual(summary["purchases"], 2)
         self.assertEqual(summary["billed_charges"], 200)
         self.assertEqual(summary["billed_refunds"], 10)
+
+    def test_postgresql_decimal_personal_amounts_are_aggregated(self) -> None:
+        trend, summary = build_purchase_activity(
+            [
+                row(personal_amount=Decimal("25.25")),
+                row(personal_amount=Decimal("74.75")),
+            ],
+            billed_charges=100,
+            billed_refunds=0,
+        )
+
+        self.assertEqual(trend[0]["amount"], 100)
+        self.assertEqual(summary["total"], 100)
+        self.assertEqual(summary["purchases"], 2)
 
     def test_installments_collapse_to_original_same_currency_purchase(self) -> None:
         trend, summary = build_purchase_activity(

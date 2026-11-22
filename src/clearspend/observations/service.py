@@ -5,14 +5,12 @@ from __future__ import annotations
 import json
 import re
 from datetime import date, datetime
-from pathlib import Path
-
-from clearspend.database.connection import connect_database
+from clearspend.database.connection import DatabaseTarget, database_transaction
 from clearspend.observations.policy import OBSERVATION_RESOLUTIONS
 
 
 def save_observation_review(
-    database: Path,
+    database: DatabaseTarget,
     finding_key: str,
     observation_type: str,
     resolution: str,
@@ -66,35 +64,36 @@ def save_observation_review(
                 date.fromisoformat(value)
             except ValueError as error:
                 raise ValueError("Occurrence dates must be valid dates") from error
-    connection = connect_database(database)
-    try:
+    with database_transaction(database) as connection:
         if ids:
             placeholders = ",".join("?" for _ in ids)
             found = connection.execute(
-                f"SELECT COUNT(*) FROM transactions WHERE id IN ({placeholders})", ids
-            ).fetchone()[0]
+                f"""SELECT COUNT(*) AS transaction_count
+                FROM transactions WHERE id IN ({placeholders})""",
+                ids,
+            ).fetchone()["transaction_count"]
             if found != len(ids):
                 raise ValueError("One or more reviewed transactions were not found")
         now = datetime.now().astimezone().isoformat()
         if remove:
             changed = connection.execute(
-                """UPDATE observation_reviews SET active=0,updated_at=?
-                WHERE finding_key=? AND active=1""",
+                """UPDATE observation_reviews SET active=FALSE,updated_at=?
+                WHERE finding_key=? AND active=TRUE""",
                 (now, finding_key),
             ).rowcount
-            connection.commit()
             return {"status": "restored", "finding_key": finding_key, "changed": bool(changed)}
         connection.execute(
             """INSERT INTO observation_reviews(
             finding_key,observation_type,resolution,month,transaction_ids,recurring_series_id,
             occurrence_start,occurrence_end,merchant_label,active,reviewed_at,updated_at
-            ) VALUES(?,?,?,?,?,?,?,?,?,1,?,?)
+            ) VALUES(?,?,?,?,?,?,?,?,?,TRUE,?,?)
             ON CONFLICT(finding_key) DO UPDATE SET
             observation_type=excluded.observation_type,resolution=excluded.resolution,
             month=excluded.month,transaction_ids=excluded.transaction_ids,
             recurring_series_id=excluded.recurring_series_id,
             occurrence_start=excluded.occurrence_start,occurrence_end=excluded.occurrence_end,
-            merchant_label=excluded.merchant_label,active=1,updated_at=excluded.updated_at""",
+            merchant_label=excluded.merchant_label,active=TRUE,
+            updated_at=excluded.updated_at""",
             (
                 finding_key, observation_type, resolution, month,
                 json.dumps(ids, separators=(",", ":")), recurring_series_id or None,
@@ -102,7 +101,4 @@ def save_observation_review(
                 now, now,
             ),
         )
-        connection.commit()
         return {"status": "reviewed", "finding_key": finding_key, "resolution": resolution}
-    finally:
-        connection.close()

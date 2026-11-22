@@ -10,7 +10,7 @@ from typing import Iterable
 class PurchaseActivityRow:
     transaction_date: str
     category: str
-    personal_amount: float
+    personal_amount: Decimal | float
     provider: str
     card_last4: str
     merchant_normalized: str
@@ -37,7 +37,9 @@ def build_purchase_activity(
     plans: dict[tuple, list[PurchaseActivityRow]] = defaultdict(list)
     for row in rows:
         if row.installment_number is None:
-            regular.append((row.transaction_date, row.category, row.personal_amount, 0))
+            regular.append(
+                (row.transaction_date, row.category, float(row.personal_amount), 0)
+            )
             continue
         key = (
             row.provider,

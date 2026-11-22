@@ -10,6 +10,7 @@ from clearspend.imports.domain import (
     amount,
     assign_occurrences,
     clean_text,
+    decimal_value,
     normalize_merchant,
     parse_date,
     parse_installment,
@@ -112,7 +113,7 @@ def parse_max(
                     transaction_type=transaction_type,
                     notes=notes,
                     execution_method=clean_text(row.get("O")),
-                    exchange_rate=clean_text(row.get("P")),
+                    exchange_rate=decimal_value(row.get("P")),
                     source_payload=payload,
                 )
             )

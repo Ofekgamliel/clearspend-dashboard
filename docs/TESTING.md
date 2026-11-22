@@ -28,6 +28,28 @@ Private local tests can age independently of tracked CI. A failure caused by a
 stale ignored fixture must be reported and corrected separately; it must not be
 hidden or treated as a tracked product regression without investigation.
 
+## Disposable PostgreSQL integration
+
+CI starts a fresh PostgreSQL 17 service and runs:
+
+```bash
+PYTHONPATH=src:. python -m unittest discover \
+  -s tests/integration/postgresql -v
+```
+
+The job creates synthetic Supabase-style API roles, provisions the private
+schema and restricted runtime role, applies every migration, verifies a second
+migration inspection, exercises representative reads and writes through
+`clearspend_app`, checks API-role denial, and proves reviewed-import commit and
+rollback. It also verifies exact numeric column types and representative
+dashboard and observation calculations through the restricted role. It uses
+synthetic credentials and data and must never point at the private Supabase
+project.
+
+This isolated service validates PostgreSQL SQL, transactions, migrations, and
+permissions. Supabase TLS, Session-pooler behavior, and hosted-project settings
+remain separate deployment checks.
+
 ## Frontend verification
 
 Install locked dependencies and run the relevant checks from `frontend/`:
@@ -92,7 +114,8 @@ and totals on a disposable copy. Production data is never the first test target.
 
 `.github/workflows/ci.yml` is the executable CI definition. It installs locked
 Python and Node dependencies, runs tracked Python and compatibility tests,
-checks Vue types and unit tests, builds production assets, and runs Playwright.
+checks Vue types and unit tests, builds production assets, runs Playwright, and
+runs the isolated PostgreSQL integration job.
 
 Before committing, also run `git diff --check`, inspect generated assets for
 private data, stage only named paths, and run `.githooks/pre-commit`. Passing CI

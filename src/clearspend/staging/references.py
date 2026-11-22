@@ -1,12 +1,12 @@
 from __future__ import annotations
 
-import sqlite3
+from typing import Any
 
 
-def staged_reference_data(connection: sqlite3.Connection) -> tuple[list[str], list[dict]]:
+def staged_reference_data(connection: Any) -> tuple[list[str], list[dict]]:
     """Return category and display-identity choices used during staged review."""
-    categories = [row[0] for row in connection.execute(
-        """SELECT DISTINCT category FROM (
+    categories = [row["category"] for row in connection.execute(
+        """SELECT DISTINCT category AS category FROM (
         SELECT category FROM merchant_mappings
         UNION SELECT user_category category FROM transactions WHERE user_category IS NOT NULL
         UNION SELECT provider_category category FROM transactions WHERE provider_category IS NOT NULL

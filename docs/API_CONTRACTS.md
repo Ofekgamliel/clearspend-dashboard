@@ -10,8 +10,10 @@ validators.
 - The application serves JSON below `/api` from the same local process that
   serves `dist/`.
 - Successful JSON responses use `Cache-Control: no-store`.
-- Validation failures normally return `400` and unexpected failures return
-  `500`, both with an `error` string.
+- Reviewed validation failures normally return `400`. Unexpected failures
+  return a stable generic `500` response, while a busy or unavailable database
+  returns a safe `503` response. Detailed exceptions are logged by the local
+  server and are never returned to the browser.
 - `GET /api/health` returns the API compatibility identifier required by the
   frontend. An incompatible or stale server causes the UI to withhold its data
   panels and request a restart.
@@ -62,8 +64,9 @@ are independent persisted concepts.
 - `POST /api/import/analyze` accepts exactly one XLSX or PDF statement per
   staged session. It parses and previews without changing live financial data.
 - `POST /api/import/commit` revalidates the staged statement and reviewed
-  decisions, creates a verified SQLite backup, and atomically commits the
-  approved mappings, transactions, duplicate links, coverage and audit rows.
+  decisions, creates a verified encrypted PostgreSQL backup, and atomically
+  commits the approved mappings, transactions, duplicate links, coverage and
+  audit rows.
 - `POST /api/import/cancel` removes the temporary staged session without live
   database writes.
 

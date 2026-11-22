@@ -44,6 +44,17 @@ class MerchantQueryTests(unittest.TestCase):
             ) VALUES(?,?,?,?,?,?,?,?)""",
             (import_id, "0001", "2030-01", "2030-01", "2030-01-01", "2030-01-31", 2, "55.00"),
         )
+        older_import_id = add_import(connection, name="older-synthetic-statement.xlsx")
+        connection.execute(
+            """INSERT INTO import_coverage(
+            import_id,card_last4,statement_month,statement_period,purchase_date_from,
+            purchase_date_to,finalized_rows,official_total
+            ) VALUES(?,?,?,?,?,?,?,?)""",
+            (
+                older_import_id, "0002", "2029-12", "2029-12", "2029-12-01",
+                "2029-12-31", 1, "10.00",
+            ),
+        )
         connection.commit()
         connection.close()
 
@@ -57,8 +68,17 @@ class MerchantQueryTests(unittest.TestCase):
         self.assertEqual(payload["review_merchants"][0]["merchant_normalized"], "synthetic unknown")
         self.assertEqual(payload["review_merchants"][0]["amount"], 35)
         self.assertEqual(payload["category_suggestions"], ["Household"])
-        self.assertEqual(payload["recent_imports"][0]["original_name"], "synthetic-statement.xlsx")
-        self.assertEqual(payload["recent_imports"][0]["coverage"][0]["official_total"], "55.00")
+        imports_by_name = {
+            item["original_name"]: item for item in payload["recent_imports"]
+        }
+        self.assertEqual(
+            imports_by_name["synthetic-statement.xlsx"]["coverage"][0]["official_total"],
+            "55.00",
+        )
+        self.assertEqual(
+            imports_by_name["older-synthetic-statement.xlsx"]["coverage"][0]["official_total"],
+            "10.00",
+        )
 
     def test_merchants_payload_groups_aliases_and_preserves_alias_categories(self) -> None:
         connection = connect(self.database)

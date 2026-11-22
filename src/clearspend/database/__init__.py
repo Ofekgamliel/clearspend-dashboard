@@ -1,1 +1,1 @@
-"""ClearSpend SQLite schema and migration infrastructure."""
+"""ClearSpend database settings, connections, schema, and migrations."""

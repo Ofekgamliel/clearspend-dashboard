@@ -1,9 +1,8 @@
 from __future__ import annotations
 
 from datetime import date, datetime
-from pathlib import Path
 
-from clearspend.database.connection import connect_database
+from clearspend.database.connection import DatabaseTarget, database_connection
 from clearspend.reporting.calculations import calculate_income_balance, calculate_monthly_averages
 from clearspend.reporting.categories import with_previous_month_comparison, with_spending_shares
 from clearspend.reporting.periods import shift_month
@@ -14,9 +13,10 @@ from clearspend.reporting.scope import build_reporting_filter
 from clearspend.reporting.sql import REPORTING_DATE_SQL, REPORTING_MONTH_SQL
 
 
-def dashboard_payload(database: Path, period: str, card: str, month: str = "") -> dict:
-    connection = connect_database(database)
-    try:
+def dashboard_payload(
+    database: DatabaseTarget, period: str, card: str, month: str = "",
+) -> dict:
+    with database_connection(database) as connection:
         start, end, label = period_bounds(connection, period, month)
         period_parameters: list[object] = [(start or "0000-00")[:7], (end or "9999-99")[:7]]
         reporting_filter = build_reporting_filter(
@@ -25,60 +25,89 @@ def dashboard_payload(database: Path, period: str, card: str, month: str = "") -
         parameters = list(reporting_filter.parameters)
         where = reporting_filter.where
 
-        metrics = connection.execute(
-            f"""SELECT
+        summary = connection.execute(
+            f"""WITH scoped_metrics AS (SELECT
             COALESCE(SUM({personal_spending_sql()}),0) spent,
-            COALESCE(ABS(SUM(CASE WHEN CAST(t.charged_amount AS REAL) < 0 THEN CAST(t.charged_amount AS REAL) ELSE 0 END)),0) refunds,
+            COALESCE(ABS(SUM(CASE WHEN CAST(t.charged_amount AS NUMERIC) < 0
+              THEN CAST(t.charged_amount AS NUMERIC) ELSE 0 END)),0) refunds,
             COUNT(*) transactions,
             COUNT(DISTINCT {REPORTING_DATE_SQL}) active_days
-            FROM transactions t WHERE {where}""",
-            parameters,
-        ).fetchone()
-        spent = float(metrics["spent"])
-        active_days = int(metrics["active_days"])
-
-        income_row = connection.execute(
-            """SELECT COALESCE(SUM(CAST(amount AS REAL)),0) total,COUNT(*) entries
-            FROM income_entries WHERE month BETWEEN ? AND ?""",
-            ((start or "0000-00-00")[:7], (end or "9999-99-99")[:7]),
-        ).fetchone()
-        all_card_spending = connection.execute(
-            f"""SELECT
+            FROM transactions t WHERE {where}),
+            income AS (SELECT COALESCE(SUM(CAST(amount AS NUMERIC)),0) total,
+            COUNT(*) entries FROM income_entries WHERE month BETWEEN ? AND ?),
+            all_card AS (SELECT
             COALESCE(SUM({personal_spending_sql()}),0) personal_spent,
-            COALESCE(SUM(CASE WHEN CAST(t.charged_amount AS REAL)>0 THEN CAST(t.charged_amount AS REAL) ELSE 0 END),0) charges,
-            COALESCE(ABS(SUM(CASE WHEN CAST(t.charged_amount AS REAL)<0 THEN CAST(t.charged_amount AS REAL) ELSE 0 END)),0) refunds
-            FROM transactions t WHERE {REPORTING_MONTH_SQL} BETWEEN ? AND ?""",
-            period_parameters,
+            COALESCE(SUM(CASE WHEN CAST(t.charged_amount AS NUMERIC)>0
+              THEN CAST(t.charged_amount AS NUMERIC) ELSE 0 END),0) charges,
+            COALESCE(ABS(SUM(CASE WHEN CAST(t.charged_amount AS NUMERIC)<0
+              THEN CAST(t.charged_amount AS NUMERIC) ELSE 0 END)),0) all_card_refunds
+            FROM transactions t WHERE {REPORTING_MONTH_SQL} BETWEEN ? AND ?),
+            uncategorized AS (SELECT COUNT(DISTINCT merchant_normalized) merchant_count
+            FROM transactions t WHERE {where}
+            AND user_category IS NULL AND provider_category IS NULL),
+            duplicate_summary AS (SELECT COALESCE(SUM(duplicate_rows),0) duplicate_rows
+            FROM imports),
+            latest_import AS (SELECT original_name,imported_at,status
+            FROM imports ORDER BY id DESC LIMIT 1),
+            largest_transaction AS (SELECT merchant_raw,{personal_spending_sql()} amount
+            FROM transactions t WHERE {where} AND {personal_spending_sql()}>0
+            ORDER BY amount DESC LIMIT 1)
+            SELECT scoped_metrics.*,
+            income.total income_total,income.entries income_entries,
+            all_card.personal_spent,all_card.charges,all_card.all_card_refunds,
+            uncategorized.merchant_count,duplicate_summary.duplicate_rows,
+            latest_import.original_name latest_import_name,
+            latest_import.imported_at latest_imported_at,
+            latest_import.status latest_import_status,
+            largest_transaction.merchant_raw largest_merchant_raw,
+            largest_transaction.amount largest_amount
+            FROM scoped_metrics CROSS JOIN income CROSS JOIN all_card
+            CROSS JOIN uncategorized CROSS JOIN duplicate_summary
+            LEFT JOIN latest_import ON TRUE LEFT JOIN largest_transaction ON TRUE""",
+            [
+                *parameters,
+                (start or "0000-00-00")[:7],
+                (end or "9999-99-99")[:7],
+                *period_parameters,
+                *parameters,
+                *parameters,
+            ],
         ).fetchone()
+        spent = float(summary["spent"])
+        displayed_spent = round(spent, 2)
+        active_days = int(summary["active_days"])
         balance = calculate_income_balance(
-            income=float(income_row["total"]),
-            personal_positive_spending=float(all_card_spending["personal_spent"]),
-            gross_charges=float(all_card_spending["charges"]),
-            refunds=float(all_card_spending["refunds"]),
+            income=float(summary["income_total"]),
+            personal_positive_spending=float(summary["personal_spent"]),
+            gross_charges=float(summary["charges"]),
+            refunds=float(summary["all_card_refunds"]),
         )
 
         if period == "month":
             average_start = connection.execute(
-                """SELECT MIN(value) FROM (
+                """SELECT MIN(value) AS average_start FROM (
                 SELECT COALESCE(billing_month,substr(billing_date,1,7),substr(transaction_date,1,7))||'-01' value
                 FROM transactions WHERE transaction_date IS NOT NULL OR billing_month IS NOT NULL
                 UNION ALL SELECT month||'-01' value FROM income_entries
                 )"""
-            ).fetchone()[0] or start
+            ).fetchone()["average_start"] or start
         else:
             average_start = start
         average_end = min(datetime.strptime(end, "%Y-%m-%d").date(), date.today()).isoformat() if end else date.today().isoformat()
         average_parameters = [(average_start or "0000-00")[:7], average_end[:7]]
         monthly_spending_rows = connection.execute(
-            f"""SELECT {REPORTING_MONTH_SQL} month,
+            f"""SELECT {REPORTING_MONTH_SQL} AS report_month,
             SUM({personal_spending_sql()})
-            - ABS(SUM(CASE WHEN CAST(t.charged_amount AS REAL)<0 THEN CAST(t.charged_amount AS REAL) ELSE 0 END)) net
+            - ABS(SUM(CASE WHEN CAST(t.charged_amount AS NUMERIC)<0
+              THEN CAST(t.charged_amount AS NUMERIC) ELSE 0 END)) net
             FROM transactions t WHERE {REPORTING_MONTH_SQL} BETWEEN ? AND ? GROUP BY {REPORTING_MONTH_SQL}""",
             average_parameters,
         ).fetchall()
-        monthly_spending = {row["month"]: float(row["net"]) for row in monthly_spending_rows}
+        monthly_spending = {
+            row["report_month"]: float(row["net"]) for row in monthly_spending_rows
+        }
         monthly_income_rows = connection.execute(
-            """SELECT month,SUM(CAST(amount AS REAL)) total FROM income_entries
+            """SELECT month,SUM(CAST(amount AS NUMERIC)) total FROM income_entries
             WHERE month BETWEEN ? AND ? GROUP BY month""",
             (average_parameters[0][:7], average_parameters[1][:7]),
         ).fetchall()
@@ -93,7 +122,7 @@ def dashboard_payload(database: Path, period: str, card: str, month: str = "") -
             f"""SELECT t.provider,t.card_last4,
             COALESCE((SELECT i.product_name FROM imports i WHERE i.provider=t.provider AND i.card_last4=t.card_last4
                       AND i.product_name IS NOT NULL ORDER BY i.id LIMIT 1), UPPER(t.provider)) product_name,
-            ROUND(SUM({personal_spending_sql()}),2) amount,
+            ROUND(CAST(SUM({personal_spending_sql()}) AS NUMERIC),2) amount,
             COUNT(*) transactions
             FROM transactions t WHERE COALESCE(t.billing_month,substr(t.billing_date,1,7),substr(t.transaction_date,1,7)) BETWEEN ? AND ?
             GROUP BY t.provider,t.card_last4 ORDER BY amount DESC""",
@@ -101,20 +130,22 @@ def dashboard_payload(database: Path, period: str, card: str, month: str = "") -
         )]
         cards_total = sum(float(item["amount"]) for item in cards)
         for item in cards:
+            item["amount"] = float(item["amount"])
             item["key"] = f"{item['provider']}:{item['card_last4']}"
             item["share"] = round((item["amount"] / cards_total * 100), 1) if cards_total else 0
 
         categories = with_spending_shares(connection.execute(
             f"""SELECT COALESCE(o.category,t.user_category,t.provider_category,'Needs review') category,
-            ROUND(SUM({personal_spending_sql()}),2) amount,
+            ROUND(CAST(SUM({personal_spending_sql()}) AS NUMERIC),2) amount,
             COUNT(*) transactions FROM transactions t
             LEFT JOIN transaction_category_overrides o ON o.transaction_id=t.id WHERE {where}
-            GROUP BY COALESCE(o.category,t.user_category,t.provider_category,'Needs review') HAVING amount > 0 ORDER BY amount DESC""",
+            GROUP BY COALESCE(o.category,t.user_category,t.provider_category,'Needs review')
+            HAVING SUM({personal_spending_sql()}) > 0 ORDER BY amount DESC""",
             parameters,
         ), spent)
 
         category_comparison = {"available": False, "previous_month": None}
-        if period == "month":
+        if period == "month" and start and end:
             previous_month = shift_month(start[:7], -1)
             previous_conditions = [f"{REPORTING_MONTH_SQL} = ?"]
             previous_parameters: list[object] = [previous_month]
@@ -124,12 +155,13 @@ def dashboard_payload(database: Path, period: str, card: str, month: str = "") -
                 previous_parameters.extend([provider, last4])
             previous_where = " AND ".join(previous_conditions)
             previous_count = int(connection.execute(
-                f"SELECT COUNT(*) FROM transactions t WHERE {previous_where}",
+                f"SELECT COUNT(*) AS transaction_count FROM transactions t "
+                f"WHERE {previous_where}",
                 previous_parameters,
-            ).fetchone()[0])
+            ).fetchone()["transaction_count"])
             previous_rows = connection.execute(
                 f"""SELECT COALESCE(o.category,t.user_category,t.provider_category,'Needs review') category,
-                ROUND(SUM({personal_spending_sql()}),2) amount
+                ROUND(CAST(SUM({personal_spending_sql()}) AS NUMERIC),2) amount
                 FROM transactions t
                 LEFT JOIN transaction_category_overrides o ON o.transaction_id=t.id
                 WHERE {previous_where}
@@ -148,7 +180,8 @@ def dashboard_payload(database: Path, period: str, card: str, month: str = "") -
             f"""SELECT t.merchant_raw,COALESCE(o.category,t.user_category,t.provider_category,'Needs review') category,
             COALESCE(o.subcategory,t.user_subcategory) subcategory,t.provider,t.card_last4,
             t.transaction_date,t.billing_date,t.billing_month,t.billing_month_source,
-            CAST(t.charged_amount AS REAL) amount,{personal_spending_sql()} personal_amount,t.charged_currency,
+            CAST(t.charged_amount AS NUMERIC) amount,
+            {personal_spending_sql()} personal_amount,t.charged_currency,
             a.adjustment_type,a.reimbursed_amount,a.reimbursement_date
             FROM transactions t LEFT JOIN transaction_category_overrides o ON o.transaction_id=t.id
             LEFT JOIN transaction_spending_adjustments a ON a.transaction_id=t.id
@@ -157,7 +190,8 @@ def dashboard_payload(database: Path, period: str, card: str, month: str = "") -
         )]
 
         purchase_activity_summary = None
-        if period == "month":
+        trend: list[dict] = []
+        if period == "month" and start and end:
             purchase_conditions = ["t.transaction_date BETWEEN ? AND ?"]
             purchase_parameters: list[object] = [start or "0000-00-00", end or "9999-99-99"]
             if card != "all" and ":" in card:
@@ -178,20 +212,23 @@ def dashboard_payload(database: Path, period: str, card: str, month: str = "") -
             trend, purchase_activity_summary = build_purchase_activity(
                 [PurchaseActivityRow(**dict(row)) for row in purchase_rows],
                 billed_charges=spent,
-                billed_refunds=float(metrics["refunds"]),
+                billed_refunds=float(summary["refunds"]),
             )
         else:
             trend_spending = [dict(row) for row in connection.execute(
                 f"""SELECT {REPORTING_MONTH_SQL} bucket,
-                ROUND(SUM({personal_spending_sql()})+
-                  SUM(CASE WHEN CAST(t.charged_amount AS REAL)<0 THEN CAST(t.charged_amount AS REAL) ELSE 0 END),2) amount
+                ROUND(CAST(SUM({personal_spending_sql()})+
+                  SUM(CASE WHEN CAST(t.charged_amount AS NUMERIC)<0
+                    THEN CAST(t.charged_amount AS NUMERIC) ELSE 0 END)
+                  AS NUMERIC),2) amount
                 FROM transactions t WHERE {where} GROUP BY {REPORTING_MONTH_SQL} ORDER BY bucket""",
                 parameters,
             )]
             trend_income = {
                 row["month"]: float(row["total"])
                 for row in connection.execute(
-                    """SELECT month,SUM(CAST(amount AS REAL)) total FROM income_entries
+                    """SELECT month,SUM(CAST(amount AS NUMERIC)) total
+                    FROM income_entries
                     WHERE month BETWEEN ? AND ? GROUP BY month""",
                     ((start or "0000-00-00")[:7], (end or "9999-99-99")[:7]),
                 )
@@ -206,31 +243,35 @@ def dashboard_payload(database: Path, period: str, card: str, month: str = "") -
                 for bucket in sorted(set(spending_by_month) | set(trend_income))
             ]
 
-        uncategorized = connection.execute(
-            f"SELECT COUNT(DISTINCT merchant_normalized) FROM transactions WHERE {where} AND user_category IS NULL AND provider_category IS NULL",
-            parameters,
-        ).fetchone()[0]
-        duplicate_rows = connection.execute("SELECT COALESCE(SUM(duplicate_rows),0) FROM imports").fetchone()[0]
-        latest_import = connection.execute(
-            "SELECT original_name,imported_at,status FROM imports ORDER BY id DESC LIMIT 1"
-        ).fetchone()
-        largest = connection.execute(
-            f"""SELECT merchant_raw,{personal_spending_sql()} amount FROM transactions t
-            WHERE {where} AND {personal_spending_sql()}>0 ORDER BY amount DESC LIMIT 1""",
-            parameters,
-        ).fetchone()
+        latest_import = (
+            {
+                "original_name": summary["latest_import_name"],
+                "imported_at": summary["latest_imported_at"],
+                "status": summary["latest_import_status"],
+            }
+            if summary["latest_import_name"] is not None else None
+        )
+        largest = (
+            {
+                "merchant_raw": summary["largest_merchant_raw"],
+                "amount": summary["largest_amount"],
+            }
+            if summary["largest_merchant_raw"] is not None else None
+        )
         return {
             "period": {"key": period, "start": start, "end": end, "label": label},
             "selected_card": card,
             "metrics": {
-                "spent": round(spent, 2),
-                "refunds": round(float(metrics["refunds"]), 2),
-                "transactions": int(metrics["transactions"]),
-                "daily_average": round(spent / active_days, 2) if active_days else 0,
+                "spent": displayed_spent,
+                "refunds": round(float(summary["refunds"]), 2),
+                "transactions": int(summary["transactions"]),
+                "daily_average": (
+                    round(displayed_spent / active_days, 2) if active_days else 0
+                ),
                 "active_days": active_days,
             },
             "income_summary": {
-                "has_income": bool(income_row["entries"]),
+                "has_income": bool(summary["income_entries"]),
                 "income": balance.income,
                 "spending": balance.spending,
                 "charges": balance.charges,
@@ -257,18 +298,18 @@ def dashboard_payload(database: Path, period: str, card: str, month: str = "") -
             "trend_mode": "purchase_activity" if period == "month" else "billing_summary",
             "purchase_activity_summary": purchase_activity_summary,
             "insights": {
-                "merchants_needing_review": int(uncategorized),
-                "duplicate_rows_prevented": int(duplicate_rows),
-                "largest_transaction": dict(largest) if largest else None,
+                "merchants_needing_review": int(summary["merchant_count"]),
+                "duplicate_rows_prevented": int(summary["duplicate_rows"]),
+                "largest_transaction": largest,
             },
-            "latest_import": dict(latest_import) if latest_import else None,
-            "available_months": [row[0] for row in connection.execute(
-                """SELECT month FROM (
-                SELECT DISTINCT COALESCE(billing_month,substr(billing_date,1,7),substr(transaction_date,1,7)) month
+            "latest_import": latest_import,
+            "available_months": [row["report_month"] for row in connection.execute(
+                """SELECT report_month FROM (
+                SELECT DISTINCT COALESCE(
+                  billing_month,substr(billing_date,1,7),substr(transaction_date,1,7)
+                ) AS report_month
                 FROM transactions WHERE transaction_date IS NOT NULL OR billing_month IS NOT NULL
-                UNION SELECT DISTINCT month FROM income_entries
-                ) ORDER BY month DESC"""
+                UNION SELECT DISTINCT month AS report_month FROM income_entries
+                ) coverage ORDER BY report_month DESC"""
             )],
         }
-    finally:
-        connection.close()

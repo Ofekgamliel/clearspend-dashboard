@@ -30,7 +30,7 @@ while IFS= read -r path; do
             ;;
         tests/*)
             case "$path" in
-                tests/synthetic/*|tests/frontend/*)
+                tests/synthetic/*|tests/integration/*|tests/frontend/*)
                     ;;
                 *)
                     fail "Private/local test path is staged: $path"

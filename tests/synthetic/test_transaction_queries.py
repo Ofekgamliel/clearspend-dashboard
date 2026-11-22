@@ -64,8 +64,12 @@ class TransactionQueryTests(unittest.TestCase):
             connection.close()
 
         browse = transactions_payload(self.database, "all", "all")
+        complete = transactions_payload(
+            self.database, "all", "all", complete_history=True,
+        )
         search = transactions_payload(self.database, "all", "all", search="Needle")
         self.assertEqual(browse["total"], 1001)
         self.assertEqual(len(browse["transactions"]), 1000)
+        self.assertEqual(len(complete["transactions"]), 1001)
         self.assertEqual(search["total"], 1)
         self.assertEqual(search["transactions"][0]["merchant_raw"], "Unique Needle Merchant")

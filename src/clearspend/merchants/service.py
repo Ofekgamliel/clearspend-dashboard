@@ -1,20 +1,20 @@
 from __future__ import annotations
 
 from datetime import datetime
-from pathlib import Path
 
-from clearspend.database.connection import connect_database
+from clearspend.database.connection import DatabaseTarget, database_transaction
 
 
-def save_mapping(database: Path, merchant: str, category: str, subcategory: str) -> dict:
+def save_mapping(
+    database: DatabaseTarget, merchant: str, category: str, subcategory: str,
+) -> dict:
     """Persist a merchant-wide category rule and update its existing transactions."""
     merchant = merchant.strip()
     category = category.strip()
     subcategory = subcategory.strip()
     if not merchant or not category:
         raise ValueError("Merchant and category are required")
-    connection = connect_database(database)
-    try:
+    with database_transaction(database) as connection:
         now = datetime.now().astimezone().isoformat()
         connection.execute(
             """INSERT INTO merchant_mappings(merchant_normalized,category,subcategory,updated_at)
@@ -26,7 +26,6 @@ def save_mapping(database: Path, merchant: str, category: str, subcategory: str)
             "UPDATE transactions SET user_category=?,user_subcategory=? WHERE merchant_normalized=?",
             (category, subcategory or None, merchant),
         )
-        connection.commit()
         return {
             "status": "saved",
             "merchant_normalized": merchant,
@@ -34,20 +33,19 @@ def save_mapping(database: Path, merchant: str, category: str, subcategory: str)
             "subcategory": subcategory or None,
             "transactions_updated": cursor.rowcount,
         }
-    finally:
-        connection.close()
 
 
-def save_merchant(database: Path, group_id: str, display_name: str, aliases: list[dict]) -> dict:
+def save_merchant(
+    database: DatabaseTarget, group_id: str, display_name: str, aliases: list[dict],
+) -> dict:
     """Update a display identity and any explicitly edited alias category rules."""
     group_id = group_id.strip()
     display_name = display_name.strip()
     if not group_id or not display_name:
         raise ValueError("Merchant group and display name are required")
-    connection = connect_database(database)
-    try:
-        existing = [row[0] for row in connection.execute(
-            """SELECT DISTINCT t.merchant_normalized FROM transactions t
+    with database_transaction(database) as connection:
+        existing = [row["merchant_normalized"] for row in connection.execute(
+            """SELECT DISTINCT t.merchant_normalized AS merchant_normalized FROM transactions t
             LEFT JOIN merchant_display_mappings d ON d.merchant_normalized=t.merchant_normalized
             WHERE COALESCE(d.canonical_group_id,t.merchant_normalized)=?""",
             (group_id,),
@@ -87,7 +85,6 @@ def save_merchant(database: Path, group_id: str, display_name: str, aliases: lis
             )
             transactions_updated += cursor.rowcount
             category_rules_updated += 1
-        connection.commit()
         return {
             "status": "saved",
             "display_name": display_name,
@@ -95,5 +92,3 @@ def save_merchant(database: Path, group_id: str, display_name: str, aliases: lis
             "category_rules_updated": category_rules_updated,
             "transactions_updated": transactions_updated,
         }
-    finally:
-        connection.close()
