@@ -82,7 +82,8 @@ Current migrations are ordered modules under
 4. Exact import-to-transaction linkage used by duplicate and batch-decision
    workflows.
 5. Exact PostgreSQL `NUMERIC` storage for transaction amounts, exchange rates,
-   reimbursements, income, event budgets, and statement totals.
+   reimbursements, income, event budgets, and statement totals. Legacy
+   nonnumeric exchange-rate labels are retained separately as provider evidence.
 
 The runner verifies required objects, ownership, grants, API-role denial, and
 the expected migration history after application.

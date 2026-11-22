@@ -14,22 +14,54 @@ NUMERIC_COLUMNS = {
     "import_coverage": ("official_total",),
 }
 
+
+PRESERVE_LEGACY_EXCHANGE_RATE = (
+    """ALTER TABLE clearspend.transactions
+    ADD COLUMN exchange_rate_source_text TEXT""",
+    """UPDATE clearspend.transactions
+    SET exchange_rate_source_text = exchange_rate
+    WHERE NULLIF(BTRIM(exchange_rate), '') IS NOT NULL
+    AND NOT pg_input_is_valid(NULLIF(BTRIM(exchange_rate), ''), 'numeric')""",
+)
+
+
+def _numeric_expression(column: str) -> str:
+    trimmed = f"NULLIF(BTRIM({column}), '')"
+    if column == "exchange_rate":
+        # The preceding UPDATE preserves legacy provider labels. Match the
+        # current importer by treating a nonnumeric label as no supplied rate.
+        return (
+            f"CASE WHEN pg_input_is_valid({trimmed}, 'numeric') "
+            f"THEN {trimmed}::NUMERIC ELSE NULL END"
+        )
+    return f"{trimmed}::NUMERIC"
+
+
 ALTER_STATEMENTS = tuple(
     f"""ALTER TABLE clearspend.{table}
     ALTER COLUMN {column} TYPE NUMERIC
-    USING NULLIF(BTRIM({column}), '')::NUMERIC"""
+    USING {_numeric_expression(column)}"""
     for table, columns in NUMERIC_COLUMNS.items()
     for column in columns
 )
 
 
 def apply(connection: Any) -> None:
-    for statement in ALTER_STATEMENTS:
+    for statement in PRESERVE_LEGACY_EXCHANGE_RATE + ALTER_STATEMENTS:
         connection.execute(statement)
 
 
 def verify(connection: Any) -> list[str]:
     problems: list[str] = []
+    source_text = connection.execute(
+        """SELECT data_type FROM information_schema.columns
+        WHERE table_schema='clearspend' AND table_name='transactions'
+        AND column_name='exchange_rate_source_text'"""
+    ).fetchone()
+    if not source_text or source_text["data_type"] != "text":
+        problems.append(
+            "Missing text column: clearspend.transactions.exchange_rate_source_text"
+        )
     for table, columns in NUMERIC_COLUMNS.items():
         rows = connection.execute(
             """SELECT column_name,data_type FROM information_schema.columns
