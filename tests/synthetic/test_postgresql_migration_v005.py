@@ -23,8 +23,13 @@ class SyntheticCatalogConnection:
 
     def execute(self, sql, parameters=None):
         self.executed.append((sql, parameters))
-        if parameters is None and sql.lstrip().startswith("ALTER TABLE"):
+        if parameters is None and (
+            sql.lstrip().startswith("ALTER TABLE")
+            or sql.lstrip().startswith("UPDATE clearspend.transactions")
+        ):
             return Result([])
+        if "column_name='exchange_rate_source_text'" in sql:
+            return Result([{"data_type": "text"}])
         if "information_schema.columns" in sql:
             table, columns = parameters
             return Result([
@@ -55,12 +60,28 @@ class PostgreSQLMigrationV005Tests(unittest.TestCase):
         v005_numeric_financial_values.apply(connection)
 
         combined = "\n".join(sql for sql, _ in connection.executed)
-        self.assertEqual(len(connection.executed), 7)
+        self.assertEqual(len(connection.executed), 9)
+        self.assertIn("ADD COLUMN exchange_rate_source_text TEXT", combined)
+        self.assertIn("SET exchange_rate_source_text = exchange_rate", combined)
         self.assertIn("ALTER COLUMN charged_amount TYPE NUMERIC", combined)
         self.assertIn("ALTER COLUMN exchange_rate TYPE NUMERIC", combined)
         self.assertIn("ALTER COLUMN budget TYPE NUMERIC", combined)
         self.assertIn("NULLIF(BTRIM(charged_amount), '')::NUMERIC", combined)
+        self.assertIn(
+            "pg_input_is_valid(NULLIF(BTRIM(exchange_rate), ''), 'numeric')",
+            combined,
+        )
+        self.assertIn(
+            "THEN NULLIF(BTRIM(exchange_rate), '')::NUMERIC ELSE NULL END",
+            combined,
+        )
         self.assertNotIn("NUMERIC(", combined)
+
+    def test_only_exchange_rate_tolerates_preserved_provider_labels(self) -> None:
+        statements = "\n".join(v005_numeric_financial_values.ALTER_STATEMENTS)
+
+        self.assertEqual(statements.count("pg_input_is_valid"), 1)
+        self.assertEqual(statements.count("ELSE NULL END"), 1)
 
     def test_verify_accepts_numeric_types_and_preserved_security(self) -> None:
         self.assertEqual(
