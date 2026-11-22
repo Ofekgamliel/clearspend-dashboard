@@ -7,6 +7,7 @@ from typing import Any
 
 from clearspend.database.postgresql_backup import PostgreSQLBackupConfiguration
 from clearspend.database.settings import PostgreSQLSettings
+from clearspend.database.supabase_region import validated_supabase_pooler_region
 
 
 class RuntimeConfigurationError(ValueError):
@@ -16,6 +17,7 @@ class RuntimeConfigurationError(ValueError):
 @dataclass(frozen=True)
 class PostgreSQLRuntimeConfiguration:
     database: PostgreSQLSettings
+    expected_region: str
     backup: PostgreSQLBackupConfiguration
     local_state_directory: Path
 
@@ -23,6 +25,7 @@ class PostgreSQLRuntimeConfiguration:
 REQUIRED_KEYS = frozenset(
     {
         "backend",
+        "expected_region",
         "host",
         "port",
         "database",
@@ -92,6 +95,15 @@ def load_postgresql_runtime_configuration(
             "PostgreSQL runtime configuration must select the postgresql backend"
         )
 
+    host = _required_text(values, "host")
+    expected_region = _required_text(values, "expected_region")
+    try:
+        expected_region = validated_supabase_pooler_region(host, expected_region)
+    except ValueError as error:
+        raise RuntimeConfigurationError(
+            f"PostgreSQL runtime {error}"
+        ) from error
+
     certificate = _path(
         config_path,
         _required_text(values, "ssl_root_certificate"),
@@ -106,7 +118,7 @@ def load_postgresql_runtime_configuration(
     )
     try:
         database = PostgreSQLSettings(
-            host=_required_text(values, "host"),
+            host=host,
             port=int(values["port"]),
             database=_required_text(values, "database"),
             user=_required_text(values, "user"),
@@ -143,4 +155,9 @@ def load_postgresql_runtime_configuration(
         ).expanduser(),
         openssl_path=Path(str(values.get("openssl_path", "openssl"))).expanduser(),
     )
-    return PostgreSQLRuntimeConfiguration(database, backup, local_state_directory)
+    return PostgreSQLRuntimeConfiguration(
+        database,
+        expected_region,
+        backup,
+        local_state_directory,
+    )

@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Any
 
 from clearspend.database.settings import PostgreSQLSettings
+from clearspend.database.supabase_region import validated_supabase_pooler_region
 
 
 class AdminConfigurationError(ValueError):
@@ -14,6 +15,7 @@ class AdminConfigurationError(ValueError):
 REQUIRED_KEYS = frozenset(
     {
         "backend",
+        "expected_region",
         "host",
         "port",
         "database",
@@ -74,9 +76,17 @@ def load_postgresql_admin_configuration(config_path: Path) -> PostgreSQLSettings
         raise AdminConfigurationError(
             "PostgreSQL admin configuration must select the postgresql backend"
         )
+    host = _required_text(values, "host")
+    try:
+        validated_supabase_pooler_region(
+            host,
+            _required_text(values, "expected_region"),
+        )
+    except ValueError as error:
+        raise AdminConfigurationError(f"PostgreSQL admin {error}") from error
     try:
         return PostgreSQLSettings(
-            host=_required_text(values, "host"),
+            host=host,
             port=int(values["port"]),
             database=_required_text(values, "database"),
             user=_required_text(values, "user"),

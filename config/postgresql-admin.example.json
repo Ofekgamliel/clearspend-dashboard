@@ -1,6 +1,7 @@
 {
   "backend": "postgresql",
-  "host": "aws-0-example-region.pooler.supabase.com",
+  "expected_region": "eu-central-1",
+  "host": "aws-0-eu-central-1.pooler.supabase.com",
   "port": 5432,
   "database": "postgres",
   "user": "postgres.example-project-ref",

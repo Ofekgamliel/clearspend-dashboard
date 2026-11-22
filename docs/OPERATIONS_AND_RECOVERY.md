@@ -58,6 +58,7 @@ The runtime file contains these required fields:
 | Field | Meaning |
 | --- | --- |
 | `backend` | Must be `postgresql` |
+| `expected_region` | Required Supabase region guard. The tracked templates use `eu-central-1`; startup fails if the pooler hostname names another region. |
 | `host`, `port`, `database`, `user` | Supabase Session-pooler endpoint, normally port 5432, database `postgres`, and the project-qualified `clearspend_app` user |
 | `ssl_root_certificate` | CA certificate used by TLS `verify-full` |
 | `keychain_service`, `keychain_account` | Runtime database password lookup |
@@ -70,15 +71,18 @@ Optional runtime fields are `pool_min_size`, `pool_max_size`,
 `pg_dump_path`, `psql_path`, `pg_restore_path`, and `openssl_path`. The tracked
 template supplies safe defaults for every optional field.
 
-The admin file contains the same `backend`, endpoint, CA, database Keychain,
+The admin file contains the same `backend`, `expected_region`, endpoint, CA, database Keychain,
 pool, and timeout fields, but its project-qualified user and Keychain item refer
 to the Supabase `postgres` administrator. It deliberately contains no local
 state or archive settings.
 
 Keep the Supabase CA certificate under ignored `data/certificates/` and use TLS
-`verify-full`. The server opens the restricted pool and verifies the current
-schema before binding. The running application uses only the `clearspend_app`
-credential; provisioning and recovery use a separate administrative credential.
+`verify-full`. Both configuration loaders require a region-qualified Session-
+pooler hostname and reject a hostname whose region differs from
+`expected_region`. The server prints the verified region after opening the
+restricted pool and verifying the current schema. The running application uses
+only the `clearspend_app` credential; provisioning and recovery use a separate
+administrative credential.
 
 The configuration files should be mode `0600`; private state and backup
 directories should be mode `0700`. A CA certificate is public trust material

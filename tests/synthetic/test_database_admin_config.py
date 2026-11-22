@@ -15,7 +15,8 @@ class PostgreSQLAdminConfigurationTests(unittest.TestCase):
     def values(self) -> dict:
         return {
             "backend": "postgresql",
-            "host": "synthetic.pooler.invalid",
+            "expected_region": "eu-central-1",
+            "host": "aws-0-eu-central-1.pooler.supabase.com",
             "port": 5432,
             "database": "postgres",
             "user": "postgres.synthetic-project",
@@ -59,6 +60,19 @@ class PostgreSQLAdminConfigurationTests(unittest.TestCase):
             values["port"] = "invalid"
             path.write_text(json.dumps(values), encoding="utf-8")
             with self.assertRaisesRegex(AdminConfigurationError, "values are invalid"):
+                load_postgresql_admin_configuration(path)
+
+    def test_admin_pooler_region_must_match_expected_region(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "admin.json"
+            values = self.values()
+            values["host"] = "aws-0-ap-southeast-2.pooler.supabase.com"
+            path.write_text(json.dumps(values), encoding="utf-8")
+
+            with self.assertRaisesRegex(
+                AdminConfigurationError,
+                "host region does not match expected_region",
+            ):
                 load_postgresql_admin_configuration(path)
 
     def test_tracked_admin_template_matches_the_loader_contract(self) -> None:
