@@ -2,12 +2,13 @@
 import { computed, ref, watch } from 'vue';
 import { getObservations, saveObservationReview } from '../../api/observations';
 import type { ObservationFinding, ObservationGroup, ObservationsResponse, PeriodKey } from '../../api/contracts';
-import { UiButton, UiDialog } from '../../shared/ui';
+import { UiButton, UiDialog, UiSkeleton } from '../../shared/ui';
 import { observationActivity, observationCount, observationMetricLabels, observationMonthRange, observationReviewOption, observationReviewRequest, observationScope, observationVisual, type ObservationActivity } from './model';
 
 const props = defineProps<{ period: PeriodKey; month: string; card: string; incomeHidden: boolean; refreshKey: number }>();
 const emit = defineEmits<{ openActivity: [activity: ObservationActivity] }>();
-const response = ref<ObservationsResponse | null>(null);
+const responseCache = ref<ObservationsResponse | null>(null);
+const responseScopeKey = ref<string | null>(null);
 const loading = ref(true);
 const error = ref('');
 const active = ref<ObservationGroup | null>(null);
@@ -16,6 +17,9 @@ const reviewedKeys = ref(new Set<string>());
 const savingKey = ref('');
 const reviewError = ref('');
 let requestId = 0;
+
+const selectedScopeKey = computed(() => JSON.stringify([props.period, props.month, props.card, props.incomeHidden]));
+const response = computed(() => responseScopeKey.value === selectedScopeKey.value ? responseCache.value : null);
 
 const modalItems = computed(() => active.value?.items ?? []);
 const activeItems = computed(() => modalItems.value.filter((item) => !item.findingKey || !reviewedKeys.value.has(item.findingKey)));
@@ -42,13 +46,17 @@ const modalTitle = computed(() => {
 
 async function load(preserveUndo = false, preserveModal = false): Promise<void> {
   const current = ++requestId;
+  const requestScopeKey = selectedScopeKey.value;
   if (!preserveModal) active.value = null;
   if (!preserveUndo) lastReview.value = null;
   loading.value = true;
   error.value = '';
   try {
     const payload = await getObservations({ period: props.period, month: props.month, card: props.card, incomeHidden: props.incomeHidden });
-    if (current === requestId) response.value = payload;
+    if (current === requestId) {
+      responseCache.value = payload;
+      responseScopeKey.value = requestScopeKey;
+    }
   } catch (caught) {
     if (current === requestId) error.value = caught instanceof Error ? caught.message : 'Could not load financial observations';
   } finally {
@@ -83,16 +91,18 @@ async function review(item: ObservationFinding, remove = false): Promise<void> {
   }
 }
 
-watch([() => props.period, () => props.month, () => props.card, () => props.incomeHidden, () => props.refreshKey], () => { void load(); }, { immediate: true });
+watch([() => props.period, () => props.month, () => props.card, () => props.incomeHidden], () => { void load(); }, { immediate: true, flush: 'sync' });
+watch(() => props.refreshKey, () => { void load(); });
 </script>
 
 <template>
   <article class="observations-panel-preview" :class="{ compact: response && !response.findingCount }" aria-labelledby="observations-preview-title" :aria-busy="loading">
     <header class="observations-head-preview">
-      <div><div class="observations-title-line-preview"><h2 id="observations-preview-title">{{ response?.historical ? 'Financial patterns' : 'Financial observations' }}</h2><span v-if="response && !response.findingCount">{{ response.historical ? 'No lasting patterns' : 'No observations' }}</span></div><p v-if="response?.findingCount && response.historical">{{ observationScope(response) }}</p><p v-else-if="!response">Checking the selected period against your local history…</p></div>
+      <div><div class="observations-title-line-preview"><h2 id="observations-preview-title">{{ response?.historical ? 'Financial patterns' : 'Financial observations' }}</h2><span v-if="response && !response.findingCount">{{ response.historical ? 'No lasting patterns' : 'No observations' }}</span></div><p v-if="response?.findingCount && response.historical">{{ observationScope(response) }}</p><p v-else-if="loading && !response">Checking the selected period against your financial history…</p></div>
       <strong v-if="response?.findingCount">{{ observationCount(response) }}</strong>
     </header>
     <div v-if="error && !response" class="observations-state-preview error-state"><span>{{ error }}</span><button type="button" @click="load()">Try again</button></div>
+    <div v-else-if="loading && !response" class="observations-grid-preview observations-skeleton" aria-hidden="true"><div v-for="index in 3" :key="index" class="observation-card-preview"><UiSkeleton shape="line" /><UiSkeleton shape="line" /><UiSkeleton shape="line" /><UiSkeleton /><UiSkeleton shape="line" /></div></div>
     <div v-else-if="response?.groups.length" class="observations-grid-preview">
       <button v-for="group in response.groups" :key="group.type" type="button" class="observation-card-preview" :class="{ priority: observationVisual(group.type).priority }" :style="{ '--observation-color': observationVisual(group.type).color }" @click="open(group)">
         <span class="observation-type-preview"><i aria-hidden="true">{{ observationVisual(group.type).icon }}</i>{{ group.type }}</span>
@@ -103,8 +113,9 @@ watch([() => props.period, () => props.month, () => props.card, () => props.inco
         <footer v-if="group.cardSummary"><strong>{{ group.cardSummary }}</strong></footer>
       </button>
     </div>
-    <div v-else-if="!response" class="observations-state-preview">Analyzing local financial activity…</div>
+    <div v-else-if="!response" class="observations-state-preview">Observation data is unavailable.</div>
     <span v-if="loading && response" class="observations-updating-preview">Updating…</span>
+    <span v-else-if="error && response" class="observations-updating-preview refresh-error" role="alert">{{ error }} <button type="button" @click="load(true)">Retry</button></span>
   </article>
 
   <UiDialog :open="Boolean(active)" title-id="observation-preview-modal-title" close-label="Close observation details" size="insight" @request-close="close">

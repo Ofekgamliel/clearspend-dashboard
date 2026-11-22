@@ -11,14 +11,12 @@ const props = defineProps<{
   cards: DashboardCard[];
   availableMonths: string[];
   loading: boolean;
-  error: string;
 }>();
 
 const emit = defineEmits<{
   periodChange: [period: PeriodKey];
   monthChange: [month: string];
   cardChange: [card: string];
-  retry: [];
 }>();
 
 const monthRoot = ref<HTMLElement | null>(null);
@@ -137,7 +135,6 @@ onBeforeUnmount(() => { document.removeEventListener('pointerdown', handlePointe
       </div>
     </div>
 
-    <div v-if="error" class="filter-error" role="alert"><span>{{ error }}</span><button type="button" @click="emit('retry')">Retry</button></div>
-    <span v-else-if="loading" class="filter-loading" role="status">Updating…</span>
+    <span v-if="loading" class="filter-loading" aria-hidden="true">Updating…</span>
   </section>
 </template>

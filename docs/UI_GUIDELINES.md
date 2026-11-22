@@ -88,6 +88,28 @@ Local review prototypes derived from real dashboard data must remain ignored.
 - Empty states and missing values must be explicit; do not display fabricated
   zeros or demo transactions.
 
+## Dashboard loading
+
+- Keep runtime health checking separate from dashboard data loading. After a
+  successful health response, mount the dashboard and let its shared and
+  independent requests resolve progressively.
+- Initial loads and reporting-scope changes use structural skeletons. Never
+  show financial values from an earlier period, month, card, category scope, or
+  income-visibility state under a newly selected control.
+- Associate each response with the parameters that produced it. Request IDs
+  prevent late writes; matching response and selected scope identities decide
+  whether data is safe to render.
+- A same-scope refresh may retain matching content with a restrained updating
+  state. A refresh failure retains that content and presents a retry action;
+  an initial or scope-change failure presents a blocking error.
+- Skeletons are decorative, expose no fabricated financial values, and use the
+  shared `UiSkeleton` primitive with feature-owned dimensions and layout.
+- Loading panels expose `aria-busy`. `App.vue` owns one polite dashboard loading
+  announcement; individual panels must not create competing loading live
+  regions.
+- Skeleton animation uses semantic theme tokens and becomes static under
+  `prefers-reduced-motion: reduce`. Do not impose a minimum display duration.
+
 ## Transactions
 
 - Default individual transactions to purchase date descending.

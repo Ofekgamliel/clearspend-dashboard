@@ -18,20 +18,24 @@ import TransactionsPanel from './features/transactions/TransactionsPanel.vue';
 import TrendPanel from './features/trend/TrendPanel.vue';
 import ThemePicker from './features/theme/ThemePicker.vue';
 import { applyTheme, readStoredTheme, storeTheme, type ThemeId } from './features/theme/theme';
+import { UiSkeleton } from './shared/ui';
 
 const {
   period,
   month,
   card,
   dashboard,
+  displayDashboard,
   loading: filtersLoading,
+  loadMode,
   loadError: filtersError,
+  loadErrorMode,
   runtimeChecking,
   runtimeReady,
   runtimeError,
   revision: dataRevision,
   effectiveMonth,
-  load: loadFilters,
+  retry: retryDashboard,
   verifyRuntime,
   changeMonth,
   refresh: refreshData,
@@ -52,9 +56,16 @@ const importManager = ref<InstanceType<typeof ImportManager> | null>(null);
 const importAudit = ref<InstanceType<typeof ImportAudit> | null>(null);
 
 const latestImportLabel = computed(() => {
-  const latest = dashboard.value?.latest_import;
+  const latest = displayDashboard.value?.latest_import;
   if (!latest) return 'No statements imported yet';
   return `Last import: ${latest.original_name} · ${latest.status.replaceAll('_', ' ')}`;
+});
+
+const dashboardLoadingAnnouncement = computed(() => {
+  if (loadMode.value === 'initial') return 'Loading dashboard';
+  if (loadMode.value === 'scope-change') return `Updating dashboard for ${period.value === 'year' ? 'Latest year' : period.value === 'all' ? 'All time' : 'selected month'}`;
+  if (loadMode.value === 'refresh') return 'Refreshing dashboard';
+  return '';
 });
 
 function scrollToTop(): void {
@@ -114,26 +125,31 @@ function openCategoryTransactions(payload: { category: string; routine: boolean 
       <span class="app-header-divider" aria-hidden="true" />
       <DashboardFilters v-if="runtimeReady"
         :period="period" :month="effectiveMonth" :card="card" :cards="dashboard?.cards ?? []" :available-months="dashboard?.available_months ?? []"
-        :loading="filtersLoading" :error="filtersError" @period-change="period = $event" @month-change="changeMonth" @card-change="card = $event" @retry="loadFilters"
+        :loading="filtersLoading" @period-change="period = $event" @month-change="changeMonth" @card-change="card = $event"
       />
       <ThemePicker v-if="runtimeReady" :model-value="colorTheme" @update:model-value="changeColorTheme" />
       <ManageDataMenu v-if="runtimeReady" @select="openManagement" />
     </header>
     <section v-if="runtimeChecking" class="runtime-state" role="status"><strong>Connecting to ClearSpend…</strong><span>Checking the local server and database.</span></section>
     <section v-else-if="runtimeError" class="runtime-state error-state" role="alert"><strong>ClearSpend needs to reconnect</strong><span>{{ runtimeError }}</span><button type="button" @click="verifyRuntime">Try again</button></section>
-    <template v-else>
-      <IncomePanel v-if="dashboard" ref="incomePanel" :summary="dashboard.income_summary" :period="dashboard.period" :loading="filtersLoading" :hidden="incomeHidden" @privacy-change="changeIncomeVisibility" />
-      <MetricsGrid v-if="dashboard" :metrics="dashboard.metrics" :loading="filtersLoading" />
-      <section class="dashboard-analytics">
-        <TrendPanel v-if="dashboard" :dashboard="dashboard" :income-hidden="incomeHidden" :loading="filtersLoading" />
+    <template v-else-if="runtimeReady">
+      <p v-if="dashboardLoadingAnnouncement" class="visually-hidden" role="status" aria-live="polite">{{ dashboardLoadingAnnouncement }}</p>
+      <section v-if="filtersError" class="dashboard-load-error" :class="{ refresh: loadErrorMode === 'refresh' }" role="alert">
+        <span><strong>{{ loadErrorMode === 'refresh' ? 'Dashboard refresh failed' : 'Dashboard data could not be loaded' }}</strong>{{ filtersError }}</span>
+        <button type="button" @click="retryDashboard">Retry</button>
+      </section>
+      <IncomePanel v-if="loadErrorMode !== 'blocking'" ref="incomePanel" :summary="displayDashboard?.income_summary ?? null" :period="displayDashboard?.period ?? null" :loading="filtersLoading" :hidden="incomeHidden" @privacy-change="changeIncomeVisibility" />
+      <MetricsGrid v-if="loadErrorMode !== 'blocking'" :metrics="displayDashboard?.metrics ?? null" :loading="filtersLoading" />
+      <section class="dashboard-analytics" :class="{ 'independent-only': loadErrorMode === 'blocking' }">
+        <TrendPanel v-if="loadErrorMode !== 'blocking'" :dashboard="displayDashboard" :income-hidden="incomeHidden" :loading="filtersLoading" />
         <CategoriesPanel :period="period" :month="month" :card="card" :refresh-key="dataRevision" @open-category="openCategoryTransactions" />
-        <CardsPanel v-if="dashboard" :cards="dashboard.cards" :selected-card="card" :loading="filtersLoading" @card-change="card = $event" />
+        <CardsPanel v-if="loadErrorMode !== 'blocking'" :cards="displayDashboard?.cards ?? null" :selected-card="card" :loading="filtersLoading" @card-change="card = $event" />
       </section>
       <ObservationsPanel :period="period" :month="month" :card="card" :income-hidden="incomeHidden" :refresh-key="dataRevision" @open-activity="openObservationActivity" />
       <RecurringPanel ref="recurringPanel" :period="period" :month="month" :card="card" :refresh-key="dataRevision" @financial-data-change="refreshData" @manage-recurring="openManagement('recurring', $event)" />
       <EventsPanel :period="period" :month="month" :card="card" :refresh-key="dataRevision" />
-      <TransactionsPanel v-if="dashboard" ref="transactionsPanel" :recent="dashboard.recent_transactions" :period="period" :month="month" :card="card" :loading="filtersLoading" @financial-data-change="refreshData" />
-      <footer class="app-footer"><span>{{ latestImportLabel }}</span><span><i aria-hidden="true" /> Local database connected</span></footer>
+      <TransactionsPanel v-if="loadErrorMode !== 'blocking'" ref="transactionsPanel" :recent="displayDashboard?.recent_transactions ?? null" :period="period" :month="month" :card="card" :loading="filtersLoading" @financial-data-change="refreshData" />
+      <footer class="app-footer"><span v-if="displayDashboard">{{ latestImportLabel }}</span><UiSkeleton v-else-if="filtersLoading" class="footer-skeleton" shape="line" /><span><i aria-hidden="true" /> Database connected</span></footer>
       <MerchantManagement ref="merchantManager" @financial-data-change="refreshData" />
       <ImportManager ref="importManager" @imported="refreshData" />
       <ImportAudit ref="importAudit" />

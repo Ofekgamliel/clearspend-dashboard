@@ -77,6 +77,8 @@
   --ui-overlay-nested: var(--theme-overlay-nested);
   --ui-dialog-shadow: var(--theme-dialog-shadow);
   --ui-panel-shadow: var(--theme-shadow);
+  --ui-skeleton-base: color-mix(in srgb, var(--ui-surface-muted) 70%, var(--ui-border));
+  --ui-skeleton-highlight: color-mix(in srgb, var(--ui-surface) 76%, transparent);
   --ui-chart-1: var(--theme-chart-1);
   --ui-chart-2: var(--theme-chart-2);
   --ui-chart-3: var(--theme-chart-3);

@@ -3,6 +3,7 @@
 .recurring-panel-head h2 { margin: 0; font-size: var(--ui-font-panel-title); letter-spacing: -.02em; }
 .recurring-panel-head p { margin: 5px 0 0; color: var(--ui-subtle); font-size: var(--ui-font-panel-subtitle); }
 .recurring-panel-head > button { padding: 3px 0; border: 0; background: transparent; color: var(--ui-accent-text); font-size: var(--ui-font-control); font-weight: 750; cursor: pointer; }
+.recurring-panel-head > button:disabled { color: var(--ui-subtle); cursor: default; }
 .recurring-summary-preview { display: grid; grid-template-columns: repeat(4, 1fr); margin: 18px 0 14px; padding: 14px 0; border: 1px solid var(--ui-border); border-radius: 12px; background: var(--ui-surface-muted); }
 .recurring-summary-preview > div { min-width: 0; padding: 0 17px; border-left: 1px solid var(--ui-divider); }
 .recurring-summary-preview > div:first-child { border-left: 0; }
@@ -11,6 +12,8 @@
 .recurring-summary-preview strong { margin-top: 5px; font-size: 19px; letter-spacing: -.03em; }
 .recurring-summary-preview small { margin-top: 3px; color: var(--ui-subtle); font-size: var(--ui-font-supporting); }
 .recurring-summary-preview .attention strong { color: var(--ui-warning); }
+.recurring-skeleton .recurring-summary-preview > div { display: grid; gap: 7px; }.recurring-skeleton .recurring-summary-preview .ui-skeleton:nth-child(1) { width: 55%; }.recurring-skeleton .recurring-summary-preview .ui-skeleton:nth-child(2) { width: 72%; height: 18px; }.recurring-skeleton .recurring-summary-preview .ui-skeleton:nth-child(3) { width: 82%; }
+.recurring-skeleton-title { height: 38px; border-radius: 0; }.recurring-skeleton .recurring-preview-item { cursor: default; }.recurring-skeleton .recurring-preview-item > span { width: 100%; display: grid; gap: 7px; }.recurring-skeleton .recurring-preview-item > span:last-child { width: 72px; }.recurring-skeleton .recurring-preview-item .ui-skeleton:last-child { width: 72%; }.recurring-skeleton .recurring-composition { display: grid; align-content: start; gap: 10px; }.recurring-skeleton .recurring-composition > .ui-skeleton:nth-child(1) { width: 55%; }.recurring-skeleton .recurring-composition > .ui-skeleton:nth-child(2) { width: 90%; }.recurring-skeleton-bar { width: 100%!important; height: 18px; }.recurring-refresh-error { margin-top: 10px; font-size: var(--ui-font-supporting); text-align: right; }
 .recurring-preview-layout { display: grid; grid-template-columns: minmax(0, 1.55fr) minmax(260px, .72fr); gap: 15px; }
 .recurring-preview-lists { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; min-width: 0; }
 .recurring-list-card { min-width: 0; overflow: hidden; border: 1px solid var(--ui-panel-border); border-radius: 11px; }

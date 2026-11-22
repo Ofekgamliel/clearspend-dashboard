@@ -1,10 +1,11 @@
 <script setup lang="ts">
 import type { DashboardCard } from '../../api/contracts';
 import { formatMoney, formatPercent } from '../../shared/format';
+import { UiSkeleton } from '../../shared/ui';
 import { cardProviderClass, cardShareWidth, cardTransactionLabel } from './model';
 
 defineProps<{
-  cards: DashboardCard[];
+  cards: DashboardCard[] | null;
   selectedCard: string;
   loading: boolean;
 }>();
@@ -19,7 +20,10 @@ const emit = defineEmits<{
     <header class="cards-head">
       <div><h2 id="cards-title">Spending by card</h2></div>
     </header>
-    <div v-if="cards.length" class="cards-list">
+    <div v-if="loading && !cards" class="cards-list cards-skeleton" aria-hidden="true">
+      <div v-for="index in 3" :key="index" class="payment-card"><UiSkeleton class="card-logo-skeleton" shape="block" /><span><UiSkeleton shape="line" /><UiSkeleton shape="line" /></span><span><UiSkeleton shape="line" /><UiSkeleton shape="line" /></span><UiSkeleton class="card-bar-skeleton" shape="line" /></div>
+    </div>
+    <div v-else-if="cards?.length" class="cards-list">
       <button
         v-for="item in cards"
         :key="item.key"
@@ -38,6 +42,7 @@ const emit = defineEmits<{
         <span class="payment-bar" aria-hidden="true"><i :style="{ width: `${cardShareWidth(item.share)}%` }" /></span>
       </button>
     </div>
-    <p v-else class="cards-empty">No transactions in this period.</p>
+    <p v-else-if="cards" class="cards-empty">No transactions in this period.</p>
+    <p v-else class="cards-empty dashboard-panel-error">Dashboard card data is unavailable.</p>
   </article>
 </template>
