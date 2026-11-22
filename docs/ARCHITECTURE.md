@@ -7,7 +7,7 @@ financial behavior belongs in the domain documents linked from
 
 ## System overview
 
-ClearSpend is a local-first modular monolith for importing and understanding
+ClearSpend is a locally run modular monolith for importing and understanding
 personal financial records. The Vue browser application and Python HTTP server
 run on the same computer. Authoritative financial state is stored in a private
 Supabase PostgreSQL database; the retained local SQLite database is an archival
@@ -60,7 +60,7 @@ The real application starts with:
 
 ```bash
 PYTHONPATH=src:. .venv/bin/python -m clearspend.server \
-  --postgresql-config data/postgresql-frankfurt-runtime.json \
+  --postgresql-config data/postgresql-runtime.json \
   --port 8765
 ```
 
@@ -95,7 +95,7 @@ API behavior.
 | Capability | Owner | Responsibility and boundary |
 | --- | --- | --- |
 | HTTP | `http/` | Decode and validate transport input, dispatch operations, map statuses/errors; no SQL or financial thresholds |
-| Provider parsing | `imports/isracard.py`, `max.py`, `leumi.py`, `income.py` | Translate external formats into canonical candidates; never write SQLite directly |
+| Provider parsing | `imports/isracard.py`, `max.py`, `leumi.py`, `income.py` | Translate external formats into canonical candidates; never write a database directly |
 | Import persistence | `imports/repository.py` | Import audit, transaction identity and persistence primitives |
 | Staged review | `staging/` | Preview, duplicates, coverage, merchant suggestions, reviewed decisions and atomic commit orchestration |
 | Reporting | `reporting/` | Period/card/event scope, categories, totals, income, trends and dashboard assembly |
@@ -106,13 +106,14 @@ API behavior.
 | Observations | `observations/` | Pure qualification rules, input adapters, presentation, review policy and consolidated reads |
 | Database | `database/` | Connections, verified backups, current schema and explicit migration runner |
 
-Database selection is represented by `database.settings.DatabaseSettings`.
-All existing path-based callers normalize to explicit SQLite settings, and
-`database.connection` dispatches connection creation to the SQLite adapter.
-Plain PostgreSQL settings fail explicitly because pooled runtime ownership is
-required; selection never falls back to SQLite. An explicitly opened
-`PostgreSQLPool` can use the shared connection and transaction context
-managers, which own release, commit, and rollback mechanics. Feature services
+The shared feature boundary is `database.connection.DatabaseTarget`: it accepts
+an archival SQLite source or an explicitly opened `PostgreSQLPool`.
+`database.settings.DatabaseSettings` represents only the SQLite compatibility
+path. Plain `PostgreSQLSettings` cannot be passed to the shared connection
+helper because runtime PostgreSQL access requires explicit pool ownership;
+selection never falls back to SQLite. The opened pool uses the shared
+connection and transaction context managers, which own release, commit, and
+rollback mechanics. Feature services
 still decide where a complete business transaction begins and ends. Feature
 packages continue to own their SQL. All application read and write workflows
 required for production have been ported and verified against PostgreSQL,

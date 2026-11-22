@@ -61,6 +61,7 @@ class PostgreSQLBackupConfiguration:
     pg_dump_path: Path = Path("pg_dump")
     pg_restore_path: Path = Path("pg_restore")
     openssl_path: Path = Path("openssl")
+    psql_path: Path = Path("psql")
 
     def __post_init__(self) -> None:
         if not str(self.encryption_keychain_service).strip():
@@ -192,6 +193,13 @@ def _encryption_environment(passphrase: str) -> dict[str, str]:
     environment = dict(os.environ)
     environment.pop("PGPASSWORD", None)
     environment["CLEARSPEND_BACKUP_PASSPHRASE"] = passphrase
+    return environment
+
+
+def _tool_environment() -> dict[str, str]:
+    environment = dict(os.environ)
+    environment.pop("PGPASSWORD", None)
+    environment.pop("CLEARSPEND_BACKUP_PASSPHRASE", None)
     return environment
 
 
@@ -434,6 +442,41 @@ def create_verified_postgresql_backup(
         integrity_partial.unlink(missing_ok=True)
         integrity.unlink(missing_ok=True)
         raise
+
+
+def verify_postgresql_backup(
+    archive: Path,
+    *,
+    encryption_keychain_service: str,
+    encryption_keychain_account: str,
+    pg_restore_path: Path = Path("pg_restore"),
+    openssl_path: Path = Path("openssl"),
+    password_loader: PasswordLoader = load_keychain_password,
+    pipeline_runner: PipelineRunner = _run_pipeline,
+) -> None:
+    """Authenticate, decrypt, and structurally inspect an existing backup."""
+    if not archive.is_file() or archive.stat().st_size == 0:
+        raise PostgreSQLBackupError("Encrypted PostgreSQL backup does not exist")
+    encryption_passphrase = password_loader(
+        encryption_keychain_service,
+        encryption_keychain_account,
+    )
+    _verify_integrity_manifest(archive, encryption_passphrase)
+    listing_bytes = pipeline_runner(
+        _decrypt_command(openssl_path, archive),
+        _encryption_environment(encryption_passphrase),
+        _pg_restore_list_command(pg_restore_path),
+        _tool_environment(),
+    )
+    try:
+        listing = listing_bytes.decode("utf-8")
+    except UnicodeDecodeError as error:
+        raise PostgreSQLBackupError("PostgreSQL backup listing is invalid") from error
+    missing_tables = EXPECTED_CLEARSPEND_TABLES - _listed_tables(listing)
+    if missing_tables:
+        raise PostgreSQLBackupError(
+            "PostgreSQL backup is missing required ClearSpend tables"
+        )
 
 
 def restore_verified_postgresql_backup(

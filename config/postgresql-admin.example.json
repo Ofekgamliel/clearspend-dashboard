@@ -1,0 +1,14 @@
+{
+  "backend": "postgresql",
+  "host": "aws-0-example-region.pooler.supabase.com",
+  "port": 5432,
+  "database": "postgres",
+  "user": "postgres.example-project-ref",
+  "ssl_root_certificate": "../data/certificates/prod-ca-2021.crt",
+  "keychain_service": "clearspend-example-admin",
+  "keychain_account": "postgres",
+  "pool_min_size": 1,
+  "pool_max_size": 2,
+  "acquisition_timeout_seconds": 15,
+  "statement_timeout_milliseconds": 30000
+}

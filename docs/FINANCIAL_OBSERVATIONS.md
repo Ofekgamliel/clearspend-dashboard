@@ -179,6 +179,6 @@ Only judgment-based findings have a resolution:
 Other cards are factual explanations and remain visible. A review suppresses
 only the exact transaction group, recurring occurrence, or transaction identified
 by its structured finding key. It does not silence the merchant permanently and
-does not suppress a different future finding. Reviews are stored locally in
-`observation_reviews`, removed from active cards, and remain reversible through
-the temporary undo action.
+does not suppress a different future finding. Reviews are stored in the
+authoritative `observation_reviews` table, removed from active cards, and remain
+reversible through the temporary undo action.

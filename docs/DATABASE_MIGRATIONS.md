@@ -44,6 +44,25 @@ The running application never receives the administrative `postgres`
 credential. Provisioning is retained because a replacement or recovery
 environment must be reproducible.
 
+With the application server stopped, inspect, provision, and migrate through
+the maintained command interface:
+
+```bash
+PYTHONPATH=src:. .venv/bin/python -m clearspend.admin status \
+  --admin-config data/postgresql-admin.json
+PYTHONPATH=src:. .venv/bin/python -m clearspend.admin provision \
+  --admin-config data/postgresql-admin.json \
+  --runtime-config data/postgresql-runtime.json
+PYTHONPATH=src:. .venv/bin/python -m clearspend.admin migrate \
+  --admin-config data/postgresql-admin.json
+```
+
+`status` is read-only. `provision` reads the admin and runtime-role passwords
+from their separate Keychain items. `migrate` uses only the admin credential.
+Success reports the schema state or exact version transition; configuration,
+credential, connectivity, verification, and transactional migration failures
+return a nonzero status without starting the application.
+
 The PostgreSQL migration runner:
 
 - accepts only an explicitly opened administrative pool;
@@ -106,7 +125,10 @@ Both files are required for recovery and must be stored together; the archive
 passphrase remains separate in macOS Keychain.
 
 See [`OPERATIONS_AND_RECOVERY.md`](OPERATIONS_AND_RECOVERY.md) for the approved
-restore procedure.
+backup, standalone verification, and combined replacement-environment restore
+commands. The restore command bootstraps only the runtime role before restoring
+the schema-bearing archive; ordinary provisioning must not run first because it
+would make the target nonempty.
 
 ## SQLite compatibility migrations
 
@@ -136,5 +158,6 @@ through `clearspend_app`, exercises representative feature reads and writes,
 proves approved-import commit and rollback, and checks access denial. It uses
 only synthetic data and never connects to the private Supabase project.
 
-Backup command orchestration remains covered synthetically. Supabase TLS,
+Administrative command dispatch, backup orchestration, and recovery ordering
+remain covered synthetically. Supabase TLS,
 Session-pooler, and hosted-project configuration remain deployment checks.

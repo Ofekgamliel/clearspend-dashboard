@@ -25,6 +25,7 @@ from clearspend.database.postgresql_migration_runner import (
 from clearspend.database.postgresql_migrations import DEFAULT_POSTGRESQL_MIGRATIONS
 from clearspend.database.postgresql_provisioning import (
     API_ROLES,
+    bootstrap_postgresql_runtime_role,
     provision_postgresql,
 )
 from clearspend.database.settings import PostgreSQLSettings
@@ -85,6 +86,11 @@ class AuthoritativePostgreSQLIntegrationTests(unittest.TestCase):
     def setUpClass(cls) -> None:
         cls.admin_pool = LocalPostgreSQLPool("postgres", POSTGRES_ADMIN_PASSWORD)
         cls._create_supabase_api_roles()
+        cls.bootstrap = bootstrap_postgresql_runtime_role(
+            cls.admin_pool,
+            POSTGRES_RUNTIME_PASSWORD,
+            salt_factory=lambda size: bytes(range(size)),
+        )
         cls.provisioning = provision_postgresql(
             cls.admin_pool,
             POSTGRES_RUNTIME_PASSWORD,
@@ -243,7 +249,8 @@ class AuthoritativePostgreSQLIntegrationTests(unittest.TestCase):
         )
 
     def test_provisioning_and_all_migrations_are_real_and_repeatable(self) -> None:
-        self.assertTrue(self.provisioning.role_created)
+        self.assertTrue(self.bootstrap.role_created)
+        self.assertFalse(self.provisioning.role_created)
         self.assertEqual(self.initial_migration.applied_versions, (1, 2, 3, 4))
         self.assertEqual(self.migration.applied_versions, (5,))
         self.assertEqual(

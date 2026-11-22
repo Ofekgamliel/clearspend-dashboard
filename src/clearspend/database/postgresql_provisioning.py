@@ -31,6 +31,12 @@ class PostgreSQLProvisioningResult:
     runtime_role: str
 
 
+@dataclass(frozen=True)
+class PostgreSQLRoleBootstrapResult:
+    role_created: bool
+    runtime_role: str
+
+
 def build_scram_sha_256_verifier(
     password: str,
     *,
@@ -60,7 +66,44 @@ def build_scram_sha_256_verifier(
     )
 
 
-def _verify_private_boundary(connection: Any) -> list[str]:
+def _require_admin_role(connection: Any) -> None:
+    current_role = connection.execute(
+        "SELECT current_user AS current_role"
+    ).fetchone()["current_role"]
+    if current_role != "postgres":
+        raise PostgreSQLProvisioningError(
+            "PostgreSQL provisioning requires the postgres administrative role"
+        )
+
+
+def _ensure_runtime_role(
+    connection: Any,
+    verifier: str,
+    *,
+    replace_existing_password: bool = False,
+) -> bool:
+    role_exists = connection.execute(
+        "SELECT EXISTS(SELECT 1 FROM pg_catalog.pg_roles WHERE rolname=?) AS present",
+        (RUNTIME_ROLE,),
+    ).fetchone()["present"]
+    if not role_exists:
+        connection.execute(
+            sql.SQL(
+                """CREATE ROLE {} LOGIN PASSWORD {} NOSUPERUSER NOCREATEDB
+                NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS"""
+            ).format(sql.Identifier(RUNTIME_ROLE), sql.Literal(verifier))
+        )
+    elif replace_existing_password:
+        connection.execute(
+            sql.SQL("ALTER ROLE {} PASSWORD {}").format(
+                sql.Identifier(RUNTIME_ROLE),
+                sql.Literal(verifier),
+            )
+        )
+    return not role_exists
+
+
+def _runtime_role_problems(connection: Any) -> list[str]:
     problems: list[str] = []
     role = connection.execute(
         """SELECT rolcanlogin,rolsuper,rolinherit,rolcreaterole,rolcreatedb,
@@ -80,6 +123,46 @@ def _verify_private_boundary(connection: Any) -> list[str]:
         and not role["rolbypassrls"]
     ):
         problems.append("Runtime role has unsafe attributes")
+    memberships = connection.execute(
+        """SELECT parent.rolname FROM pg_catalog.pg_auth_members membership
+        JOIN pg_catalog.pg_roles member ON member.oid=membership.member
+        JOIN pg_catalog.pg_roles parent ON parent.oid=membership.roleid
+        WHERE member.rolname=?""",
+        (RUNTIME_ROLE,),
+    ).fetchall()
+    if memberships:
+        problems.append("Runtime role inherits another database role")
+    return problems
+
+
+def bootstrap_postgresql_runtime_role(
+    pool: PostgreSQLPool,
+    runtime_password: str,
+    *,
+    salt_factory: SaltFactory = os.urandom,
+) -> PostgreSQLRoleBootstrapResult:
+    """Create only the runtime role so a schema-bearing backup can be restored."""
+    verifier = build_scram_sha_256_verifier(
+        runtime_password,
+        salt_factory=salt_factory,
+    )
+    with database_transaction(pool) as connection:
+        _require_admin_role(connection)
+        role_created = _ensure_runtime_role(
+            connection,
+            verifier,
+            replace_existing_password=True,
+        )
+        problems = _runtime_role_problems(connection)
+        if problems:
+            raise PostgreSQLProvisioningError(
+                "PostgreSQL runtime role bootstrap failed: " + "; ".join(problems)
+            )
+    return PostgreSQLRoleBootstrapResult(role_created, RUNTIME_ROLE)
+
+
+def _verify_private_boundary(connection: Any) -> list[str]:
+    problems = _runtime_role_problems(connection)
 
     schema = connection.execute(
         """SELECT schema_owner FROM information_schema.schemata
@@ -117,16 +200,6 @@ def _verify_private_boundary(connection: Any) -> list[str]:
     if denied_access:
         problems.append("API roles or PUBLIC can use the private schema")
 
-    memberships = connection.execute(
-        """SELECT parent.rolname FROM pg_catalog.pg_auth_members membership
-        JOIN pg_catalog.pg_roles member ON member.oid=membership.member
-        JOIN pg_catalog.pg_roles parent ON parent.oid=membership.roleid
-        WHERE member.rolname=?""",
-        (RUNTIME_ROLE,),
-    ).fetchall()
-    if memberships:
-        problems.append("Runtime role inherits another database role")
-
     search_path = connection.execute(
         """SELECT EXISTS(
           SELECT 1 FROM pg_catalog.pg_db_role_setting setting
@@ -152,24 +225,8 @@ def provision_postgresql(
         salt_factory=salt_factory,
     )
     with database_transaction(pool) as connection:
-        current_role = connection.execute(
-            "SELECT current_user AS current_role"
-        ).fetchone()["current_role"]
-        if current_role != "postgres":
-            raise PostgreSQLProvisioningError(
-                "PostgreSQL provisioning requires the postgres administrative role"
-            )
-        role_exists = connection.execute(
-            "SELECT EXISTS(SELECT 1 FROM pg_catalog.pg_roles WHERE rolname=?) AS present",
-            (RUNTIME_ROLE,),
-        ).fetchone()["present"]
-        if not role_exists:
-            connection.execute(
-                sql.SQL(
-                    """CREATE ROLE {} LOGIN PASSWORD {} NOSUPERUSER NOCREATEDB
-                    NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS"""
-                ).format(sql.Identifier(RUNTIME_ROLE), sql.Literal(verifier))
-            )
+        _require_admin_role(connection)
+        role_created = _ensure_runtime_role(connection, verifier)
         connection.execute(
             "CREATE SCHEMA IF NOT EXISTS clearspend AUTHORIZATION postgres"
         )
@@ -187,7 +244,7 @@ def provision_postgresql(
                 "PostgreSQL provisioning verification failed: " + "; ".join(problems)
             )
     return PostgreSQLProvisioningResult(
-        role_created=not role_exists,
+        role_created=role_created,
         schema=PRIVATE_SCHEMA,
         runtime_role=RUNTIME_ROLE,
     )

@@ -1,7 +1,8 @@
 # ClearSpend Git workflow
 
-This repository stores the ClearSpend application. Personal financial data stays
-on the local computer and must never be committed or pushed to GitHub.
+This repository stores the ClearSpend application. Personal financial data
+belongs only in the private authoritative PostgreSQL database or approved
+ignored local artifacts; it must never be committed or pushed to GitHub.
 
 ## What belongs in Git
 
@@ -134,16 +135,21 @@ Run every command from the repository root.
 ## Statement imports and database changes
 
 Uploading a new statement through ClearSpend changes local ignored files, mainly
-`data/clearspend.db` and local backups. It does not require a Git commit or push.
-Only commit when the application code itself changes.
+the authoritative private PostgreSQL database and a local encrypted PostgreSQL
+backup pair. It does not require a Git commit or push. Only commit when the
+application code itself changes. The retained `data/clearspend.db` is an
+archival pre-cutover snapshot, not current state or a rollback target.
 
 The same rule applies to income entries, merchant decisions, recurring rules,
 event assignments, reimbursements, and observation reviews: they are database
 state, not source-code changes.
 
 When cloning the repository on another computer, Git provides a clean app with
-no personal transactions. Transfer the database separately through an approved,
-secure backup process; never use this GitHub repository as database storage.
+no personal transactions. To keep using the existing Supabase project, transfer
+the ignored endpoint configuration and CA certificate through an approved
+private channel and recreate the Keychain items on the new Mac. Transfer a
+verified encrypted PostgreSQL backup pair only when restoring into an approved
+replacement environment. Never use this GitHub repository as database storage.
 
 ## Hooks
 
