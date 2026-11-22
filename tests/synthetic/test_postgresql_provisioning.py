@@ -11,6 +11,7 @@ from psycopg.sql import Composed
 
 from clearspend.database.postgresql_provisioning import (
     PostgreSQLProvisioningError,
+    bootstrap_postgresql_runtime_role,
     build_scram_sha_256_verifier,
     provision_postgresql,
 )
@@ -132,6 +133,27 @@ class PostgreSQLProvisioningTests(unittest.TestCase):
         self.assertIn("REVOKE ALL PRIVILEGES ON SCHEMA clearspend", plain_sql)
         self.assertIn("GRANT USAGE ON SCHEMA clearspend TO clearspend_app", plain_sql)
         self.assertIn("SET search_path TO clearspend, pg_catalog", plain_sql)
+
+    def test_recovery_bootstrap_creates_only_the_runtime_role(self) -> None:
+        connection = ProvisioningConnection()
+        with patch(
+            "clearspend.database.postgresql_provisioning.database_transaction",
+            return_value=yielding(connection),
+        ):
+            result = bootstrap_postgresql_runtime_role(
+                Mock(),
+                "synthetic-password-value",
+                salt_factory=lambda size: bytes(range(size)),
+            )
+
+        self.assertTrue(result.role_created)
+        self.assertEqual(result.runtime_role, "clearspend_app")
+        plain_sql = "\n".join(
+            statement for statement, _ in connection.executed
+            if isinstance(statement, str)
+        )
+        self.assertNotIn("CREATE SCHEMA", plain_sql)
+        self.assertNotIn("GRANT USAGE", plain_sql)
 
     def test_existing_role_is_verified_without_replacing_its_password(self) -> None:
         connection = ProvisioningConnection(role_exists=True)

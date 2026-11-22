@@ -11,6 +11,7 @@ from clearspend.database.postgresql_backup import (
     _write_integrity_manifest,
     create_verified_postgresql_backup,
     restore_verified_postgresql_backup,
+    verify_postgresql_backup,
 )
 from clearspend.database.settings import PostgreSQLSettings
 
@@ -249,6 +250,35 @@ class PostgreSQLBackupTests(unittest.TestCase):
             self.assertNotIn("database-secret", arguments)
             self.assertNotIn("encryption-secret", arguments)
             self.assertIn("--single-transaction", pipeline.calls[0][2])
+
+    def test_standalone_verification_authenticates_and_lists_archive(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            archive = root / "synthetic.dump.enc"
+            archive.write_bytes(b"synthetic-encrypted-archive")
+            _write_integrity_manifest(
+                archive,
+                archive.with_name(archive.name + ".integrity"),
+                "encryption-secret",
+            )
+            pipeline = SyntheticPipeline()
+
+            verify_postgresql_backup(
+                archive,
+                encryption_keychain_service="clearspend-synthetic-backup",
+                encryption_keychain_account="archive",
+                password_loader=lambda service, account: "encryption-secret",
+                pipeline_runner=pipeline,
+            )
+
+            self.assertEqual(len(pipeline.calls), 1)
+            self.assertNotIn("PGPASSWORD", pipeline.calls[0][3])
+            self.assertNotIn(
+                "CLEARSPEND_BACKUP_PASSPHRASE",
+                pipeline.calls[0][3],
+            )
+            self.assertIn("PATH", pipeline.calls[0][3])
+            self.assertIn("--list", pipeline.calls[0][2])
 
     def test_restore_refuses_occupied_target_before_decryption(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

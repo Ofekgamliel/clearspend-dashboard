@@ -50,6 +50,7 @@ class PostgreSQLRuntimeConfigurationTests(unittest.TestCase):
             configuration.backup.directory,
             (root / "backups" / "postgresql").resolve(),
         )
+        self.assertEqual(configuration.backup.psql_path, Path("psql"))
 
     def test_missing_unknown_and_wrong_backend_configuration_fail_closed(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -93,6 +94,19 @@ class PostgreSQLRuntimeConfigurationTests(unittest.TestCase):
 
             with self.assertRaisesRegex(RuntimeConfigurationError, "values are invalid"):
                 load_postgresql_runtime_configuration(path)
+
+    def test_tracked_runtime_template_matches_the_loader_contract(self) -> None:
+        template = (
+            Path(__file__).resolve().parents[2]
+            / "config"
+            / "postgresql-runtime.example.json"
+        )
+
+        configuration = load_postgresql_runtime_configuration(template)
+
+        self.assertIn("example-project-ref", configuration.database.user)
+        self.assertEqual(configuration.backup.psql_path, Path("psql"))
+        self.assertNotIn("password", template.read_text(encoding="utf-8").casefold())
 
 
 if __name__ == "__main__":

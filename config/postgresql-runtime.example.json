@@ -1,0 +1,22 @@
+{
+  "backend": "postgresql",
+  "host": "aws-0-example-region.pooler.supabase.com",
+  "port": 5432,
+  "database": "postgres",
+  "user": "clearspend_app.example-project-ref",
+  "ssl_root_certificate": "../data/certificates/prod-ca-2021.crt",
+  "keychain_service": "clearspend-example-runtime",
+  "keychain_account": "clearspend_app",
+  "local_state_directory": "../data",
+  "backup_directory": "../data/backups/postgresql",
+  "backup_encryption_keychain_service": "clearspend-example-backup",
+  "backup_encryption_keychain_account": "archive",
+  "pool_min_size": 1,
+  "pool_max_size": 4,
+  "acquisition_timeout_seconds": 15,
+  "statement_timeout_milliseconds": 15000,
+  "pg_dump_path": "pg_dump",
+  "psql_path": "psql",
+  "pg_restore_path": "pg_restore",
+  "openssl_path": "openssl"
+}

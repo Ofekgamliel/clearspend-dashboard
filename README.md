@@ -1,6 +1,6 @@
 # ClearSpend
 
-ClearSpend is a local-first personal finance dashboard for turning credit-card
+ClearSpend is a locally run personal finance dashboard for turning credit-card
 statements and income records into a private, searchable view of household
 spending. Its Vue 3 + TypeScript + Vite frontend and Python application server
 run on the same computer; authoritative financial state is stored in a private
@@ -68,11 +68,19 @@ diff is still required before every commit. See [GIT_WORKFLOW.md](GIT_WORKFLOW.m
 
 Requirements: Python 3.10 or newer and a local browser.
 
+An existing installation also needs its ignored runtime configuration, trusted
+CA certificate, and macOS Keychain entries. A fresh clone can start from the
+sanitized [`config/postgresql-runtime.example.json`](config/postgresql-runtime.example.json)
+and [`config/postgresql-admin.example.json`](config/postgresql-admin.example.json)
+templates; neither file contains a password or real project identifier. See
+[`docs/OPERATIONS_AND_RECOVERY.md`](docs/OPERATIONS_AND_RECOVERY.md) for the
+separate existing-project and replacement-environment procedures.
+
 ```bash
 python3 -m venv .venv
 .venv/bin/python -m pip install -r requirements.txt
 PYTHONPATH=src:. .venv/bin/python -m clearspend.server \
-  --postgresql-config data/postgresql-frankfurt-runtime.json \
+  --postgresql-config data/postgresql-runtime.json \
   --port 8765
 ```
 
@@ -90,7 +98,7 @@ server can render files from `dist/`, but it cannot access the database or provi
 imports, searches, mappings, events, or other API-backed behavior.
 
 PostgreSQL is the authoritative runtime database. The server requires the
-ignored Frankfurt runtime configuration shown above and fails closed if it
+ignored runtime configuration shown above and fails closed if it
 cannot connect or verify the schema. Starting without an explicit database
 selection fails. Archival inspection must deliberately use
 `--legacy-sqlite-database data/clearspend.db`; that mode is not for normal use

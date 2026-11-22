@@ -43,6 +43,7 @@ OPTIONAL_KEYS = frozenset(
         "acquisition_timeout_seconds",
         "statement_timeout_milliseconds",
         "pg_dump_path",
+        "psql_path",
         "pg_restore_path",
         "openssl_path",
     }
@@ -136,6 +137,7 @@ def load_postgresql_runtime_configuration(
             "backup_encryption_keychain_account",
         ),
         pg_dump_path=Path(str(values.get("pg_dump_path", "pg_dump"))).expanduser(),
+        psql_path=Path(str(values.get("psql_path", "psql"))).expanduser(),
         pg_restore_path=Path(
             str(values.get("pg_restore_path", "pg_restore"))
         ).expanduser(),

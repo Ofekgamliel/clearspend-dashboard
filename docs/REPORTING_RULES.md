@@ -49,8 +49,11 @@ For providers without a billing date, use the imported monthly statement period
 when available. Do not fabricate exact billing dates from unsupported evidence.
 
 Changes to installment reconstruction or reporting require before/after totals,
-representative plan checks, duplicate checks, and migration tests against the
-existing local database.
+representative plan checks, duplicate checks, and PostgreSQL calculation or
+migration tests using synthetic data or an approved disposable PostgreSQL copy.
+Run against authoritative data only as an explicitly approved operation after a
+verified backup. Add SQLite compatibility coverage only when the maintained
+archival/test path is intentionally affected.
 
 ## Recurring spending and scheduled obligations
 
