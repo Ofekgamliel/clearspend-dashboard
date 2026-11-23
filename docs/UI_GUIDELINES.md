@@ -112,6 +112,10 @@ Local review prototypes derived from real dashboard data must remain ignored.
 
 ## Transactions
 
+- On the first request after opening the transaction browser, keep its header
+  and search control available and use structural table skeletons instead of a
+  textual loading state. Later in-place requests retain the current table with
+  a restrained updating indicator.
 - Default individual transactions to purchase date descending.
 - Column headers act as sort controls and expose the active sort direction.
 - Category transaction views offer grouped and individual modes.

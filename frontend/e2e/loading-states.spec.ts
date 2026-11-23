@@ -88,6 +88,48 @@ test('skeleton tokens remain distinct in alternate light and dark themes', async
   await expect(page.locator('.income-skeleton')).toHaveCount(0);
 });
 
+test('the all-transactions browser uses structural rows for its initial request', async ({ page }) => {
+  await page.goto('/');
+  let releaseTransactions!: () => void;
+  const transactionsGate = new Promise<void>((resolve) => { releaseTransactions = resolve; });
+  await page.route('**/api/transactions?**', async (route) => {
+    await transactionsGate;
+    await route.continue();
+  });
+
+  await page.getByRole('button', { name: /View all transactions/ }).click();
+  const dialog = page.getByRole('dialog', { name: 'All transactions' });
+  await expect(dialog).toBeVisible();
+  await expect(dialog.locator('.transactions-summary-skeleton')).toBeVisible();
+  await expect(dialog.locator('.transaction-browser-skeleton-row')).toHaveCount(7);
+  await expect(dialog.getByRole('status')).toHaveText('Loading transactions…');
+  await expect(dialog.locator('.transaction-source-table')).toHaveCount(0);
+
+  releaseTransactions();
+  await expect(dialog.locator('.transaction-browser-skeleton')).toHaveCount(0);
+  await expect(dialog.locator('.transaction-source-table tbody tr').first()).toBeVisible();
+});
+
+test('category transactions use the grouped transaction skeleton', async ({ page }) => {
+  await page.goto('/');
+  let releaseTransactions!: () => void;
+  const transactionsGate = new Promise<void>((resolve) => { releaseTransactions = resolve; });
+  await page.route('**/api/transactions?**', async (route) => {
+    await transactionsGate;
+    await route.continue();
+  });
+
+  await page.getByRole('button', { name: 'View transactions in Food & groceries' }).click();
+  const dialog = page.getByRole('dialog', { name: 'Food & groceries' });
+  await expect(dialog.locator('.transaction-browser-skeleton.grouped-transaction-table')).toBeVisible();
+  await expect(dialog.locator('.transaction-browser-skeleton-row')).toHaveCount(7);
+  await expect(dialog.locator('.transaction-browser-skeleton thead th').first()).toHaveText('Merchant');
+
+  releaseTransactions();
+  await expect(dialog.locator('.transaction-browser-skeleton')).toHaveCount(0);
+  await expect(dialog.locator('.merchant-group-row').first()).toBeVisible();
+});
+
 test('a reporting-scope change removes old financial values while its response is pending', async ({ page }) => {
   await page.goto('/');
   const previousMetric = await page.locator('.metric-value').first().innerText();
