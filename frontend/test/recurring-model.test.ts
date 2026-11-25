@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import type { InstallmentCommitment, RecurringSeries } from '../src/api/contracts.ts';
-import { recurringUrl, saveRecurringProfile } from '../src/api/recurring.ts';
+import { recurringUpcomingUrl, recurringUrl, saveRecurringProfile } from '../src/api/recurring.ts';
 import { burdenShares, nextRecurringSort, recurringCadenceOptions, recurringProfilePayload, recurringStatusClass, recurringStatusLabels, recurringTypeOptions, sortRecurring } from '../src/features/recurring/model.ts';
 
 const series = (overrides: Partial<RecurringSeries>): RecurringSeries => ({
@@ -24,6 +24,15 @@ test('builds the recurring query from shared dashboard filters', () => {
   assert.equal(parsed.pathname, '/api/recurring');
   assert.equal(parsed.searchParams.get('month'), '2030-02');
   assert.equal(parsed.searchParams.get('card'), 'provider:1234');
+});
+
+test('builds the upcoming query without dashboard period or month state', () => {
+  const parsed = new URL(recurringUpcomingUrl({ card: 'provider:1234' }), 'http://localhost');
+  assert.equal(parsed.pathname, '/api/recurring');
+  assert.equal(parsed.searchParams.get('view'), 'upcoming');
+  assert.equal(parsed.searchParams.get('card'), 'provider:1234');
+  assert.equal(parsed.searchParams.has('period'), false);
+  assert.equal(parsed.searchParams.has('month'), false);
 });
 
 test('bounds composition shares while preserving all three segments', () => {
@@ -53,7 +62,7 @@ test('starts a new recurring sort ascending and toggles the active sort', () => 
 
 test('publishes the reviewed recurring type and cadence choices', () => {
   assert.deepEqual([...recurringTypeOptions], ['Fixed recurring', 'Usage-based recurring', 'Scheduled obligation', 'Other recurring']);
-  assert.deepEqual([...recurringCadenceOptions], ['Monthly', 'Every 2 months', 'Quarterly', 'Twice yearly', 'Annual']);
+  assert.deepEqual([...recurringCadenceOptions], ['Monthly', 'Every 2 months', 'Quarterly', 'Every 6 months', 'Yearly']);
 });
 
 test('saves type and cadence without changing lifecycle fields', async () => {

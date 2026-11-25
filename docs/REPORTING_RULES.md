@@ -72,6 +72,59 @@ archival/test path is intentionally affected.
   the expected month, due, or overdue. They remain available in longer-period
   history.
 - Installment commitments remain separate from indefinite recurring profiles.
+- Upcoming forecasts cover the current calendar month and next two months in
+  the application timezone. Dashboard period and month filters do not move
+  that horizon; the card filter still applies.
+- Forecasts use reviewed recurring schedules and remaining installments.
+  Confirmed persisted charges replace their matching forecast occurrence;
+  ambiguous or unsupported evidence is listed as unresolved and is not added
+  to expected totals. Pending statement rows are excluded by import staging
+  before persistence.
+- Expected amounts are explicitly marked as estimates. Month cards display a
+  `Known expected` subtotal; unknown amounts remain visible but do not
+  contribute to it, and unresolved-source counts appear next to the cards.
+  Annual payments and final installments are identified in the payment list.
+- An active reviewed monthly fixed profile is expected every month after its
+  first confirmed charge; history controls amount confidence rather than
+  schedule eligibility. One payment is provisional, two values whose direct
+  maximum/minimum ratio is at most 1.15 are developing, and a uniquely
+  supported component across at
+  least three months is established. Amount proximity is primary; reliable
+  dates within three days may distinguish otherwise similar charges. A unique
+  stable component may exclude separate ad-hoc charges. Three consecutive
+  recent matching months establish a new baseline; competing plausible
+  components keep the amount unknown.
+- Two-payment similarity is measured directly and order-independently:
+  `maximum / minimum <= 1.15`. Comparing each amount with their midpoint is not
+  sufficient.
+- An established pre-anchor fixed component owns future amount confidence.
+  Anchor-month charges are reconciled against it by amount and reliable timing:
+  one unique match is confirmed and every unmatched charge remains a separate
+  actual. Ambiguous anchor matches do not erase the established future amount.
+  Anchor evidence seeds or strengthens an amount only when no established
+  pre-anchor component exists.
+- Usage-based recurring amounts aggregate positive charges by reporting month
+  before taking the recent median and range. Non-monthly schedules keep their
+  existing phase and amount-reliability requirements.
+- Upcoming exact dates use provider billing dates, or purchase dates only when
+  the purchase and reporting months match. A statement month never fabricates
+  an exact day. Non-ILS and mixed charged-currency evidence remains an unknown
+  amount and is excluded from expected totals.
+- A horizon installment actual replaces the same commitment and installment
+  number even when it moved to another horizon month; the old projected row is
+  removed so the installment is not counted twice, and later installments
+  follow the moved occurrence. With no baseline, one valid anchor-month
+  installment may seed later horizon projections; a future-only first
+  installment cannot create backward or later projections.
+- Paused and already-ended recurring profiles do not produce schedule warnings,
+  though imported horizon charges remain visible. Malformed horizon installment
+  evidence remains visible and is also explained under `Not forecast`.
+- A source row with either installment field populated belongs only to the
+  installment evidence stream. This includes malformed partial evidence, which
+  remains visible once and cannot also become a recurring occurrence.
+- `Highest expected` requires complete displayed amounts and no scoped
+  unresolved sources; otherwise a unique largest subtotal is `Highest known
+  estimate`.
 
 ## Financial observations and patterns
 

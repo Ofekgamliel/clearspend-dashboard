@@ -30,7 +30,7 @@ validators.
 | `GET /api/categories` | `period`, `card`, `month`, `event_scope` | Category totals, shares and previous-month comparisons |
 | `GET /api/mapping` | None | Mapping review data |
 | `GET /api/merchants` | None | Display identities, aliases, categories and recurring context |
-| `GET /api/recurring` | `period`, `card`, `month` | Reviewed recurring series, installments, history and burden summaries |
+| `GET /api/recurring` | `view`, `period`, `card`, `month` | Reviewed recurring overview or three-month Upcoming forecast |
 | `GET /api/events` | `period`, `card`, `month` | Visible events, groups, exact membership and assignment choices |
 | `GET /api/observations` | `period`, `card`, `month`, `income_hidden` | Backend-qualified monthly findings or long-period patterns |
 | `GET /api/observation-reviews` | None | Active reversible review decisions |
@@ -38,6 +38,22 @@ validators.
 `period` accepts `month`, `year`, or `all`. `event_scope` accepts `all` or
 `routine`. Backend query and calculation modules remain authoritative for
 scope, totals, qualification, and exclusions.
+
+For `/api/recurring`, `view` accepts `overview` or `upcoming` and defaults to
+`overview`. Overview uses `period`, `card`, and `month` as before. Upcoming uses
+only `card`; its horizon is the current application month plus the next two
+months. Each month returns expected, confirmed, and forecast totals, unknown
+amount counts, and payment rows. Payment rows expose an opaque
+`occurrence_id`, never a source transaction key. Evidence fields distinguish
+confirmed values, estimates, and unknown values. Projected payments also expose
+nullable `amount_confidence`: `provisional` for one payment, `developing` for
+two similar payments, or `established` for a supported stable component.
+Unresolved schedules are returned separately and do not contribute to totals.
+`generated_as_of` and `selected_card` remain response metadata so the
+time-sensitive result is auditable and its scope is self-describing. Upcoming
+does not expose transaction category or internal recurring/installment source
+identifiers; `occurrence_id` and `source_kind + source_id` provide the public
+row and unresolved-source identities.
 
 ## Mutation endpoints
 

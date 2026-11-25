@@ -4,8 +4,10 @@ import os
 import tempfile
 import unittest
 from contextlib import contextmanager
+from datetime import datetime
 from pathlib import Path
 from typing import Iterator
+from zoneinfo import ZoneInfo
 
 import psycopg
 from psycopg import sql
@@ -31,6 +33,7 @@ from clearspend.database.postgresql_provisioning import (
 from clearspend.database.settings import PostgreSQLSettings
 from clearspend.events.queries import events_payload
 from clearspend.observations.payloads import observations_payload
+from clearspend.recurring.queries import upcoming_payload
 from clearspend.reporting.dashboard import dashboard_payload
 from clearspend.staging.service import commit_staged_statement_postgresql
 from clearspend.transactions.queries import transactions_payload
@@ -372,6 +375,102 @@ class AuthoritativePostgreSQLIntegrationTests(unittest.TestCase):
         self.assertEqual(monthly_dashboard["purchase_activity_summary"]["total"], 125.3)
         self.assertEqual(observations["period"], "all")
         self.assertEqual(observations["selectedCard"], "all")
+
+    def test_upcoming_forecast_uses_postgresql_runtime_contract(self) -> None:
+        with database_transaction(self.runtime_pool) as connection:
+            import_id = connection.execute(
+                """INSERT INTO imports(
+                original_name,source_path,byte_hash,source_format,provider,
+                card_last4,status,parsed_rows,inserted_rows,imported_at
+                ) VALUES(?,?,?,?,?,?,?,?,?,?) RETURNING id""",
+                (
+                    "upcoming-ci.xlsx", "upcoming-ci.xlsx", "upcoming-ci-hash",
+                    ".xlsx", "synthetic", "0001", "imported", 5, 5,
+                    "2030-04-15T10:00:00+00:00",
+                ),
+            ).fetchone()["id"]
+            connection.execute(
+                """INSERT INTO recurring_profiles(
+                canonical_group_id,display_name,verdict,recurring_type,cadence,
+                cadence_months,lifecycle_status,updated_at
+                ) VALUES(?,?,?,?,?,?,?,?)""",
+                (
+                    "postgres-upcoming", "PostgreSQL Upcoming", "recurring",
+                    "Fixed recurring", "Monthly", 1, "active",
+                    "2030-04-15T10:00:00+00:00",
+                ),
+            )
+            connection.execute(
+                """INSERT INTO recurring_profile_members(
+                canonical_group_id,merchant_normalized,included,updated_at
+                ) VALUES(?,?,?,?)""",
+                (
+                    "postgres-upcoming", "postgres upcoming", True,
+                    "2030-04-15T10:00:00+00:00",
+                ),
+            )
+            connection.execute(
+                """INSERT INTO recurring_profiles(
+                canonical_group_id,display_name,verdict,recurring_type,cadence,
+                cadence_months,lifecycle_status,updated_at
+                ) VALUES(?,?,?,?,?,?,?,?)""",
+                (
+                    "postgres-unresolved", "PostgreSQL Unresolved", "recurring",
+                    "Fixed recurring", "Custom", 1, "active",
+                    "2030-04-15T10:00:00+00:00",
+                ),
+            )
+            connection.execute(
+                """INSERT INTO recurring_profile_members(
+                canonical_group_id,merchant_normalized,included,updated_at
+                ) VALUES(?,?,?,?)""",
+                (
+                    "postgres-unresolved", "postgres unresolved", True,
+                    "2030-04-15T10:00:00+00:00",
+                ),
+            )
+            rows = [
+                ("pg-upcoming-jan", "2030-01-10", None, "2030-01", "postgres upcoming", "100.00"),
+                ("pg-upcoming-feb", "2030-02-10", None, "2030-02", "postgres upcoming", "100.00"),
+                ("pg-upcoming-mar", "2030-03-10", None, "2030-03", "postgres upcoming", "100.00"),
+                ("pg-upcoming-apr", "2030-03-29", "2030-04-12", "2030-04", "postgres upcoming", "110.00"),
+                ("pg-unresolved-mar", "2030-03-11", None, "2030-03", "postgres unresolved", "25.00"),
+            ]
+            for key, transaction_date, billing_date, billing_month, merchant, amount in rows:
+                connection.execute(
+                    """INSERT INTO transactions(
+                    transaction_key,base_key,occurrence,provider,card_last4,
+                    source_sheet,transaction_date,billing_date,billing_month,
+                    billing_month_source,merchant_raw,merchant_normalized,
+                    charged_amount,charged_currency,provider_category,
+                    first_import_id,created_at
+                    ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                    (
+                        key, f"base-{key}", 1, "synthetic", "0001",
+                        "synthetic-sheet", transaction_date, billing_date,
+                        billing_month, "statement", merchant.title(), merchant,
+                        amount, "ILS", "Subscriptions", import_id,
+                        "2030-04-15T10:00:00+00:00",
+                    ),
+                )
+
+        clock = lambda: datetime(
+            2030, 4, 15, 10, tzinfo=ZoneInfo("Asia/Jerusalem")
+        )
+        payload = upcoming_payload(self.runtime_pool, "all", clock=clock)
+        wrong_card = upcoming_payload(
+            self.runtime_pool, "synthetic:9999", clock=clock,
+        )
+
+        april = payload["months"][0]
+        self.assertEqual(april["confirmed_total"], 110)
+        self.assertEqual(april["payments"][0]["expected_date"], "2030-04-12")
+        self.assertEqual(payload["months"][1]["forecast_total"], 100)
+        self.assertEqual(payload["unresolved"][0]["reason"], "unsupported_cadence")
+        self.assertTrue(april["payments"][0]["occurrence_id"].startswith("occurrence_"))
+        self.assertNotIn("pg-upcoming-apr", repr(payload))
+        self.assertTrue(all(not month["payments"] for month in wrong_card["months"]))
+        self.assertEqual(wrong_card["unresolved"], [])
 
     def test_events_bulk_load_memberships_through_runtime_role(self) -> None:
         first_transaction_id = self._seed_transaction()

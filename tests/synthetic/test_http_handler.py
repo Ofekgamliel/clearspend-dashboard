@@ -94,7 +94,7 @@ class HttpHandlerTests(unittest.TestCase):
                 "status": "ok",
                 "mode": "local",
                 "database": True,
-                "api_compatibility": "clearspend-vue-api-v1",
+                "api_compatibility": "clearspend-vue-api-v2",
             },
         )
 

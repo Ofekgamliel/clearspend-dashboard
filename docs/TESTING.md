@@ -42,7 +42,8 @@ schema and restricted runtime role, applies every migration, verifies a second
 migration inspection, exercises representative reads and writes through
 `clearspend_app`, checks API-role denial, and proves reviewed-import commit and
 rollback. It also verifies exact numeric column types and representative
-dashboard and observation calculations through the restricted role. It uses
+dashboard, observation, and recurring Upcoming calculations through the
+restricted role. It uses
 synthetic credentials and data and must never point at the private Supabase
 project.
 
@@ -113,6 +114,7 @@ operating systems.
 | Vue component | Loading, empty, error, keyboard and save states |
 | Dashboard interaction | Desktop and narrow E2E; visual snapshot when appearance changes |
 | Observation | Qualifying, suppressed, grouped, reviewed and later-period cases |
+| Recurring forecast | Cadence and lifecycle boundaries, actual-over-forecast precedence, card scope, provisional/developing/established fixed amounts, direct two-payment boundaries, anchor extras and ambiguous matching, stable-component ambiguity and regime changes, usage monthly aggregation, anchor and malformed installments, unresolved-aware comparisons, opaque identities and pending-import exclusion |
 
 For changes that affect financial state, compare relevant before/after counts
 and totals on a disposable copy. Production data is never the first test target.

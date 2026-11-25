@@ -91,7 +91,7 @@ class HttpApiTests(unittest.TestCase):
             "status": "ok",
             "mode": "local",
             "database": True,
-            "api_compatibility": "clearspend-vue-api-v1",
+            "api_compatibility": "clearspend-vue-api-v2",
         })
         self.assertEqual(dashboard_status, 200)
         self.assertEqual(dashboard["period"]["key"], "month")
@@ -134,6 +134,31 @@ class HttpApiTests(unittest.TestCase):
             )
         with self.assertRaisesRegex(ValueError, "Unknown JSON API route"):
             dispatch_json_get(self.database, "/api/not-real", {})
+
+    def test_recurring_view_validation_preserves_overview_and_exposes_upcoming(self) -> None:
+        overview, overview_status = dispatch_json_get(
+            self.database, "/api/recurring", {"period": ["all"]},
+        )
+        upcoming, upcoming_status = dispatch_json_get(
+            self.database, "/api/recurring", {"view": ["upcoming"]},
+        )
+
+        self.assertEqual(overview_status, 200)
+        self.assertIn("metrics", overview)
+        self.assertNotIn("anchor_month", overview)
+        self.assertEqual(upcoming_status, 200)
+        self.assertEqual(len(upcoming["months"]), 3)
+        self.assertIn("anchor_month", upcoming)
+        with self.assertRaisesRegex(ValueError, "Invalid recurring view"):
+            dispatch_json_get(
+                self.database, "/api/recurring", {"view": ["future"]},
+            )
+        with self.assertRaisesRegex(ValueError, "Invalid card"):
+            dispatch_json_get(
+                self.database,
+                "/api/recurring",
+                {"view": ["upcoming"], "card": ["invalid"]},
+            )
 
     def test_observations_route_exposes_read_only_browser_compatible_findings(self) -> None:
         connection = connect(self.database)

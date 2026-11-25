@@ -16,8 +16,8 @@ export const recurringCadenceOptions = [
   'Monthly',
   'Every 2 months',
   'Quarterly',
-  'Twice yearly',
-  'Annual',
+  'Every 6 months',
+  'Yearly',
 ] as const;
 
 export function recurringProfilePayload(

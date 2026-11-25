@@ -23,6 +23,10 @@ CADENCE_MONTHS = {
     "Irregular": 0,
     "Unknown": 0,
 }
+CADENCE_ALIASES = {
+    "Twice yearly": "Every 6 months",
+    "Annual": "Yearly",
+}
 LIFECYCLE_STATUSES = frozenset({"active", "ended", "paused", "unknown"})
 
 
@@ -36,6 +40,12 @@ class RecurringSeriesAssessment:
     scoped_months: tuple[str, ...]
     typical_amount: float
     history: tuple[dict, ...]
+
+
+def canonical_cadence(value: str | None) -> str:
+    """Return the maintained label while preserving unsupported stored values."""
+    cadence = (value or "Unknown").strip() or "Unknown"
+    return CADENCE_ALIASES.get(cadence, cadence)
 
 
 def median(values: list[float]) -> float:
