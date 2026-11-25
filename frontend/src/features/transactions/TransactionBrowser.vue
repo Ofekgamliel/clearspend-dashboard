@@ -4,7 +4,7 @@ import { getEvents } from '../../api/events';
 import { getTransactions, saveTransactionEvent } from '../../api/transactions';
 import type { AvailableEvent, PeriodKey, TransactionRow } from '../../api/contracts';
 import { formatDate, formatInteger, formatMoney } from '../../shared/format';
-import { UiDialog } from '../../shared/ui';
+import { UiDialog, UiSkeleton } from '../../shared/ui';
 import {
   groupTransactionsByMerchant,
   nextMerchantGroupSort,
@@ -158,6 +158,8 @@ function reset(options: TransactionActivityOptions): void {
   groupedMode.value = Boolean(options.grouped);
   detailSort.value = { key: 'transaction_date', direction: 'desc' };
   expandedGroups.value = new Set();
+  rows.value = [];
+  total.value = 0;
   modalOpen.value = true;
   void loadTransactions();
   void loadAvailableEvents();
@@ -193,13 +195,24 @@ defineExpose({ open, openActivity });
     <template #header><div class="transactions-modal-head">
           <h2 id="transactions-modal-title">{{ activityTitle }}</h2>
           <label class="transactions-search"><span aria-hidden="true">⌕</span><input v-model="search" type="search" placeholder="Search every merchant, display name or category…" autocomplete="off"></label>
-    </div></template>
+        </div></template>
         <div class="transactions-modal-summary">
-          <div><strong>{{ search.trim() ? `${formatInteger(rows.length)} matches` : groupedMode ? `${formatInteger(rows.length)} transactions · ${formatInteger(merchantGroups.length)} merchants` : `${formatInteger(total)} transactions` }}</strong><span>{{ scopeLabel }}</span></div>
+          <div v-if="detailLoading && !rows.length" class="transactions-summary-skeleton" aria-hidden="true"><UiSkeleton shape="line" /><UiSkeleton shape="line" /></div>
+          <div v-else-if="detailError && !rows.length"><strong>Transactions unavailable</strong></div>
+          <div v-else><strong>{{ search.trim() ? `${formatInteger(rows.length)} matches` : groupedMode ? `${formatInteger(rows.length)} transactions · ${formatInteger(merchantGroups.length)} merchants` : `${formatInteger(total)} transactions` }}</strong><span>{{ scopeLabel }}</span></div>
           <div v-if="activityCategory" class="transaction-view-toggle" role="group" aria-label="Transaction presentation"><button type="button" :class="{ active: groupedMode }" :aria-pressed="groupedMode" @click="groupedMode = true">By merchant</button><button type="button" :class="{ active: !groupedMode }" :aria-pressed="!groupedMode" @click="groupedMode = false">Individual</button></div>
         </div>
         <div v-if="detailError" class="transactions-detail-state error-state" role="alert"><span>{{ detailError }}</span><button type="button" @click="loadTransactions">Try again</button></div>
-        <div v-else-if="detailLoading && !rows.length" class="transactions-detail-state" role="status">Loading transactions…</div>
+        <div v-else-if="detailLoading && !rows.length" class="transactions-detail-table transaction-browser-skeleton" :class="{ 'grouped-transaction-table': groupedMode }" aria-busy="true">
+          <span class="sr-only" role="status">Loading transactions…</span>
+          <table aria-hidden="true">
+            <thead><tr v-if="groupedMode"><th>Merchant</th><th>Transactions</th><th>Latest purchase</th><th>Cards used</th><th class="right">Personal spending</th><th class="group-expand-heading" /></tr><tr v-else><th v-for="([key,label],columnIndex) in transactionColumns" :key="key" :class="{ right: columnIndex === 6 || columnIndex === 7 }">{{ label }}</th><th class="transaction-action-column" /></tr></thead>
+            <tbody><tr v-for="rowIndex in 7" :key="rowIndex" class="transaction-browser-skeleton-row">
+              <template v-if="groupedMode"><td><UiSkeleton shape="line" /><UiSkeleton shape="line" /></td><td><UiSkeleton shape="line" /></td><td><UiSkeleton shape="line" /></td><td><UiSkeleton shape="line" /></td><td><UiSkeleton shape="line" /></td><td><UiSkeleton shape="circle" /></td></template>
+              <template v-else><td v-for="([key],columnIndex) in transactionColumns" :key="key" :class="{ right: columnIndex === 6 || columnIndex === 7 }"><UiSkeleton shape="line" /><UiSkeleton v-if="columnIndex < 3 || columnIndex === 5" shape="line" /></td><td class="transaction-action-column"><UiSkeleton shape="circle" /></td></template>
+            </tr></tbody>
+          </table>
+        </div>
         <div v-else-if="groupedMode" class="transactions-detail-table grouped-transaction-table" :aria-busy="detailLoading">
           <table>
             <thead><tr>

@@ -98,6 +98,10 @@ waiting for the dashboard response, and old-scope financial values disappear
 while a replacement response is pending. These interaction tests are separate
 from real endpoint-duration measurements.
 
+The transaction-browser loading workflow also holds its first synthetic
+request to verify that both individual and grouped modal layouts use structural
+table placeholders without presenting fabricated transaction values.
+
 Local macOS runs compare tracked screenshots. CI uses `npm run test:e2e:ci` to
 run the same workflows without pixel comparisons that are unstable across
 operating systems.

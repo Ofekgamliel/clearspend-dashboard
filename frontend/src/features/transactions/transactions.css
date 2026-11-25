@@ -35,6 +35,8 @@
 .transactions-modal-summary > div:first-child { display: flex; align-items: baseline; gap: 10px; }
 .transactions-modal-summary strong { font-size: 12px; }
 .transactions-modal-summary span { color: var(--ui-subtle); font-size: var(--ui-font-supporting); }
+.transactions-modal-summary > div.transactions-summary-skeleton:first-child { width: min(360px,70%); display: grid; grid-template-columns: 110px minmax(140px,1fr); align-items: center; gap: 10px; }
+.transactions-summary-skeleton .ui-skeleton:first-child { height: 12px; }.transactions-summary-skeleton .ui-skeleton:last-child { height: 9px; }
 .transaction-view-toggle { display: inline-flex; padding: 3px; border-radius: 8px; background: var(--ui-surface-subtle); }
 .transaction-view-toggle button { min-height: 29px; padding: 0 11px; border: 0; border-radius: 6px; background: transparent; color: var(--ui-muted); font: inherit; font-size: var(--ui-font-control); cursor: pointer; }
 .transaction-view-toggle button.active { background: var(--ui-surface); color: var(--ui-heading); box-shadow: 0 1px 5px var(--ui-panel-shadow); }
@@ -79,6 +81,18 @@
 .transactions-detail-table .transaction-action-column { position: sticky; z-index: 1; right: 0; width: 54px; min-width: 54px; padding-right: 8px; padding-left: 8px; background: var(--ui-surface); box-shadow: -8px 0 12px -12px var(--ui-dialog-shadow); text-align: center; }
 .transactions-detail-table thead .transaction-action-column { z-index: 3; }
 .transactions-detail-table tbody tr:hover .transaction-action-column { background: var(--ui-surface-hover); }
+.transaction-browser-skeleton { overflow: hidden; }
+.transaction-browser-skeleton table { table-layout: fixed; }
+.transaction-browser-skeleton-row td { height: 49px; vertical-align: middle; }
+.transaction-browser-skeleton-row td > .ui-skeleton { width: 72%; height: 9px; margin-left: 0; }
+.transaction-browser-skeleton-row td > .ui-skeleton + .ui-skeleton { width: 48%; height: 7px; margin-top: 6px; }
+.transaction-browser-skeleton-row td.right > .ui-skeleton { margin-left: auto; }
+.transaction-browser-skeleton-row .transaction-action-column .ui-skeleton,.grouped-transaction-table .transaction-browser-skeleton-row td:last-child .ui-skeleton { width: 24px; height: 24px; margin: 0 auto; }
+.grouped-transaction-table .transaction-browser-skeleton-row td:first-child .ui-skeleton:first-child { width: 64%; }
+.grouped-transaction-table .transaction-browser-skeleton-row td:nth-child(2) .ui-skeleton { width: 42%; }
+.grouped-transaction-table .transaction-browser-skeleton-row td:nth-child(3) .ui-skeleton { width: 68%; }
+.grouped-transaction-table .transaction-browser-skeleton-row td:nth-child(4) .ui-skeleton { width: 60%; }
+.grouped-transaction-table .transaction-browser-skeleton-row td:nth-child(5) .ui-skeleton { width: 58%; margin-left: auto; }
 .transaction-adjustment-button { display: inline-grid; width: 28px; height: 28px; place-items: center; border: 1px solid transparent; border-radius: 8px; background: transparent; color: var(--ui-muted); font-family: inherit; font-size: 11px; font-weight: 750; cursor: pointer; }
 .transaction-adjustment-button:hover { border-color: var(--ui-accent-border); background: var(--ui-accent-soft); color: var(--ui-accent-text); }.transaction-adjustment-button.adjusted { border-color: color-mix(in srgb, var(--ui-success) 30%, var(--ui-surface)); background: var(--ui-success-soft); color: var(--ui-success); }.transaction-adjustment-button:disabled { color: var(--ui-subtle); cursor: not-allowed; }.transaction-adjustment-button:disabled:hover { border-color: transparent; background: transparent; }
 .transaction-reimbursement-note { display: inline-block; margin-top: 5px; padding: 3px 5px; border-radius: 7px; background: var(--ui-success-soft); color: var(--ui-success); font-size: 10px; font-style: normal; font-weight: 700; }
@@ -114,5 +128,6 @@
   .transactions-head { align-items: flex-start; flex-direction: column; }
   .recent-transactions-table { min-width: 760px; }
   .transactions-modal-summary { align-items: flex-start; flex-direction: column; padding-right: 16px; padding-left: 16px; }
+  .transactions-modal-summary > div.transactions-summary-skeleton:first-child { width: 100%; }
   .transactions-detail-table { margin-right: 16px; margin-left: 16px; }
 }
