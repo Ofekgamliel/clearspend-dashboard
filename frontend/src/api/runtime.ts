@@ -1,6 +1,6 @@
 import { getJson } from './client.ts';
 
-export const EXPECTED_API_COMPATIBILITY = 'clearspend-vue-api-v1';
+export const EXPECTED_API_COMPATIBILITY = 'clearspend-vue-api-v2';
 
 export type RuntimeHealth = {
   status: string;

@@ -192,6 +192,27 @@ Local review prototypes derived from real dashboard data must remain ignored.
   text while hidden so assistive technology and stale DOM content cannot expose
   the value.
 
+## Recurring and commitments
+
+- Keep Overview as the default and place the compact `Overview / Upcoming`
+  switch inside the existing panel header.
+- Upcoming shows three selectable month cards, followed by the selected
+  month's dated payments. Mark estimates, annual payments, final installments,
+  and installment progress explicitly; keep unknown amounts visible but out of
+  totals. Label month-card subtotals `Known expected`, state how many unknown
+  amounts are excluded, and surface the unresolved-source count next to the
+  cards.
+- Keep the desktop panel footprint stable when switching views. Use compact
+  two-part month cards and scroll only the keyboard-labelled selected-month
+  payment list; narrow layouts remain content-driven.
+- Label a provisional fixed forecast `Based on first payment`; label a
+  two-payment baseline `Estimate · developing`. Established projections remain
+  `Estimate`, and imported values remain `Confirmed`.
+- Keep unresolved forecast evidence in a neutral `Not forecast` section rather
+  than presenting it as an error or silently adding it to expected totals.
+- Period and historical month controls do not reload or move Upcoming. Card
+  changes do, and stale values from the previous card scope must be hidden.
+
 ## Filters and navigation
 
 - Keep timeframe controls visually separate from month and card selectors.

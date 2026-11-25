@@ -12,7 +12,7 @@ from clearspend.merchants.service import save_mapping, save_merchant
 from clearspend.observations.queries import observation_reviews_payload
 from clearspend.observations.payloads import observations_payload
 from clearspend.observations.service import save_observation_review
-from clearspend.recurring.queries import recurring_payload
+from clearspend.recurring.queries import recurring_payload, upcoming_payload
 from clearspend.recurring.service import manage_recurring_profile, save_recurring_profile
 from clearspend.reporting.category_queries import categories_payload
 from clearspend.reporting.dashboard import dashboard_payload
@@ -20,7 +20,7 @@ from clearspend.transactions.queries import transactions_payload
 from clearspend.transactions.service import save_transaction_adjustment, save_transaction_category
 
 
-API_COMPATIBILITY = "clearspend-vue-api-v1"
+API_COMPATIBILITY = "clearspend-vue-api-v2"
 
 
 JSON_GET_PATHS = frozenset({
@@ -124,6 +124,15 @@ def dispatch_json_get(
             ), 200
         return categories_payload(database, period, card, month, event_scope), 200
     if path == "/api/recurring":
+        view = _first(query, "view", "overview")
+        if view not in {"overview", "upcoming"}:
+            raise ValueError("Invalid recurring view")
+        if card != "all":
+            parts = card.split(":")
+            if len(parts) != 2 or not parts[0] or not parts[1]:
+                raise ValueError("Invalid card")
+        if view == "upcoming":
+            return upcoming_payload(database, card), 200
         return recurring_payload(database, period, card, month), 200
     if path == "/api/observations":
         return observations_payload(

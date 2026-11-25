@@ -1,9 +1,16 @@
 .recurring-panel-preview { position: relative; width: 100%; margin: 14px 0 0; padding: 19px; border: 1px solid var(--ui-panel-border); border-radius: 14px; background: var(--ui-surface); box-shadow: 0 9px 30px var(--ui-panel-shadow); }
 .recurring-panel-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+.recurring-panel-title { display: flex; min-width: 0; min-height: 49px; flex-direction: column; }
+.recurring-panel-heading-row { display: flex; min-width: 0; align-items: center; gap: 14px; }
 .recurring-panel-head h2 { margin: 0; font-size: var(--ui-font-panel-title); letter-spacing: -.02em; }
 .recurring-panel-head p { margin: 5px 0 0; color: var(--ui-subtle); font-size: var(--ui-font-panel-subtitle); }
 .recurring-panel-head > button { padding: 3px 0; border: 0; background: transparent; color: var(--ui-accent-text); font-size: var(--ui-font-control); font-weight: 750; cursor: pointer; }
 .recurring-panel-head > button:disabled { color: var(--ui-subtle); cursor: default; }
+.recurring-panel-body { height: 354px; min-height: 0; }
+.recurring-view-switch { display: flex; flex: 0 0 auto; gap: 2px; padding: 3px; border-radius: 9px; background: var(--ui-surface-subtle); }
+.recurring-view-switch button { padding: 6px 9px; border: 0; border-radius: 7px; background: transparent; color: var(--ui-muted); font-family: inherit; font-size: var(--ui-font-control); font-weight: 700; cursor: pointer; }
+.recurring-view-switch button[aria-pressed='true'] { background: var(--ui-surface); color: var(--ui-heading); box-shadow: 0 2px 7px var(--ui-panel-shadow); }
+.recurring-view-switch button:focus-visible, .recurring-upcoming-months button:focus-visible { outline: 2px solid var(--ui-focus-border); outline-offset: 2px; }
 .recurring-summary-preview { display: grid; grid-template-columns: repeat(4, 1fr); margin: 18px 0 14px; padding: 14px 0; border: 1px solid var(--ui-border); border-radius: 12px; background: var(--ui-surface-muted); }
 .recurring-summary-preview > div { min-width: 0; padding: 0 17px; border-left: 1px solid var(--ui-divider); }
 .recurring-summary-preview > div:first-child { border-left: 0; }
@@ -55,6 +62,62 @@
 .recurring-state { min-height: 220px; display: grid; place-items: center; color: var(--ui-muted); font-size: 10px; }
 .recurring-state.error-state { align-content: center; gap: 10px; color: var(--ui-danger); }
 .recurring-state button { padding: 6px 9px; border: 1px solid var(--ui-accent-border); border-radius: 7px; background: var(--ui-accent-soft); color: var(--ui-accent-text); font-size: 10px; font-weight: 750; cursor: pointer; }
+
+.recurring-upcoming { display: flex; height: calc(100% - 18px); min-height: 0; flex-direction: column; margin-top: 18px; }
+.recurring-upcoming-months { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.recurring-upcoming-months > button, .recurring-upcoming-skeleton .recurring-upcoming-months > div { min-height: 90px; padding: 10px 12px; border: 1px solid var(--ui-panel-border); border-radius: 11px; background: var(--ui-surface-muted); color: var(--ui-text); text-align: left; }
+.recurring-upcoming-months > button { position: relative; display: grid; grid-template-columns: minmax(0, 1fr) minmax(88px, auto); align-items: center; gap: 10px; cursor: pointer; }
+.recurring-upcoming-months > button:hover { background: var(--ui-surface-hover); }
+.recurring-upcoming-months > button.selected { border-color: var(--ui-focus-border); background: var(--ui-accent-soft); box-shadow: inset 0 3px 0 var(--ui-focus-border); }
+.recurring-month-primary, .recurring-month-secondary, .recurring-upcoming-months strong, .recurring-upcoming-months small, .recurring-upcoming-months em { display: block; }
+.recurring-month-primary { min-width: 0; }
+.recurring-month-primary > span { display: block; overflow: hidden; color: var(--ui-muted); font-size: var(--ui-font-supporting); font-weight: 700; text-overflow: ellipsis; white-space: nowrap; }
+.recurring-upcoming-months strong { margin-top: 4px; font-size: 19px; letter-spacing: -.03em; }
+.recurring-upcoming-months small { margin-top: 4px; color: var(--ui-subtle); font-size: var(--ui-font-supporting); }
+.recurring-upcoming-months small.known-label { margin-top: 1px; color: var(--ui-muted); font-weight: 700; }
+.recurring-month-secondary { min-width: 0; text-align: right; }
+.recurring-month-secondary small { white-space: nowrap; }
+.recurring-upcoming-months i { display: inline-flex; margin-top: 5px; padding: 2px 5px; border-radius: 7px; background: var(--ui-success-soft); color: var(--ui-success); font-size: var(--ui-font-supporting); font-style: normal; font-weight: 750; white-space: nowrap; }
+.recurring-upcoming-months em { margin-top: 4px; color: var(--ui-accent-text); font-size: var(--ui-font-supporting); font-style: normal; font-weight: 700; white-space: nowrap; }
+.recurring-upcoming-detail { display: flex; min-height: 0; flex: 1; flex-direction: column; margin-top: 12px; overflow: hidden; border: 1px solid var(--ui-panel-border); border-radius: 11px; }
+.recurring-upcoming-payments { display: flex; min-height: 0; flex: 1; flex-direction: column; }
+.recurring-upcoming-columns, .recurring-upcoming-payments article { display: grid; grid-template-columns: minmax(112px, .62fr) minmax(0, 1.45fr) minmax(145px, .9fr) minmax(108px, auto); gap: 14px; }
+.recurring-upcoming-columns { padding: 7px 14px; border-bottom: 1px solid var(--ui-divider); background: var(--ui-surface-muted); color: var(--ui-text); font-size: var(--ui-font-supporting); font-weight: 700; }
+.recurring-upcoming-columns span:nth-child(2) { text-align: right; }
+.recurring-upcoming-columns span:last-child { text-align: right; }
+.recurring-upcoming-payment-list { min-height: 0; overflow: auto; outline: 0; scrollbar-color: var(--ui-divider) transparent; scrollbar-width: thin; }
+.recurring-upcoming-payment-list:focus-visible { box-shadow: inset 0 0 0 2px var(--ui-focus-border); }
+.recurring-upcoming-payments article { align-items: center; padding: 9px 14px; border-bottom: 1px solid var(--ui-divider); }
+.recurring-upcoming-payments article:last-child { border-bottom: 0; }
+.recurring-upcoming-payments time { color: var(--ui-muted); font-size: var(--ui-font-supporting); }
+.recurring-upcoming-payments article > div > strong, .recurring-upcoming-payments article > div > small { display: block; }
+.recurring-upcoming-payments article > div > strong { overflow: hidden; font-size: var(--ui-font-data-primary); text-overflow: ellipsis; white-space: nowrap; }
+.recurring-upcoming-payments article > div > small { margin-top: 3px; color: var(--ui-subtle); font-size: var(--ui-font-supporting); }
+.recurring-upcoming-payment-name { display: grid; min-width: 0; grid-template-columns: auto minmax(0, 1fr); grid-template-areas: 'card merchant' 'badges badges'; align-items: baseline; column-gap: 10px; text-align: right; }
+.recurring-upcoming-payment-name > strong { grid-area: merchant; width: 100%; text-align: right; }
+.recurring-upcoming-payment-name > small { grid-area: card; margin-top: 0!important; direction: ltr; text-align: left; white-space: nowrap; }
+.recurring-upcoming-payment-name span { display: flex; grid-area: badges; flex-wrap: wrap; gap: 5px; margin-top: 5px; }
+.recurring-upcoming-payment-name span i { padding: 3px 6px; border-radius: 7px; background: var(--ui-accent-soft); color: var(--ui-accent-text); font-size: var(--ui-font-supporting); font-style: normal; font-weight: 700; }
+.recurring-upcoming-evidence strong { font-size: var(--ui-font-supporting)!important; font-weight: 700; }
+.recurring-upcoming-amount { min-width: 118px; text-align: right; }
+.recurring-upcoming-empty { padding: 30px 14px; color: var(--ui-subtle); font-size: var(--ui-font-supporting); text-align: center; }
+.recurring-unresolved { min-height: 0; max-height: 110px; flex: 0 1 auto; margin-top: 10px; overflow: hidden; border: 1px solid var(--ui-panel-border); border-radius: 9px; background: var(--ui-surface-muted); }
+.recurring-unresolved[open] { display: flex; flex-direction: column; }
+.recurring-unresolved summary { padding: 10px 12px; color: var(--ui-muted); font-size: var(--ui-font-supporting); font-weight: 750; cursor: pointer; }
+.recurring-unresolved-list { min-height: 0; max-height: 72px; flex: 1; overflow: auto; outline: 0; scrollbar-color: var(--ui-divider) transparent; scrollbar-width: thin; }
+.recurring-unresolved-list:focus-visible { box-shadow: inset 0 0 0 2px var(--ui-focus-border); }
+.recurring-unresolved ul { display: grid; gap: 7px; margin: 0; padding: 0 12px 12px 31px; }
+.recurring-unresolved li { color: var(--ui-muted); font-size: var(--ui-font-supporting); }
+.recurring-unresolved li strong { color: var(--ui-heading); }
+.recurring-unresolved li span::before { content: ' · '; }
+.recurring-upcoming-skeleton { margin-top: 18px; }
+.recurring-upcoming-skeleton .recurring-upcoming-months > div { display: grid; align-content: center; gap: 9px; }
+.recurring-upcoming-skeleton .recurring-upcoming-detail { display: grid; gap: 10px; padding: 14px; }
+.recurring-upcoming-row-skeleton { display: grid; grid-template-columns: 120px 1fr 90px; gap: 14px; padding: 10px 0; }
+
+@media (max-width: 1000px) and (min-width: 701px) {
+  .recurring-upcoming-months { grid-template-columns: repeat(3, minmax(300px, 1fr)); overflow-x: auto; padding: 2px; }
+}
 
 .recurring-modal-head-preview { display: flex; align-items: center; justify-content: space-between; gap: 18px; }
 .recurring-modal-head-preview > div { min-width: 0; }
@@ -124,6 +187,22 @@
 @media (max-width: 760px) { .recurring-lifecycle-editor-preview, .recurring-lifecycle-editor-preview.ended { grid-template-columns: 1fr; } .recurring-lifecycle-editor-preview > small { grid-column: 1; } }
 @media (max-width: 760px) { .recurring-modal-head-preview { align-items: flex-start; flex-direction: column; } }
 @media (max-width: 700px) {
+  .recurring-panel-head, .recurring-panel-title { align-items: stretch; flex-direction: column; }
+  .recurring-panel-heading-row { align-items: flex-start; flex-direction: column; gap: 8px; }
+  .recurring-panel-body { height: auto; min-height: 0; }
+  .recurring-view-switch { width: max-content; }
+  .recurring-upcoming-months { grid-template-columns: repeat(3, minmax(300px, 1fr)); overflow-x: auto; padding: 2px; }
+  .recurring-upcoming { height: auto; }
+  .recurring-upcoming-detail { min-height: 260px; }
+  .recurring-upcoming-columns { display: none; }
+  .recurring-upcoming-payment-list { overflow: visible; }
+  .recurring-unresolved { max-height: none; }
+  .recurring-unresolved-list { max-height: none; overflow: visible; }
+  .recurring-upcoming-payments article { grid-template-columns: minmax(0, 1fr) auto; }
+  .recurring-upcoming-payments time { grid-column: 1 / -1; }
+  .recurring-upcoming-payment-name { grid-column: 1; }
+  .recurring-upcoming-evidence { grid-column: 1 / -1; }
+  .recurring-upcoming-amount { grid-column: 2; grid-row: 2; }
   .recurring-summary-preview, .recurring-preview-lists, .recurring-detail-metrics-preview, .recurring-verdicts { grid-template-columns: 1fr; }
   .recurring-summary-preview > div { padding: 8px 13px; border-top: 1px solid var(--ui-divider); border-left: 0; }
   .recurring-summary-preview > div:first-child { border-top: 0; }

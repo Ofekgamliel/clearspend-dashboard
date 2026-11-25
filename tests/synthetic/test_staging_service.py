@@ -346,6 +346,69 @@ class StagingServiceTests(unittest.TestCase):
         finally:
             connection.close()
 
+    def test_pending_transaction_keys_never_reach_persisted_transactions(self) -> None:
+        def write_statement_import(database: ImportDatabase, *args, **kwargs) -> dict:
+            cursor = database.connection.execute(
+                """INSERT INTO imports(
+                original_name,source_path,byte_hash,source_format,provider,card_last4,
+                status,parsed_rows,inserted_rows,imported_at
+                ) VALUES(?,?,?,?,?,?,?,?,?,?)""",
+                (
+                    "staged.xlsx", "staged.xlsx", "pending-filter-hash", ".xlsx",
+                    "synthetic", "0001", "imported", 2, 1,
+                    "2030-01-15T10:00:00",
+                ),
+            )
+            excluded = set(kwargs["excluded_transaction_keys"])
+            for key in ("settled-key", "pending-key"):
+                if key not in excluded:
+                    add_transaction(
+                        database.connection,
+                        cursor.lastrowid,
+                        key=key,
+                        merchant="Synthetic Pending Filter",
+                        amount=25,
+                        category="Household",
+                    )
+            return {
+                "import_id": cursor.lastrowid,
+                "status": "imported",
+                "kind": "statement",
+                "inserted": 1,
+            }
+
+        analysis = self.analysis()
+        analysis["pending_transactions"] = [{
+            "file_index": 0,
+            "transaction_key": "pending-key",
+        }]
+        with patch.object(
+            ImportDatabase,
+            "import_file",
+            autospec=True,
+            side_effect=write_statement_import,
+        ):
+            commit_staged_statement(
+                self.database,
+                self.staged_upload(),
+                [],
+                [],
+                analysis,
+            )
+
+        connection = connect(self.database)
+        try:
+            keys = {
+                row[0]
+                for row in connection.execute(
+                    "SELECT transaction_key FROM transactions"
+                ).fetchall()
+            }
+        finally:
+            connection.close()
+        self.assertIn("settled-key", keys)
+        self.assertNotIn("pending-key", keys)
+
     def test_portable_persistence_leaves_commit_and_rollback_to_caller(self) -> None:
         def write_income_import(database: ImportDatabase, *args, **kwargs) -> dict:
             row = database.connection.execute(

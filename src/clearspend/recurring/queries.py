@@ -2,12 +2,151 @@
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime
+from decimal import Decimal
+from typing import Callable
+from zoneinfo import ZoneInfo
 
 from clearspend.database.connection import DatabaseTarget, database_connection
-from clearspend.recurring.rules import assess_recurring_series, median, month_history
+from clearspend.recurring.forecast import (
+    ChargeEvidence,
+    InstallmentForecastEvidence,
+    RecurringForecastEvidence,
+    build_upcoming_forecast,
+)
+from clearspend.recurring.identity import installment_plan_identity
+from clearspend.recurring.rules import (
+    CADENCE_MONTHS,
+    assess_recurring_series,
+    canonical_cadence,
+    median,
+    month_history,
+)
+from clearspend.reporting.periods import shift_month
 from clearspend.reporting.queries import period_bounds
 from clearspend.reporting.sql import REPORTING_MONTH_SQL
+
+
+APPLICATION_TIMEZONE = ZoneInfo("Asia/Jerusalem")
+
+
+def upcoming_payload(
+    database: DatabaseTarget,
+    card: str,
+    *,
+    clock: Callable[[], datetime] | None = None,
+) -> dict:
+    """Load bounded evidence and return the current three-month forecast."""
+    now = (clock or (lambda: datetime.now(APPLICATION_TIMEZONE)))()
+    if now.tzinfo is None:
+        raise ValueError("Upcoming clock must be timezone-aware")
+    generated = now.astimezone(APPLICATION_TIMEZONE)
+    anchor_month = generated.strftime("%Y-%m")
+    baseline_start = shift_month(anchor_month, -24)
+    horizon_end = shift_month(anchor_month, 2)
+
+    with database_connection(database) as connection:
+        recurring_rows = connection.execute(
+            f"""SELECT p.canonical_group_id profile_id,p.display_name,
+            p.recurring_type,p.cadence,p.lifecycle_status,p.end_month,
+            t.transaction_key,t.provider,t.card_last4,t.transaction_date,t.billing_date,
+            t.charged_currency,{REPORTING_MONTH_SQL} report_month,
+            CAST(t.charged_amount AS NUMERIC) amount
+            FROM recurring_profiles p
+            JOIN recurring_profile_members rpm
+              ON rpm.canonical_group_id=p.canonical_group_id AND rpm.included=TRUE
+            LEFT JOIN transactions t
+             ON t.merchant_normalized=rpm.merchant_normalized
+             AND CAST(t.charged_amount AS NUMERIC)>0
+             AND t.installment_number IS NULL
+             AND t.installment_total IS NULL
+             AND {REPORTING_MONTH_SQL} BETWEEN ? AND ?
+            WHERE p.verdict='recurring'
+            ORDER BY p.canonical_group_id,report_month,t.id""",
+            (baseline_start, horizon_end),
+        ).fetchall()
+        profiles: dict[str, dict] = {}
+        for row in recurring_rows:
+            cadence = canonical_cadence(row["cadence"])
+            item = profiles.setdefault(row["profile_id"], {
+                "profile_id": row["profile_id"],
+                "display_name": row["display_name"],
+                "recurring_type": row["recurring_type"] or "Other recurring",
+                "cadence": cadence,
+                "lifecycle_status": row["lifecycle_status"] or "unknown",
+                "end_month": row["end_month"],
+                "charges": [],
+            })
+            if row["transaction_key"] is not None:
+                item["charges"].append(ChargeEvidence(
+                    transaction_key=str(row["transaction_key"]),
+                    report_month=str(row["report_month"]),
+                    amount=Decimal(str(row["amount"])),
+                    provider=str(row["provider"]),
+                    card_last4=str(row["card_last4"]),
+                    transaction_date=row["transaction_date"],
+                    billing_date=row["billing_date"],
+                    charged_currency=row["charged_currency"],
+                ))
+
+        installment_rows = connection.execute(
+            f"""SELECT t.transaction_key,t.provider,t.card_last4,t.transaction_date,t.billing_date,
+            t.original_amount,t.charged_currency,t.installment_number,t.installment_total,
+            COALESCE(d.canonical_group_id,t.merchant_normalized) canonical_group_id,
+            COALESCE(d.display_name,t.merchant_raw) display_name,
+            {REPORTING_MONTH_SQL} report_month,CAST(t.charged_amount AS NUMERIC) amount
+            FROM transactions t
+            LEFT JOIN merchant_display_mappings d
+              ON d.merchant_normalized=t.merchant_normalized
+            WHERE CAST(t.charged_amount AS NUMERIC)>0
+              AND (t.installment_number IS NOT NULL OR t.installment_total IS NOT NULL)
+              AND {REPORTING_MONTH_SQL} BETWEEN ? AND ?
+            ORDER BY report_month,t.id""",
+            (baseline_start, horizon_end),
+        ).fetchall()
+        plans: dict[str, dict] = {}
+        for row in installment_rows:
+            commitment_id = installment_plan_identity(
+                row["provider"], row["card_last4"], row["canonical_group_id"],
+                row["transaction_date"], row["original_amount"], row["installment_total"],
+            )
+            plan = plans.setdefault(commitment_id, {
+                "commitment_id": commitment_id,
+                "display_name": row["display_name"],
+                "charges": [],
+            })
+            plan["charges"].append(ChargeEvidence(
+                transaction_key=str(row["transaction_key"]),
+                report_month=str(row["report_month"]),
+                amount=Decimal(str(row["amount"])),
+                provider=str(row["provider"]),
+                card_last4=str(row["card_last4"]),
+                transaction_date=row["transaction_date"],
+                billing_date=row["billing_date"],
+                charged_currency=row["charged_currency"],
+                installment_number=(
+                    int(row["installment_number"])
+                    if row["installment_number"] is not None else None
+                ),
+                installment_total=(
+                    int(row["installment_total"])
+                    if row["installment_total"] is not None else None
+                ),
+            ))
+
+    return build_upcoming_forecast(
+        [
+            RecurringForecastEvidence(**{**item, "charges": tuple(item["charges"])})
+            for item in profiles.values()
+        ],
+        [
+            InstallmentForecastEvidence(**{**item, "charges": tuple(item["charges"])})
+            for item in plans.values()
+        ],
+        anchor_month=anchor_month,
+        generated_as_of=generated.isoformat(timespec="seconds"),
+        selected_card=card,
+    )
 
 
 def recurring_payload(
@@ -49,12 +188,13 @@ def recurring_payload(
         grouped: dict[tuple[str, str], dict] = {}
         for row in transaction_rows:
             key = (row["canonical_group_id"], row["category"])
+            cadence = canonical_cadence(row["cadence"])
             item = grouped.setdefault(key, {
                 "canonical_group_id": row["canonical_group_id"],
                 "display_name": row["display_name"], "category": row["category"],
                 "recurring_type": row["recurring_type"] or "Other recurring",
-                "cadence": row["cadence"] or "Unknown",
-                "cadence_months": int(row["cadence_months"] or 0),
+                "cadence": cadence,
+                "cadence_months": CADENCE_MONTHS.get(cadence, 0),
                 "lifecycle_status": row["lifecycle_status"] or "active",
                 "end_month": row["end_month"], "months": {}, "source_aliases": set(),
             })
@@ -120,13 +260,14 @@ def recurring_payload(
               AND {REPORTING_MONTH_SQL}<=?{card_sql} ORDER BY report_month,t.id""",
             [end_month, *card_parameters],
         ).fetchall()
-        plans: dict[tuple, dict] = {}
+        plans: dict[str, dict] = {}
         for row in installment_rows:
-            key = (
+            key = installment_plan_identity(
                 row["provider"], row["card_last4"], row["canonical_group_id"],
                 row["transaction_date"], row["original_amount"], row["installment_total"],
             )
             plan = plans.setdefault(key, {
+                "commitment_id": key,
                 "display_name": row["display_name"], "source_alias": row["source_alias"],
                 "category": row["category"], "total": int(row["installment_total"] or 0),
                 "rows": [],

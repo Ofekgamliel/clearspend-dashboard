@@ -2,10 +2,20 @@ from __future__ import annotations
 
 import unittest
 
-from clearspend.recurring.rules import assess_recurring_series, median, month_history
+from clearspend.recurring.rules import (
+    assess_recurring_series,
+    canonical_cadence,
+    median,
+    month_history,
+)
 
 
 class RecurringRuleTests(unittest.TestCase):
+    def test_legacy_cadence_labels_normalize_without_guessing_unknown_values(self) -> None:
+        self.assertEqual(canonical_cadence("Twice yearly"), "Every 6 months")
+        self.assertEqual(canonical_cadence("Annual"), "Yearly")
+        self.assertEqual(canonical_cadence("Provider-specific"), "Provider-specific")
+
     def test_fixed_monthly_series_detects_increase(self) -> None:
         assessment = assess_recurring_series(
             {"2030-01": 100, "2030-02": 100, "2030-03": 120},

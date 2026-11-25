@@ -48,7 +48,7 @@ describe('useDashboardData loading contract', () => {
   beforeEach(() => {
     getDashboard.mockReset();
     getRuntimeHealth.mockReset();
-    getRuntimeHealth.mockResolvedValue({ status: 'ok', mode: 'local', database: true, api_compatibility: 'clearspend-vue-api-v1' });
+    getRuntimeHealth.mockResolvedValue({ status: 'ok', mode: 'local', database: true, api_compatibility: 'clearspend-vue-api-v2' });
   });
 
   it('ends runtime checking before the initial dashboard response settles', async () => {

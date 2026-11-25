@@ -23,6 +23,15 @@ surface the conflict and preserve user data while resolving it.
 Historical files under `docs/archive/` are background only. They never override
 current architecture, API, domain, or operational documentation.
 
+## Before proposing a plan
+
+- Trace affected data from its producer through storage, backend, API, and UI.
+- Verify every proposed database filter against the actual schema or an
+  explicit upstream guarantee.
+- Include an API field only when a current consumer needs it.
+- Review edge cases, ownership boundaries, and test coverage before delivering
+  the plan.
+
 ## Architecture and implementation
 
 - Follow the Vue 3 + TypeScript + Vite frontend architecture. Author production

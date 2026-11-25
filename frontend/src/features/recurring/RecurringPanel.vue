@@ -1,10 +1,11 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue';
-import { getRecurring, saveRecurringProfile } from '../../api/recurring';
-import type { InstallmentCommitment, PeriodKey, RecurringResponse, RecurringSeries } from '../../api/contracts';
+import { getRecurring, getRecurringUpcoming, saveRecurringProfile } from '../../api/recurring';
+import type { InstallmentCommitment, PeriodKey, RecurringResponse, RecurringSeries, RecurringUpcomingResponse } from '../../api/contracts';
 import { formatInteger, formatMoney, formatPercent, formatShortMonth } from '../../shared/format';
 import { UiButton, UiDialog, UiSkeleton } from '../../shared/ui';
 import { burdenShares, nextRecurringSort, recurringCadenceOptions, recurringProfilePayload, recurringStatusClass, recurringStatusLabels, recurringTypeOptions, sortRecurring, type RecurringSort, type RecurringSortKey, type RecurringTab } from './model';
+import RecurringUpcoming from './RecurringUpcoming.vue';
 
 const props = defineProps<{ period: PeriodKey; month: string; card: string; refreshKey: number }>();
 const emit = defineEmits<{ financialDataChange: []; manageRecurring: [canonicalGroupId?: string] }>();
@@ -12,6 +13,11 @@ const panelCache = ref<RecurringResponse | null>(null);
 const panelScopeKey = ref<string | null>(null);
 const loading = ref(true);
 const error = ref('');
+const activeView = ref<'overview' | 'upcoming'>('overview');
+const upcomingCache = ref<RecurringUpcomingResponse | null>(null);
+const upcomingScopeKey = ref<string | null>(null);
+const upcomingLoading = ref(false);
+const upcomingError = ref('');
 const modalOpen = ref(false);
 const modalPeriod = ref<PeriodKey>('month');
 const modalTab = ref<RecurringTab>('series');
@@ -30,9 +36,15 @@ const endMonthDraft = ref('');
 const lifecycleSaving = ref(false);
 let panelRequest = 0;
 let modalRequest = 0;
+let upcomingRequest = 0;
 
 const selectedPanelScopeKey = computed(() => JSON.stringify([props.period, props.month, props.card]));
 const panel = computed(() => panelScopeKey.value === selectedPanelScopeKey.value ? panelCache.value : null);
+const selectedUpcomingScopeKey = computed(() => props.card);
+const upcoming = computed(() => (
+  upcomingScopeKey.value === selectedUpcomingScopeKey.value ? upcomingCache.value : null
+));
+const panelBusy = computed(() => activeView.value === 'overview' ? loading.value : upcomingLoading.value);
 const shares = computed(() => burdenShares(panel.value?.metrics.recurring_share ?? 0, panel.value?.metrics.installment_share ?? 0));
 const sortedSeries = computed(() => sortRecurring(modal.value?.series ?? [], seriesSort.value));
 const sortedCommitments = computed(() => sortRecurring(modal.value?.commitments ?? [], commitmentSort.value));
@@ -98,6 +110,33 @@ async function loadPanel(): Promise<void> {
   }
 }
 
+async function loadUpcoming(): Promise<void> {
+  const current = ++upcomingRequest;
+  const requestScopeKey = selectedUpcomingScopeKey.value;
+  upcomingLoading.value = true;
+  upcomingError.value = '';
+  try {
+    const response = await getRecurringUpcoming({ card: props.card });
+    if (current === upcomingRequest) {
+      upcomingCache.value = response;
+      upcomingScopeKey.value = requestScopeKey;
+    }
+  } catch (caught) {
+    if (current === upcomingRequest) {
+      upcomingError.value = caught instanceof Error
+        ? caught.message
+        : 'Could not load upcoming recurring payments';
+    }
+  } finally {
+    if (current === upcomingRequest) upcomingLoading.value = false;
+  }
+}
+
+function selectView(view: 'overview' | 'upcoming'): void {
+  activeView.value = view;
+  if (view === 'upcoming' && !upcoming.value && !upcomingLoading.value) void loadUpcoming();
+}
+
 async function loadModal(): Promise<void> {
   if (!modalOpen.value) return;
   const current = ++modalRequest;
@@ -144,8 +183,8 @@ async function updateProfile(item: RecurringSeries, field: 'recurring_type' | 'c
   saveNotice.value = '';
   try {
     await saveRecurringProfile(recurringProfilePayload(item, { [field]: value }));
-    await Promise.all([loadPanel(), loadModal()]);
     emit('financialDataChange');
+    await loadModal();
     saveNotice.value = `${item.display_name} recurring profile updated.`;
   } catch (caught) {
     saveError.value = caught instanceof Error ? caught.message : 'Could not update recurring profile';
@@ -178,8 +217,8 @@ async function saveLifecycle(): Promise<void> {
       lifecycle_status: lifecycleDraft.value,
       end_month: lifecycleDraft.value === 'ended' ? endMonthDraft.value : '',
     }));
-    await Promise.all([loadPanel(), loadModal()]);
     emit('financialDataChange');
+    await loadModal();
     saveNotice.value = lifecycleDraft.value === 'ended'
       ? `${item.display_name} will no longer be expected after ${endMonthDraft.value}.`
       : `${item.display_name} lifecycle updated.`;
@@ -191,9 +230,16 @@ async function saveLifecycle(): Promise<void> {
   }
 }
 watch([() => props.period, () => props.month, () => props.card], () => { void loadPanel(); }, { immediate: true, flush: 'sync' });
-watch(() => props.refreshKey, () => { void loadPanel(); });
+watch(() => props.refreshKey, () => {
+  void loadPanel();
+  upcomingScopeKey.value = null;
+  if (activeView.value === 'upcoming') void loadUpcoming();
+});
 watch(modalPeriod, () => { selectedSeries.value = ''; selectedCommitment.value = ''; void loadModal(); });
-watch(() => props.card, () => { if (modalOpen.value) void loadModal(); });
+watch(() => props.card, () => {
+  if (modalOpen.value) void loadModal();
+  if (activeView.value === 'upcoming') void loadUpcoming();
+});
 watch(selectedSeriesItem, (item) => {
   lifecycleDraft.value = item?.lifecycle_status ?? 'active';
   endMonthDraft.value = item?.end_month ?? '';
@@ -203,11 +249,20 @@ defineExpose({ openActivity, openManagement });
 </script>
 
 <template>
-  <article class="recurring-panel-preview" aria-labelledby="recurring-title" :aria-busy="loading">
+  <article class="recurring-panel-preview" aria-labelledby="recurring-title" :aria-busy="panelBusy">
     <header class="recurring-panel-head">
-      <div><h2 id="recurring-title">Recurring &amp; commitments</h2><p v-if="panel">Reviewed verdicts: {{ panel.verdict_summary.recurring }} recurring or obligations</p><p v-else-if="loading">Loading reviewed recurring profiles…</p></div>
-      <button type="button" :disabled="!panel" @click="openModal()">View all details →</button>
+      <div class="recurring-panel-title"><div class="recurring-panel-heading-row"><h2 id="recurring-title">Recurring &amp; commitments</h2><div class="recurring-view-switch" role="group" aria-label="Recurring panel view"><button type="button" :aria-pressed="activeView === 'overview'" @click="selectView('overview')">Overview</button><button type="button" :aria-pressed="activeView === 'upcoming'" @click="selectView('upcoming')">Upcoming</button></div></div><p v-if="activeView === 'overview' && panel">Reviewed verdicts: {{ panel.verdict_summary.recurring }} recurring or obligations</p><p v-else-if="activeView === 'overview' && loading">Loading reviewed recurring profiles…</p></div>
+      <button v-if="activeView === 'overview'" type="button" :disabled="!panel" @click="openModal()">View all details →</button>
     </header>
+    <div class="recurring-panel-body">
+    <template v-if="activeView === 'upcoming'">
+      <div v-if="upcomingError && !upcoming" class="recurring-state error-state"><span>{{ upcomingError }}</span><button type="button" @click="loadUpcoming">Try again</button></div>
+      <div v-else-if="upcomingLoading && !upcoming" class="recurring-upcoming-skeleton" aria-hidden="true"><div class="recurring-upcoming-months"><div v-for="index in 3" :key="index"><UiSkeleton shape="line" /><UiSkeleton shape="line" /><UiSkeleton shape="line" /></div></div><div class="recurring-upcoming-detail"><UiSkeleton shape="line" /><div v-for="index in 3" :key="index" class="recurring-upcoming-row-skeleton"><UiSkeleton shape="line" /><UiSkeleton shape="line" /><UiSkeleton shape="line" /></div></div></div>
+      <RecurringUpcoming v-else-if="upcoming" :data="upcoming" />
+      <div v-else class="recurring-state">Upcoming recurring payments are unavailable.</div>
+      <div v-if="upcomingError && upcoming" class="recurring-refresh-error refresh-error" role="alert">{{ upcomingError }} <button type="button" @click="loadUpcoming">Retry</button></div>
+    </template>
+    <template v-else>
     <div v-if="error && !panel" class="recurring-state error-state"><span>{{ error }}</span><button type="button" @click="loadPanel">Try again</button></div>
     <div v-else-if="loading && !panel" class="recurring-skeleton" aria-hidden="true"><div class="recurring-summary-preview"><div v-for="index in 4" :key="index"><UiSkeleton shape="line" /><UiSkeleton shape="line" /><UiSkeleton shape="line" /></div></div><div class="recurring-preview-layout"><div class="recurring-preview-lists"><section v-for="column in 2" :key="column" class="recurring-list-card"><UiSkeleton class="recurring-skeleton-title" /><div v-for="index in 3" :key="index" class="recurring-preview-item"><span><UiSkeleton shape="line" /><UiSkeleton shape="line" /></span><span><UiSkeleton shape="line" /><UiSkeleton shape="line" /></span></div></section></div><aside class="recurring-composition"><UiSkeleton shape="line" /><UiSkeleton shape="line" /><UiSkeleton class="recurring-skeleton-bar" /><UiSkeleton v-for="index in 4" :key="index" shape="line" /></aside></div></div>
     <template v-else-if="panel">
@@ -227,6 +282,8 @@ defineExpose({ openActivity, openManagement });
     </template>
     <div v-else class="recurring-state">Recurring spending is unavailable.</div>
     <div v-if="error && panel" class="recurring-refresh-error refresh-error" role="alert">{{ error }} <button type="button" @click="loadPanel">Retry</button></div>
+    </template>
+    </div>
   </article>
 
   <UiDialog :open="modalOpen" title-id="recurring-modal-title" close-label="Close recurring details" size="analysis" @request-close="closeModal"><template #header><div class="recurring-modal-head-preview"><div><h2 id="recurring-modal-title">Recurring &amp; commitments</h2></div></div></template><nav class="recurring-modal-toolbar"><div><button v-for="value in (['month','year','all'] as PeriodKey[])" :key="value" type="button" :class="{ active: modalPeriod === value }" @click="modalPeriod = value">{{ value === 'month' ? 'Month' : value === 'year' ? 'Latest year' : 'All time' }}</button></div><div><button v-for="value in (['series','commitments','verdicts'] as RecurringTab[])" :key="value" type="button" :class="{ active: modalTab === value }" @click="modalTab = value">{{ value === 'series' ? 'Recurring & scheduled' : value === 'commitments' ? 'Installments' : 'Verdict summary' }}</button></div></nav><div class="recurring-modal-body-preview">

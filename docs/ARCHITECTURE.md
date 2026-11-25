@@ -310,6 +310,14 @@ rebuild or replace the live database.
 | Event | `features/events/` and transaction assignment | `events/` | event rules/query/service + E2E writes |
 | Schema change | contract/UI only if exposed | `database/migrations/` | migration tests + migration guide |
 
+Recurring Upcoming keeps transport orchestration and public-response mapping in
+`recurring/forecast.py`. Recurring schedule reconciliation belongs in
+`recurring/recurring_forecast.py`, installment projection in
+`recurring/installment_forecast.py`, shared bounded calculations in
+`recurring/forecast_common.py`, and internal evidence/occurrence types in
+`recurring/forecast_models.py`. These modules produce one occurrence stream;
+the orchestrator alone aggregates it into the public response.
+
 ## Adding or changing a feature
 
 1. Identify the existing owner and read this document plus the applicable

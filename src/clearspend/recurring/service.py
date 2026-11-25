@@ -10,6 +10,7 @@ from clearspend.recurring.rules import (
     ALLOWED_RECURRING_TYPES,
     CADENCE_MONTHS,
     LIFECYCLE_STATUSES,
+    canonical_cadence,
 )
 
 
@@ -22,6 +23,7 @@ def save_recurring_profile(
     end_month: str,
 ) -> dict:
     canonical_group_id = canonical_group_id.strip()
+    cadence = canonical_cadence(cadence)
     lifecycle_status = lifecycle_status.strip().lower()
     if not canonical_group_id:
         raise ValueError("A recurring profile is required")
@@ -32,11 +34,9 @@ def save_recurring_profile(
     if lifecycle_status not in LIFECYCLE_STATUSES:
         raise ValueError("Invalid lifecycle status")
     end_month = end_month.strip()
-    if (
-        lifecycle_status == "ended"
-        and end_month
-        and not re.fullmatch(r"\d{4}-(0[1-9]|1[0-2])", end_month)
-    ):
+    if lifecycle_status == "ended" and not end_month:
+        raise ValueError("An end month is required for an ended profile")
+    if end_month and not re.fullmatch(r"\d{4}-(0[1-9]|1[0-2])", end_month):
         raise ValueError("End month must use YYYY-MM")
     if lifecycle_status != "ended":
         end_month = ""
@@ -72,6 +72,7 @@ def manage_recurring_profile(
     verdict = verdict.strip()
     recurring_type = recurring_type.strip()
     cadence = cadence.strip()
+    cadence = canonical_cadence(cadence)
     lifecycle_status = lifecycle_status.strip().lower()
     end_month = end_month.strip()
     if not canonical_group_id:

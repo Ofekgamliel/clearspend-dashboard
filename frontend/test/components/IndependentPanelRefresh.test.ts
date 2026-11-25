@@ -1,6 +1,6 @@
 import { flushPromises, mount } from '@vue/test-utils';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { CategoriesResponse, EventsResponse, ObservationsResponse, RecurringResponse } from '../../src/api/contracts';
+import type { CategoriesResponse, EventsResponse, ObservationsResponse, RecurringResponse, RecurringUpcomingResponse } from '../../src/api/contracts';
 import CategoriesPanel from '../../src/features/categories/CategoriesPanel.vue';
 import EventsPanel from '../../src/features/events/EventsPanel.vue';
 import ObservationsPanel from '../../src/features/observations/ObservationsPanel.vue';
@@ -10,6 +10,7 @@ const getCategories = vi.fn();
 const getEvents = vi.fn();
 const getObservations = vi.fn();
 const getRecurring = vi.fn();
+const getRecurringUpcoming = vi.fn();
 
 vi.mock('../../src/api/categories', () => ({ getCategories: (...args: unknown[]) => getCategories(...args) }));
 vi.mock('../../src/api/events', () => ({
@@ -23,6 +24,7 @@ vi.mock('../../src/api/observations', () => ({
 }));
 vi.mock('../../src/api/recurring', () => ({
   getRecurring: (...args: unknown[]) => getRecurring(...args),
+  getRecurringUpcoming: (...args: unknown[]) => getRecurringUpcoming(...args),
   saveRecurringProfile: vi.fn(),
 }));
 
@@ -49,6 +51,16 @@ const recurringResponse: RecurringResponse = {
   },
   series: [], commitments: [], trend: [], verdict_summary: { reviewed: 0, recurring: 0, not_recurring: 0, unresolved: 0 },
 };
+const recurringUpcomingResponse: RecurringUpcomingResponse = {
+  generated_as_of: '2027-01-02T10:00:00+02:00', anchor_month: '2027-01',
+  horizon_start: '2027-01', horizon_end: '2027-03', selected_card: 'all',
+  months: ['2027-01', '2027-02', '2027-03'].map((month) => ({
+    month, confirmed_total: 0, forecast_total: 0, comparable_total: 0,
+    unknown_amount_count: 0, payment_count: 0, comparison_label: null,
+    annual_count: 0, ending_installment_count: 0, payments: [],
+  })),
+  unresolved: [],
+};
 
 describe('independent dashboard panel refresh failures', () => {
   beforeEach(() => {
@@ -56,6 +68,7 @@ describe('independent dashboard panel refresh failures', () => {
     getEvents.mockReset();
     getObservations.mockReset();
     getRecurring.mockReset();
+    getRecurringUpcoming.mockReset();
   });
 
   it('retains Categories content and exposes retry', async () => {
@@ -101,5 +114,50 @@ describe('independent dashboard panel refresh failures', () => {
     expect(wrapper.find('.recurring-skeleton').exists()).toBe(false);
     expect(wrapper.find('[role="alert"]').text()).toContain('Recurring refresh failed');
     expect(wrapper.get('header > button').attributes('disabled')).toBeUndefined();
+  });
+
+  it('loads Upcoming lazily and reloads it only for card scope', async () => {
+    getRecurring.mockResolvedValue(recurringResponse);
+    getRecurringUpcoming.mockResolvedValue(recurringUpcomingResponse);
+    const wrapper = mount(RecurringPanel, {
+      props: { period: 'month', month: '2027-01', card: 'all', refreshKey: 0 },
+    });
+    await flushPromises();
+
+    expect(getRecurringUpcoming).not.toHaveBeenCalled();
+    await wrapper.get('.recurring-view-switch button:last-child').trigger('click');
+    await flushPromises();
+    expect(getRecurringUpcoming).toHaveBeenCalledTimes(1);
+    expect(getRecurringUpcoming).toHaveBeenLastCalledWith({ card: 'all' });
+
+    await wrapper.get('.recurring-upcoming-months button:nth-child(2)').trigger('click');
+    expect(getRecurringUpcoming).toHaveBeenCalledTimes(1);
+    await wrapper.setProps({ period: 'year', month: '2026-12' });
+    await flushPromises();
+    expect(getRecurringUpcoming).toHaveBeenCalledTimes(1);
+
+    await wrapper.setProps({ card: 'synthetic:0001' });
+    await flushPromises();
+    expect(getRecurringUpcoming).toHaveBeenCalledTimes(2);
+    expect(getRecurringUpcoming).toHaveBeenLastCalledWith({ card: 'synthetic:0001' });
+  });
+
+  it('invalidates inactive Upcoming data after a financial refresh', async () => {
+    getRecurring.mockResolvedValue(recurringResponse);
+    getRecurringUpcoming.mockResolvedValue(recurringUpcomingResponse);
+    const wrapper = mount(RecurringPanel, {
+      props: { period: 'month', month: '2027-01', card: 'all', refreshKey: 0 },
+    });
+    await flushPromises();
+    await wrapper.get('.recurring-view-switch button:last-child').trigger('click');
+    await flushPromises();
+    await wrapper.get('.recurring-view-switch button:first-child').trigger('click');
+
+    await wrapper.setProps({ refreshKey: 1 });
+    await flushPromises();
+    expect(getRecurringUpcoming).toHaveBeenCalledTimes(1);
+    await wrapper.get('.recurring-view-switch button:last-child').trigger('click');
+    await flushPromises();
+    expect(getRecurringUpcoming).toHaveBeenCalledTimes(2);
   });
 });

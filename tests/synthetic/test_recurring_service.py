@@ -67,6 +67,31 @@ class RecurringServiceTests(unittest.TestCase):
         )
         self.assertIsNone(active["end_month"])
 
+    def test_profile_edit_requires_end_month_for_ended_lifecycle(self) -> None:
+        manage_recurring_profile(
+            self.database, "synthetic-mobile", "recurring", "Fixed recurring",
+            "Monthly", "active", "",
+        )
+
+        with self.assertRaisesRegex(ValueError, "end month is required"):
+            save_recurring_profile(
+                self.database,
+                "synthetic-mobile",
+                "Fixed recurring",
+                "Monthly",
+                "ended",
+                "",
+            )
+
+    def test_legacy_cadence_input_is_saved_with_the_canonical_label(self) -> None:
+        profile = manage_recurring_profile(
+            self.database, "synthetic-mobile", "recurring", "Scheduled obligation",
+            "Annual", "active", "",
+        )
+
+        self.assertEqual(profile["cadence"], "Yearly")
+        self.assertEqual(profile["cadence_months"], 12)
+
     def test_removal_preserves_alias_membership_for_later_reenable(self) -> None:
         manage_recurring_profile(
             self.database, "synthetic-mobile", "recurring", "Fixed recurring", "Monthly",
